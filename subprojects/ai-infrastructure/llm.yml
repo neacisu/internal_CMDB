@@ -1,0 +1,53 @@
+http:
+  middlewares:
+    # Rate limit calibrat pentru UI AI: permisiv pentru utilizatori multipli,
+    # fara circuit-breaker si retry (ar rupe SSE/WebSocket streaming LLM).
+    llm-rate-limit:
+      rateLimit:
+        average: 120
+        burst: 240
+
+    # Trimite X-Forwarded-Proto catre Open WebUI pentru URL-uri corecte.
+    llm-forward-https:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+
+    # Chain dedicat LLM: fara retry (POST chat idempotency) si fara
+    # circuit-breaker (latenta mare la reasoning nu e network error).
+    chain-llm:
+      chain:
+        middlewares:
+          - security-headers
+          - llm-rate-limit
+          - llm-forward-https
+          - compress
+
+  routers:
+    # Open WebUI - interfata web pentru ambele modele LLM
+    llm-webui:
+      rule: "Host(`llm.neanelu.ro`)"
+      service: llm-webui-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-llm
+      tls:
+        certResolver: cloudflare
+        domains:
+          - main: "llm.neanelu.ro"
+
+  services:
+    # Open WebUI pe hz.113, proxiat prin HAProxy VIP 10.0.1.10:49003
+    # -> 10.0.1.13:3000 (container open-webui).
+    # flushInterval: -1 pentru SSE/WebSocket streaming instant fara buffering.
+    llm-webui-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.10:49000"
+        healthCheck:
+          path: "/"
+          interval: "30s"
+          timeout: "10s"
+        responseForwarding:
+          flushInterval: "-1"

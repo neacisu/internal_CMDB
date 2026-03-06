@@ -1,0 +1,79 @@
+services:
+  vllm-primary:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-qwq-32b
+    runtime: nvidia
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+    ports:
+      - "10.0.1.13:8000:8000"
+    volumes:
+      - /ai-infrastructure/models:/root/.cache/huggingface
+    command: >
+      --model Qwen/QwQ-32B-AWQ
+      --quantization awq
+      --tensor-parallel-size 1
+      --gpu-memory-utilization 0.65
+      --max-model-len 24576
+      --enforce-eager
+      --port 8000
+    restart: unless-stopped
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  vllm-secondary:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-qwen-14b
+    runtime: nvidia
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+    ports:
+      - "10.0.1.13:8001:8000"
+    volumes:
+      - /ai-infrastructure/models:/root/.cache/huggingface
+    command: >
+      --model Qwen/Qwen2.5-14B-Instruct-AWQ
+      --quantization awq
+      --tensor-parallel-size 1
+      --gpu-memory-utilization 0.28
+      --max-model-len 12288
+      --port 8000
+    restart: unless-stopped
+    ipc: host
+    depends_on:
+      - vllm-primary
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "10.0.1.13:3000:8080"
+    volumes:
+      - /ai-infrastructure/webui:/app/backend/data
+    environment:
+      - ENABLE_OLLAMA_API=false
+      - OPENAI_API_BASE_URLS=http://vllm-primary:8000/v1;http://vllm-secondary:8000/v1
+      - OPENAI_API_KEYS=sk-dummy-primary;sk-dummy-secondary
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - vllm-primary
+      - vllm-secondary
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
