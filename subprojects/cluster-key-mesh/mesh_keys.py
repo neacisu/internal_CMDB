@@ -19,7 +19,12 @@ import argparse
 import subprocess
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from audit_result_store import build_result_envelope, write_retained_result
 
 # ---------------------------------------------------------------------------
 # Cluster definition — alias (used from localhost) + IP (used for node↔node)
@@ -52,6 +57,7 @@ _SSH_OPTS = [
 SSH_TIMEOUT_EXIT_CODE = 124
 SSH_KEY_MIN_PARTS = 2
 MAX_VERIFY_WORKERS = 32
+RESULT_TYPE = "cluster_key_mesh_state"
 
 
 # ---------------------------------------------------------------------------
@@ -365,11 +371,36 @@ def main() -> int:
     error_label = fail(str(total_errors)) if total_errors else ok("0")
     print(f"\n  Total keys installed: {BOLD}{total_added}{RESET}  |  Errors: {error_label}")
 
+    verify_results: list[VerifyResult] = []
     if args.verify:
         verify_results = verify_mesh(aliases, ips, args.workers, args.verify_timeout, width)
         print_verify_report(aliases, verify_results, width)
 
+    retained_payload = build_result_envelope(
+        RESULT_TYPE,
+        {
+            "mode": {
+                "dry_run": args.dry_run,
+                "verify": args.verify,
+                "workers": args.workers,
+                "verify_timeout": args.verify_timeout,
+            },
+            "cluster": [{"alias": alias, "ip": ips[alias]} for alias in aliases],
+            "key_inventory": {"unique_key_count": len(all_keys)},
+            "distribution_results": [asdict(result) for result in dist_results],
+            "verification_results": [asdict(result) for result in verify_results],
+            "summary": {
+                "total_added": total_added,
+                "total_errors": total_errors,
+                "verify_pairs": len(verify_results),
+                "verify_failures": sum(1 for result in verify_results if not result.ok),
+            },
+        },
+    )
+    saved_path = write_retained_result(__file__, RESULT_TYPE, retained_payload)
+
     print(header(f"\n{'═' * 60}\n"))
+    print(f"Retained result: {saved_path}")
     return 0 if total_errors == 0 else 1
 
 

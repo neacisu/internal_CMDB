@@ -1,0 +1,45 @@
+# internalCMDB — PostgreSQL 17 for orchestrator
+#
+# Port:    5433 (bind on 127.0.0.1 only; external access via Traefik TCP SNI)
+# Volume:  /mnt/HC_Volume_105014654/postgresql/internalcmdb/data
+# User:    internalcmdb   (created by POSTGRES_USER; least-privilege)
+# Network: internalcmdb_net (isolated; Traefik can reach it via its own network join)
+#
+# Deployment:
+#   scp deploy/orchestrator/docker-compose.postgresql.yml orchestrator:~/internalcmdb/
+#   scp .env orchestrator:~/internalcmdb/.env
+#   ssh orchestrator "cd ~/internalcmdb && docker compose -f docker-compose.postgresql.yml up -d"
+#
+# After first start run the Alembic migration from your local machine:
+#   export $(grep -v '^#' .env | xargs)
+#   PYTHONPATH=src .venv/bin/alembic upgrade head
+
+services:
+  internalcmdb-postgres:
+    image: postgres:17-alpine
+    container_name: internalcmdb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-internalCMDB}
+      POSTGRES_USER:     ${POSTGRES_USER:-internalcmdb}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA:            /var/lib/postgresql/data/pgdata
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - /mnt/HC_Volume_105014654/postgresql/internalcmdb/data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "pg_isready -U ${POSTGRES_USER:-internalcmdb} -d ${POSTGRES_DB:-internalCMDB}"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - internalcmdb_net
+
+networks:
+  internalcmdb_net:
+    name: internalcmdb_net
+    driver: bridge

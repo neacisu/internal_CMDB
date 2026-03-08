@@ -12,7 +12,12 @@ authors = [
   { name = "Alex Neacsu" }
 ]
 license = { text = "Proprietary" }
-dependencies = []
+dependencies = [
+  "alembic>=1.14",
+  "psycopg[binary]>=3.2",
+  "python-dotenv>=1.0",
+  "sqlalchemy>=2.0",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -28,7 +33,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/proiecteit"]
+packages = ["src/proiecteit", "src/internalcmdb"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -64,6 +69,18 @@ pretty = true
 show_error_codes = true
 warn_unreachable = true
 mypy_path = "src"
+
+# SQLAlchemy 2.x DeclarativeBase uses metaclass magic that mypy sees as [misc]
+# without the plugin. The plugin causes ClassVar conflicts with __table_args__.
+# Narrow override: suppress only [misc] in model files.
+[[tool.mypy.overrides]]
+module = "internalcmdb.models.*"
+disable_error_code = ["misc"]
+
+# pgvector is an optional runtime dependency with no bundled stubs.
+[[tool.mypy.overrides]]
+module = "pgvector.*"
+ignore_missing_imports = true
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "build", "dist"]

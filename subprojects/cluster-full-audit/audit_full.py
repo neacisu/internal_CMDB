@@ -31,7 +31,12 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TypedDict, cast
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from audit_result_store import build_result_envelope, write_retained_result
 
 SystemInfo = dict[str, str]
 HardwareValue = str | float | bool
@@ -123,6 +128,7 @@ VRAM_WARN_THRESHOLD = 0.90
 BLOCK_DEVICE_ROTATIONAL_FLAG = "1"
 OK_RAM_THRESHOLD = 80
 JSON_INDENT = 2
+RESULT_TYPE = "full_cluster_audit"
 SKIP_FILESYSTEMS = (
     "overlay",
     "efivarfs",
@@ -1617,6 +1623,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _export_json(args: argparse.Namespace, final_results: list[AuditReport]) -> None:
+    payload = _build_json_payload(final_results)
+    json_str = json.dumps(payload, indent=JSON_INDENT, ensure_ascii=False)
+    if args.json == "-":
+        print(json_str)
+        return
+    with open(args.json, "w", encoding="utf-8") as fh:
+        fh.write(json_str)
+    print(f"\n{GREEN}JSON written → {args.json}{RESET}")
+
+
+def _build_json_payload(final_results: list[AuditReport]) -> dict[str, object]:
     ansi_pattern = re.compile(r"\x1b\[[0-9;]*m")
 
     def _clean(obj: object) -> object:
@@ -1631,17 +1648,10 @@ def _export_json(args: argparse.Namespace, final_results: list[AuditReport]) -> 
             return [_clean(item) for item in cast(list[object], obj)]
         return obj
 
-    payload: dict[str, object] = {
+    return {
         "audit_ts": datetime.now(UTC).isoformat(),
         "nodes": [_clean(result) for result in final_results],
     }
-    json_str = json.dumps(payload, indent=JSON_INDENT, ensure_ascii=False)
-    if args.json == "-":
-        print(json_str)
-        return
-    with open(args.json, "w", encoding="utf-8") as fh:
-        fh.write(json_str)
-    print(f"\n{GREEN}JSON written → {args.json}{RESET}")
 
 
 # ---------------------------------------------------------------------------
@@ -1772,6 +1782,10 @@ def main() -> None:
 
     if args.json:
         _export_json(args, final_results)
+
+    retained_payload = build_result_envelope(RESULT_TYPE, _build_json_payload(final_results))
+    saved_path = write_retained_result(__file__, RESULT_TYPE, retained_payload)
+    print(f"\n{GREEN}Retained audit result → {saved_path}{RESET}")
 
 
 if __name__ == "__main__":

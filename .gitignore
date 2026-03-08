@@ -44,6 +44,7 @@ coverage.xml
 *.log
 tmp/
 .tmp/
+subprojects/**/results/
 
 # Local database and migration artifacts
 *.sqlite3

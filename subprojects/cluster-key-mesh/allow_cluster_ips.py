@@ -13,6 +13,11 @@ from __future__ import annotations
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from audit_result_store import build_result_envelope, write_retained_result
 
 CLUSTER: list[tuple[str, str]] = [
     ("hz.62", "95.216.66.62"),
@@ -42,6 +47,7 @@ _SSH_OPTS = [
 ADD_MARKER = "[ADD ]"
 SKIP_MARKER = "[SKIP]"
 ERROR_MARKER = "[ERR ]"
+RESULT_TYPE = "cluster_firewall_state"
 
 
 def ssh(host: str, command: str, timeout: int = 30) -> tuple[int, str, str]:
@@ -62,7 +68,7 @@ def detect_firewall(alias: str) -> str:
 
 def allow_ufw(alias: str, peer_ips: list[str]) -> list[str]:
     """Add ufw allow rules non-destructively. Returns list of log lines."""
-    logs = []
+    logs: list[str] = []
     for ip in peer_ips:
         # Check if rule already exists
         _, out_check, _ = ssh(alias, f"ufw status | grep -qF '{ip}' && echo EXISTS || echo MISSING")
@@ -79,7 +85,7 @@ def allow_ufw(alias: str, peer_ips: list[str]) -> list[str]:
 
 def allow_iptables(alias: str, peer_ips: list[str]) -> list[str]:
     """Add iptables ACCEPT rules non-destructively via -C check before -I insert."""
-    logs = []
+    logs: list[str] = []
     for ip in peer_ips:
         for chain, flag in [("INPUT", "-s"), ("OUTPUT", "-d")]:
             # -C returns 0 if rule already exists, non-zero if missing
@@ -143,8 +149,32 @@ def main() -> int:
         if not errors
         else f"{RED}{errors} error(s) — check output above{RESET}"
     )
+
+    retained_payload = build_result_envelope(
+        RESULT_TYPE,
+        {
+            "cluster": [{"alias": alias, "ip": ip} for alias, ip in CLUSTER],
+            "results": [
+                {
+                    "alias": alias,
+                    "firewall": fw,
+                    "logs": logs,
+                    "summary": {
+                        "added": sum(1 for log_line in logs if ADD_MARKER in log_line),
+                        "skipped": sum(1 for log_line in logs if SKIP_MARKER in log_line),
+                        "errors": sum(1 for log_line in logs if ERROR_MARKER in log_line),
+                    },
+                }
+                for alias, fw, logs in results
+            ],
+            "global_summary": {"error_count": errors},
+        },
+    )
+    saved_path = write_retained_result(__file__, RESULT_TYPE, retained_payload)
+
     print(f"{BOLD}{'═' * 60}{RESET}")
     print(f" {status}")
+    print(f" Retained result: {saved_path}")
     print(f"{BOLD}{'═' * 60}{RESET}")
     return 0 if not errors else 1
 

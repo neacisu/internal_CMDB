@@ -10,7 +10,12 @@ import argparse
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Literal, TypedDict
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from audit_result_store import build_result_envelope, write_retained_result
 
 INTERFACE_ADDR_INDEX = 2
 SUBNET_OCTET_COUNT = 3
@@ -20,6 +25,7 @@ SUMMARY_ERROR = "error"
 SUMMARY_VSWITCH = "vswitch"
 SUMMARY_NO_VSWITCH = "no_vswitch"
 SUMMARY_ERRORS = "errors"
+RESULT_TYPE = "network_audit"
 
 
 class NetworkAuditResult(TypedDict):
@@ -391,6 +397,22 @@ def print_summary(results: list[NetworkAuditResult]) -> None:
         print(f"  {BOLD}VLAN IDs detectate:{RESET} {', '.join(vids_uniq)}")
 
 
+def _build_summary(results: list[NetworkAuditResult]) -> dict[str, object]:
+    has_vswitch, no_vswitch, errors = _group_results(results)
+    return {
+        SUMMARY_VSWITCH: [
+            {"alias": alias, "private_ips": private_ips, "vlan_ids": vlan_ids}
+            for alias, private_ips, vlan_ids in has_vswitch
+        ],
+        SUMMARY_NO_VSWITCH: no_vswitch,
+        SUMMARY_ERRORS: errors,
+        "private_subnets": _collect_private_subnets(results),
+        "vlan_ids": sorted(
+            {vlan_id for result in results for vlan_id in result.get("vlan_ids", [])}
+        ),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Read-only network audit for Hetzner cluster.")
     parser.add_argument("--workers", type=int, default=8, help="Parallel SSH workers (default: 8)")
@@ -425,6 +447,17 @@ def main() -> None:
         print_node_report(r)
 
     print_summary(results)
+
+    payload = build_result_envelope(
+        RESULT_TYPE,
+        {
+            "targets": [{"alias": alias, "pub_ip": ip} for alias, ip in targets],
+            "results": results,
+            "summary": _build_summary(results),
+        },
+    )
+    saved_path = write_retained_result(__file__, RESULT_TYPE, payload)
+    print(f"\n{GREEN}Rezultate salvate → {saved_path}{RESET}")
 
 
 if __name__ == "__main__":

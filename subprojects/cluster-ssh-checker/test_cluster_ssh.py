@@ -5,7 +5,7 @@ Examples:
   python subprojects/cluster-ssh-checker/test_cluster_ssh.py
   python subprojects/cluster-ssh-checker/test_cluster_ssh.py --timeout 4 --workers 12
     python subprojects/cluster-ssh-checker/test_cluster_ssh.py \
-        --include-regex '^(hz\\.|orchestrator|postgres-main)'
+        --include-regex '^(hz\\.|orchestrator|postgres-main|imac)'
 """
 
 from __future__ import annotations
@@ -15,10 +15,39 @@ import concurrent.futures
 import re
 import shlex
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from audit_result_store import build_result_envelope, is_local_host, write_retained_result
+
 HOST_DIRECTIVE_MIN_PARTS = 2
+RESULT_TYPE = "ssh_connectivity"
+ALLOWED_HOSTS = {
+    "orchestrator",
+    "postgres-main",
+    "imac",
+    "hz.62",
+    "hz.113",
+    "hz.118",
+    "hz.123",
+    "hz.157",
+    "hz.164",
+    "hz.215",
+    "hz.223",
+    "hz.247",
+    "95.216.225.157",
+    "95.216.72.118",
+    "94.130.68.123",
+    "135.181.183.164",
+    "95.216.68.247",
+    "95.217.32.223",
+    "95.216.36.215",
+    "95.216.66.62",
+    "49.13.97.113",
+}
 
 
 @dataclass(frozen=True)
@@ -62,6 +91,9 @@ def parse_hosts(config_path: Path) -> list[str]:
 
 def check_host(host: str, timeout: int) -> CheckResult:
     """Attempt a non-interactive SSH handshake and simple command execution."""
+    if is_local_host(host):
+        return CheckResult(host=host, ok=True, return_code=0, detail="local")
+
     cmd = [
         "ssh",
         "-o",
@@ -94,7 +126,7 @@ def check_host(host: str, timeout: int) -> CheckResult:
 def filter_hosts(
     hosts: list[str], include_regex: str | None, exclude_regex: str | None
 ) -> list[str]:
-    filtered = hosts
+    filtered = [host for host in hosts if host in ALLOWED_HOSTS]
     if include_regex:
         include_pat = re.compile(include_regex)
         filtered = [h for h in filtered if include_pat.search(h)]
@@ -147,6 +179,29 @@ def main() -> int:
 
     print("-" * 80)
     print(f"Summary: total={len(results)} ok={ok_count} fail={fail_count}")
+
+    payload = build_result_envelope(
+        RESULT_TYPE,
+        {
+            "config_path": str(config_path),
+            "timeout_seconds": args.timeout,
+            "workers": args.workers,
+            "include_regex": args.include_regex,
+            "exclude_regex": args.exclude_regex,
+            "summary": {"total": len(results), "ok": ok_count, "fail": fail_count},
+            "results": [
+                {
+                    "host": result.host,
+                    "ok": result.ok,
+                    "return_code": result.return_code,
+                    "detail": result.detail,
+                }
+                for result in results
+            ],
+        },
+    )
+    saved_path = write_retained_result(__file__, RESULT_TYPE, payload)
+    print(f"Retained result: {saved_path}")
 
     return 0 if fail_count == 0 else 1
 
