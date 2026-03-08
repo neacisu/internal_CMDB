@@ -14,6 +14,12 @@ from typing import Literal, TypedDict
 
 INTERFACE_ADDR_INDEX = 2
 SUBNET_OCTET_COUNT = 3
+SUMMARY_OK = "ok"
+SUMMARY_MISSING = "missing"
+SUMMARY_ERROR = "error"
+SUMMARY_VSWITCH = "vswitch"
+SUMMARY_NO_VSWITCH = "no_vswitch"
+SUMMARY_ERRORS = "errors"
 
 
 class NetworkAuditResult(TypedDict):
@@ -128,6 +134,72 @@ def audit_node(alias: str, pub_ip: str) -> NetworkAuditResult:
         return _empty_result(alias, pub_ip, str(e))
 
 
+def _detect_section(line: str) -> SectionName:
+    section_markers: dict[str, SectionName] = {
+        "--- INTERFACES ---": "iface",
+        "--- VLANS ---": "vlans",
+        "--- VLAN IDS ---": "vlan_ids",
+        "--- ROUTES ---": "routes",
+        "--- NETPLAN ---": "netplan",
+        "--- PRIVATE IPS ---": "private",
+        "--- END ---": None,
+    }
+    return section_markers.get(line)
+
+
+def _parse_metadata_line(result: NetworkAuditResult, line: str) -> bool:
+    if line.startswith("HOSTNAME="):
+        result["hostname"] = line.split("=", 1)[1]
+        return True
+    if line.startswith("KERNEL="):
+        result["kernel"] = line.split("=", 1)[1]
+        return True
+    if line.startswith("OS="):
+        result["os"] = line.split("=", 1)[1]
+        return True
+    return False
+
+
+def _append_section_line(
+    section: SectionName,
+    line: str,
+    interfaces: list[str],
+    vlans: list[str],
+    vlan_ids: list[str],
+    routes: list[str],
+    private_ips: list[str],
+) -> None:
+    stripped = line.strip()
+    if not stripped:
+        return
+    if section == "iface":
+        interfaces.append(stripped)
+    elif section == "vlans" and stripped != "(none)":
+        vlans.append(stripped)
+    elif section == "vlan_ids" and "no vlan ids" not in line:
+        vlan_ids.append(stripped)
+    elif section == "routes":
+        routes.append(stripped)
+    elif section == "private" and stripped != "(none)":
+        private_ips.append(stripped)
+
+
+def _update_netplan(
+    line: str,
+    netplan_file: str | None,
+    netplan_content: dict[str, list[str]],
+) -> str | None:
+    if line.startswith("FILE:"):
+        new_netplan_file = line[5:]
+        netplan_content[new_netplan_file] = []
+        return new_netplan_file
+    if line == "ENDFILE":
+        return None
+    if netplan_file:
+        netplan_content[netplan_file].append(line)
+    return netplan_file
+
+
 def parse_output(alias: str, pub_ip: str, raw: str) -> NetworkAuditResult:
     result = _empty_result(alias, pub_ip)
     section: SectionName = None
@@ -140,44 +212,27 @@ def parse_output(alias: str, pub_ip: str, raw: str) -> NetworkAuditResult:
     private_ips: list[str] = []
 
     for line in raw.splitlines():
-        if line.startswith("HOSTNAME="):
-            result["hostname"] = line.split("=", 1)[1]
-        elif line.startswith("KERNEL="):
-            result["kernel"] = line.split("=", 1)[1]
-        elif line.startswith("OS="):
-            result["os"] = line.split("=", 1)[1]
-        elif line == "--- INTERFACES ---":
-            section = "iface"
-        elif line == "--- VLANS ---":
-            section = "vlans"
-        elif line == "--- VLAN IDS ---":
-            section = "vlan_ids"
-        elif line == "--- ROUTES ---":
-            section = "routes"
-        elif line == "--- NETPLAN ---":
-            section = "netplan"
-        elif line == "--- PRIVATE IPS ---":
-            section = "private"
-        elif line == "--- END ---":
-            section = None
-        elif section == "iface" and line.strip():
-            interfaces.append(line.strip())
-        elif section == "vlans" and line.strip() and line != "(none)":
-            vlans.append(line.strip())
-        elif section == "vlan_ids" and line.strip() and "no vlan ids" not in line:
-            vlan_ids.append(line.strip())
-        elif section == "routes" and line.strip():
-            routes.append(line.strip())
-        elif section == "netplan":
-            if line.startswith("FILE:"):
-                netplan_file = line[5:]
-                netplan_content[netplan_file] = []
-            elif line == "ENDFILE":
-                netplan_file = None
-            elif netplan_file:
-                netplan_content[netplan_file].append(line)
-        elif section == "private" and line.strip() and line != "(none)":
-            private_ips.append(line.strip())
+        if _parse_metadata_line(result, line):
+            continue
+
+        next_section = _detect_section(line)
+        if next_section is not None or line == "--- END ---":
+            section = next_section
+            continue
+
+        if section == "netplan":
+            netplan_file = _update_netplan(line, netplan_file, netplan_content)
+            continue
+
+        _append_section_line(
+            section,
+            line,
+            interfaces,
+            vlans,
+            vlan_ids,
+            routes,
+            private_ips,
+        )
 
     result["interfaces"] = interfaces
     result["vlans"] = vlans
@@ -205,60 +260,128 @@ def print_node_report(r: NetworkAuditResult) -> None:
         f"  |  Host: {r.get('hostname', '?')}{RESET}"
     )
 
-    # Interfețe
+    _print_interfaces(r)
+    _print_private_ips(r)
+    _print_vlan_ids(r)
+    _print_netplan(r)
+    _print_default_routes(r)
+
+
+def _print_interfaces(r: NetworkAuditResult) -> None:
     print(f"\n  {BOLD}Interfețe:{RESET}")
     for iface in r.get("interfaces", []):
         parts = iface.split()
         name = parts[0] if parts else iface
         state = parts[1] if len(parts) > 1 else ""
-        addrs = (
-            " ".join(parts[INTERFACE_ADDR_INDEX:])
-            if len(parts) > INTERFACE_ADDR_INDEX
-            else "(no IP)"
-        )
+        if len(parts) > INTERFACE_ADDR_INDEX:
+            addrs = " ".join(parts[INTERFACE_ADDR_INDEX:])
+        else:
+            addrs = "(no IP)"
         state_col = GREEN if state == "UP" else (YELLOW if state == "UNKNOWN" else RED)
         print(f"    {state_col}{name:<30}{RESET}  {state:<8}  {addrs}")
 
-    # IP-uri private (non-publice)
+
+def _print_private_ips(r: NetworkAuditResult) -> None:
     private = r.get("private_ips", [])
     if private:
         print(f"\n  {BOLD}{GREEN}IP-uri rețea privată (vSwitch candidat):{RESET}")
         for ip in private:
             print(f"    {GREEN}✓  {ip}{RESET}")
-    else:
-        print(f"\n  {YELLOW}  ⚠  Niciun IP privat detectat — vSwitch neconfigurat{RESET}")
+        return
+    print(f"\n  {YELLOW}  ⚠  Niciun IP privat detectat — vSwitch neconfigurat{RESET}")
 
-    # VLAN IDs
+
+def _print_vlan_ids(r: NetworkAuditResult) -> None:
     vids = r.get("vlan_ids", [])
-    if vids:
-        print(f"\n  {BOLD}VLAN IDs active:{RESET}")
-        for v in vids:
-            print(f"    {CYAN}{v}{RESET}")
+    if not vids:
+        return
+    print(f"\n  {BOLD}VLAN IDs active:{RESET}")
+    for vlan_id in vids:
+        print(f"    {CYAN}{vlan_id}{RESET}")
 
-    # Netplan
+
+def _print_netplan(r: NetworkAuditResult) -> None:
     netplan = r.get("netplan", {})
-    if netplan:
-        print(f"\n  {BOLD}Netplan configs:{RESET}")
-        for fname, lines in netplan.items():
-            short = fname.split("/")[-1]
-            content = "\n".join(lines)
-            # Evidențiază liniile VLAN
-            has_vlan = "vlan" in content.lower() or "id:" in content
-            marker = f" {CYAN}← conține VLAN{RESET}" if has_vlan else ""
-            print(f"    {DIM}{short}{RESET}{marker}")
-            for ln in lines:
-                stripped = ln.rstrip()
-                if not stripped:
-                    continue
-                color = CYAN if any(k in ln.lower() for k in ("vlan", "id:", "addresses")) else DIM
-                print(f"      {color}{stripped}{RESET}")
+    if not netplan:
+        return
+    print(f"\n  {BOLD}Netplan configs:{RESET}")
+    for fname, lines in netplan.items():
+        short = fname.split("/")[-1]
+        content = "\n".join(lines)
+        has_vlan = "vlan" in content.lower() or "id:" in content
+        marker = f" {CYAN}← conține VLAN{RESET}" if has_vlan else ""
+        print(f"    {DIM}{short}{RESET}{marker}")
+        for line in lines:
+            stripped = line.rstrip()
+            if not stripped:
+                continue
+            highlight_terms = ("vlan", "id:", "addresses")
+            color = CYAN if any(key in line.lower() for key in highlight_terms) else DIM
+            print(f"      {color}{stripped}{RESET}")
 
-    # Rute default
-    default_routes = [r2 for r2 in r.get("routes", []) if r2.startswith("default")]
-    if default_routes:
-        print(f"\n  {BOLD}Rute default:{RESET}")
-        for rt in default_routes:
-            print(f"    {DIM}{rt}{RESET}")
+
+def _print_default_routes(r: NetworkAuditResult) -> None:
+    default_routes = [route for route in r.get("routes", []) if route.startswith("default")]
+    if not default_routes:
+        return
+    print(f"\n  {BOLD}Rute default:{RESET}")
+    for route in default_routes:
+        print(f"    {DIM}{route}{RESET}")
+
+
+def _classify_result(result: NetworkAuditResult) -> str:
+    if result.get("error"):
+        return SUMMARY_ERROR
+    if result["private_ips"] or result["vlan_ids"]:
+        return SUMMARY_OK
+    return SUMMARY_MISSING
+
+
+def _collect_private_subnets(results: list[NetworkAuditResult]) -> list[str]:
+    subnets: set[str] = set()
+    for result in results:
+        for ip_cidr in result.get("private_ips", []):
+            parts = ip_cidr.split(".")
+            if len(parts) >= SUBNET_OCTET_COUNT:
+                subnets.add(f"{parts[0]}.{parts[1]}.{parts[2]}.x")
+    return sorted(subnets)
+
+
+def _group_results(
+    results: list[NetworkAuditResult],
+) -> tuple[list[VSwitchNodeSummary], list[str], list[str]]:
+    has_vswitch: list[VSwitchNodeSummary] = []
+    no_vswitch: list[str] = []
+    errors: list[str] = []
+
+    for result in results:
+        classification = _classify_result(result)
+        if classification == SUMMARY_ERROR:
+            errors.append(result["alias"])
+        elif classification == SUMMARY_OK:
+            has_vswitch.append((result["alias"], result["private_ips"], result["vlan_ids"]))
+        else:
+            no_vswitch.append(result["alias"])
+
+    return has_vswitch, no_vswitch, errors
+
+
+def _print_summary_group(title: str, color: str, values: list[str], marker: str) -> None:
+    if not values:
+        return
+    print(f"\n  {color}{BOLD}{title}{RESET}")
+    for value in values:
+        print(f"    {color}{marker}  {value}{RESET}")
+
+
+def _print_vswitch_group(has_vswitch: list[VSwitchNodeSummary]) -> None:
+    if not has_vswitch:
+        return
+    print(f"\n  {GREEN}{BOLD}Noduri cu rețea privată / VLAN configurată:{RESET}")
+    for alias, ips, vids in has_vswitch:
+        ip_str = ", ".join(ips) if ips else "(IP nealocat)"
+        vid_str = f"  VLAN: {', '.join(vids)}" if vids else ""
+        print(f"    {GREEN}✓  {alias:<12}  {ip_str}{vid_str}{RESET}")
 
 
 def print_summary(results: list[NetworkAuditResult]) -> None:
@@ -266,50 +389,19 @@ def print_summary(results: list[NetworkAuditResult]) -> None:
     print(f"{BOLD}  SUMAR VSWITCH CLUSTER{RESET}")
     print(f"{'═' * 60}")
 
-    has_vswitch: list[VSwitchNodeSummary] = []
-    no_vswitch: list[str] = []
-    errors: list[str] = []
-
-    for r in results:
-        if r.get("error"):
-            errors.append(r["alias"])
-        elif r["private_ips"] or r["vlan_ids"]:
-            has_vswitch.append((r["alias"], r["private_ips"], r["vlan_ids"]))
-        else:
-            no_vswitch.append(r["alias"])
-
-    if has_vswitch:
-        print(f"\n  {GREEN}{BOLD}Noduri cu rețea privată / VLAN configurată:{RESET}")
-        for alias, ips, vids in has_vswitch:
-            ip_str = ", ".join(ips) if ips else "(IP nealocat)"
-            vid_str = f"  VLAN: {', '.join(vids)}" if vids else ""
-            print(f"    {GREEN}✓  {alias:<12}  {ip_str}{vid_str}{RESET}")
-
-    if no_vswitch:
-        print(f"\n  {YELLOW}{BOLD}Noduri FĂRĂ vSwitch/IP privat:{RESET}")
-        for alias in no_vswitch:
-            print(f"    {YELLOW}⚠  {alias}{RESET}")
-
-    if errors:
-        print(f"\n  {RED}{BOLD}Noduri inaccesibile:{RESET}")
-        for alias in errors:
-            print(f"    {RED}✗  {alias}{RESET}")
+    has_vswitch, no_vswitch, errors = _group_results(results)
+    _print_vswitch_group(has_vswitch)
+    _print_summary_group("Noduri FĂRĂ vSwitch/IP privat:", YELLOW, no_vswitch, "⚠")
+    _print_summary_group("Noduri inaccesibile:", RED, errors, "✗")
 
     # Detectăm VLAN ID comun și subnet comun
-    all_private: list[str] = []
-    for r in results:
-        all_private.extend(r.get("private_ips", []))
     all_vids: list[str] = []
     for r in results:
         all_vids.extend(r.get("vlan_ids", []))
 
-    if all_private:
-        subnets: set[str] = set()
-        for ip_cidr in all_private:
-            parts = ip_cidr.split(".")
-            if len(parts) >= SUBNET_OCTET_COUNT:
-                subnets.add(f"{parts[0]}.{parts[1]}.{parts[2]}.x")
-        print(f"\n  {BOLD}Subnete private detectate:{RESET} {', '.join(sorted(subnets))}")
+    private_subnets = _collect_private_subnets(results)
+    if private_subnets:
+        print(f"\n  {BOLD}Subnete private detectate:{RESET} {', '.join(private_subnets)}")
 
     if all_vids:
         vids_uniq = sorted(set(all_vids))
