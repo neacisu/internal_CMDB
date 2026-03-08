@@ -1,3 +1,16 @@
+---
+id: PLAN-002
+title: Implementare Infrastructură AI Self-Hosted (Hetzner bare-metal, vLLM)
+doc_class: runbook
+domain: ai-infrastructure
+version: "1.0"
+status: approved
+created: 2026-03-08
+updated: 2026-03-08
+owner: platform_architecture_lead
+tags: [plan, ai-infrastructure, vllm, hetzner, wave-1]
+---
+
 PROMPT DE IMPLEMENTARE ENTERPRISE-GRADE: INFRASTRUCTURĂ AI LOCALĂ (MARTIE 2026)CĂTRE: Agent AI de Autonomizare / Senior DevOps EngineerOBIECTIV: Trecerea serverului bare-metal (aflat în Hetzner Rescue Mode) într-un nod de inferență AI de înaltă performanță, integrat în Hetzner vSwitch, rulând simultan un model avansat de reasoning (Qwen3.5-QwQ-32B) și Qwen3.5-9B via vLLM.DATA CURENTĂ: Martie 2026FAZA 0: CONTEXT ARHITECTURAL ȘI DECIZII TEHNICE (BRIEFING PENTRU AGENT)Agent, înainte de a rula orice comandă, trebuie să asimilezi următorul context tehnologic și constatările supercritice care au fundamentat achiziția acestui hardware:Hardware Țintă (Hetzner Auction ID: 2936089):CPU: Intel Xeon Gold 5412U (24 Cores / 48 Threads)RAM: 256 GB DDR5 ECC (8 x 32GB)Storage: 2 x 1.92 TB U.2 NVMe Datacenter SSDGPU: 1 x NVIDIA RTX 6000 Ada Generation (48 GB GDDR6 ECC VRAM)Rețea Publică: 1 Gbit (Locație: NBG1-DC6)Rețea Internă (vSwitch): Serverul face parte dintr-un cluster privat conectat prin Hetzner vSwitch. Resursele AI trebuie expuse doar către acest subnet intern.Politică de Zero-Impact (Atașare la Clusterul Existent):REGULĂ STRICTĂ: Orice configurare de rețea, sistem sau firewall efectuată pe acest server trebuie să fie strict locală.Scopul este anexarea acestui nod la clusterul existent fără a perturba în niciun fel rutele, gateway-urile, politicile DNS sau serviciile celorlalte mașini.Nu se vor emite broadcast-uri nedorite, nu se va rula niciun serviciu DHCP/DNS pe interfața vSwitch și se va evita orice conflict de IP. Serverul este doar un simplu "worker" (furnizor de API-uri AI) pentru restul rețelei.Topologia Modelelor AI (Seria Qwen 3.5 / R1 Distill - Martie 2026):S-a renunțat la rularea Kimi K2.5 (1T parametri, MoE) din cauza latenței severe.Decizia Enterprise: Rularea unui setup dual pe același GPU.Model Principal (Heavy Duty / Reasoning): Qwen3.5-QwQ-32B (varianta nativă de reasoning a seriei 3.5) sau DeepSeek-R1-Distill-Qwen-32B. Va utiliza ~20-24 GB VRAM (în format FP8 / AWQ).Model Secundar (Fast Responder): Qwen3.5-9B-Instruct. Va utiliza ~8-10 GB VRAM. Lăsând restul de ~14-20 GB pentru context vizual mare (128K+) și KV Cache.Standarde de Implementare: Se va folosi Ubuntu 24.04 LTS, drivere NVIDIA Enterprise (550+), CUDA Toolkit SOTA, vLLM ca backend de inferență (optimizat cu FlashAttention-3) și Open WebUI.FAZA 1: BARE-METAL PROVISIONING (HETZNER RESCUE MODE)Agent, ești conectat prin SSH în Hetzner Rescue Mode (Debian-based RAM disk). Execută următoarele pentru a instala OS-ul pe disk-urile fizice.1.1. Configurarea installimageVom folosi un setup RAID 1 (Software) pentru redundanță enterprise pe cele două unități NVMe U.2.Crează un fișier de configurare /install.conf:cat << 'EOF' > /install.conf
 DRIVE1 /dev/nvme0n1
 DRIVE2 /dev/nvme1n1

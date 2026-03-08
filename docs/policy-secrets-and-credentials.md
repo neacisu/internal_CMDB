@@ -1,3 +1,16 @@
+---
+id: POL-002
+title: internalCMDB — Secrets, Credentials & Trust Policy
+doc_class: policy_pack
+domain: platform-foundations
+version: "1.0"
+status: approved
+created: 2026-03-08
+updated: 2026-03-08
+owner: security_and_policy_owner
+tags: [policy, secrets, credentials, trust, wave-1]
+---
+
 # internalCMDB — Secrets, Credentials & Trust Policy
 
 **Version**: 1.0

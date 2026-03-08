@@ -1,3 +1,16 @@
+---
+id: POL-001
+title: internalCMDB — RTO / RPO & Business Continuity Policy
+doc_class: policy_pack
+domain: platform-foundations
+version: "1.0"
+status: approved
+created: 2026-03-08
+updated: 2026-03-08
+owner: sre_observability_owner
+tags: [policy, rto, rpo, business-continuity, wave-1]
+---
+
 # internalCMDB — RTO / RPO & Business Continuity Policy
 
 **Version**: 1.0

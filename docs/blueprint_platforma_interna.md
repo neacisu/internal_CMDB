@@ -1,4 +1,17 @@
-# Blueprint executiv enterprise pentru platforma internă de knowledge, documentare infrastructurală și implementare de aplicații cu agenți AI
+---
+id: BLUEPRINT-001
+title: Blueprint executiv enterprise — Platforma Internă de Knowledge, Documentare și Agenți AI
+doc_class: arch_view_pack
+domain: platform-foundations
+version: "1.0"
+status: approved
+created: 2026-03-08
+updated: 2026-03-08
+owner: platform_architecture_lead
+tags: [blueprint, architecture, enterprise, wave-1]
+---
+
+# Blueprint executiv enterprise pentru platforma internă
 
 ## 1. Rezumat executiv
 

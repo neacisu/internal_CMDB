@@ -16,7 +16,7 @@ repos:
     rev: v1.17.1
     hooks:
       - id: mypy
-        additional_dependencies: ["types-setuptools>=80.9.0.20250822"]
+        additional_dependencies: ["pyyaml>=6.0", "types-PyYAML>=6.0", "types-setuptools>=80.9.0.20250822"]
   - repo: local
     hooks:
       - id: gitleaks-pre-push

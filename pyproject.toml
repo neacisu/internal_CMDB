@@ -16,6 +16,7 @@ dependencies = [
   "alembic>=1.14",
   "psycopg[binary]>=3.2",
   "python-dotenv>=1.0",
+  "pyyaml>=6.0",
   "sqlalchemy>=2.0",
 ]
 
@@ -29,6 +30,7 @@ dev = [
   "pytest>=8.4.2",
   "pytest-cov>=7.0.0",
   "ruff>=0.12.12",
+  "types-PyYAML>=6.0",
   "types-setuptools>=80.9.0.20250822"
 ]
 

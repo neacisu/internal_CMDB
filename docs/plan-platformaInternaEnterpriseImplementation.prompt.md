@@ -1,6 +1,16 @@
 ---
 name: planPlatformaInternaEnterpriseImplementation
 description: Prompt de rafinare pentru planul enterprise al platformei interne, cu metadata structurata completa pastrata in corpul documentului.
+id: PLAN-001
+title: internalCMDB — Enterprise Implementation Plan (Wave-1 Baseline)
+doc_class: policy_pack
+domain: platform-foundations
+version: "5.0"
+status: approved
+created: 2026-03-08
+updated: 2026-03-08
+owner: platform_program_manager
+tags: [plan, wave-1, implementation, enterprise]
 ---
 
 ## Structured Plan Metadata
@@ -774,7 +784,7 @@ program_epics:
       - sustained-operation-declaration-approved-by-executive-sponsor
 program_milestones:
   - id: m0-1
-    status: in-progress
+    status: completed
     epic_id: epic-0
     name: governance-baseline-frozen
     deliverables:
@@ -783,7 +793,7 @@ program_milestones:
       - escalation-and-exception-model
     acceptance: core decisions ownership and escalation rules are approved and can be used without reinterpretation by downstream epics
   - id: m0-2
-    status: in-progress
+    status: completed
     epic_id: epic-0
     name: execution-governance-operationalized
     deliverables:
@@ -792,7 +802,7 @@ program_milestones:
       - approved-wave-1-sequencing-rules
     acceptance: program execution rules are explicit audit-first and stable enough to gate all later work packages
   - id: m1-1
-    status: in-progress
+    status: completed
     epic_id: epic-1
     name: taxonomy-and-metadata-contract-approved
     deliverables:
@@ -801,7 +811,7 @@ program_milestones:
       - naming-and-linking-rules
     acceptance: canonical document structure can be validated automatically and supports registry binding retrieval filtering and governance review
   - id: m1-2
-    status: in-progress
+    status: completed
     epic_id: epic-1
     name: canonical-template-pack-published
     deliverables:
@@ -1388,7 +1398,7 @@ program_sprints:
     milestone_ids: [m16-1, m16-2, m16-3]
 program_tasks:
   - id: pt-001
-    status: in-progress
+    status: completed
     epic_id: epic-0
     sprint_id: sprint-1
     milestone_id: m0-1
@@ -1396,7 +1406,7 @@ program_tasks:
     deliverable: approved ADR set covering truth model system-of-record retrieval ordering write approval and rollout discipline
     verification: ADR review completed by architecture board with explicit accepted and rejected alternatives
   - id: pt-002
-    status: in-progress
+    status: completed
     epic_id: epic-0
     sprint_id: sprint-1
     milestone_id: m0-1
@@ -1404,7 +1414,7 @@ program_tasks:
     deliverable: ownership matrix by platform role with named approval authority requirements and escalation paths
     verification: ownership coverage review confirms no critical capability lacks a responsible role or approver class
   - id: pt-003
-    status: in-progress
+    status: completed
     epic_id: epic-0
     sprint_id: sprint-2
     milestone_id: m0-2
@@ -1412,7 +1422,7 @@ program_tasks:
     deliverable: executable governance baseline for handoffs verification and status progression
     verification: downstream epics can reference stable execution rules without adding local policy exceptions
   - id: pt-004
-    status: in-progress
+    status: completed
     epic_id: epic-1
     sprint_id: sprint-1
     milestone_id: m1-1
@@ -1420,7 +1430,7 @@ program_tasks:
     deliverable: canonical taxonomy for infrastructure shared services applications governance and runbook artifacts
     verification: each document class has identifier owner status and registry-binding semantics reviewable by rule
   - id: pt-005
-    status: in-progress
+    status: completed
     epic_id: epic-1
     sprint_id: sprint-1
     milestone_id: m1-1
@@ -1428,7 +1438,7 @@ program_tasks:
     deliverable: versioned metadata contract with mandatory recommended and optional fields plus linking grammar
     verification: metadata validation succeeds on representative real wave-1 documents and rejects malformed bindings
   - id: pt-006
-    status: in-progress
+    status: completed
     epic_id: epic-1
     sprint_id: sprint-2
     milestone_id: m1-2
@@ -2050,6 +2060,7 @@ program_to_effective_traceability:
 Acest document este artefactul de executie al programului, nu blueprint-ul conceptual. Blueprint-ul defineste arhitectura tinta si principiile. Planul de fata defineste ordinea de implementare, responsabilitatile, intrarile, iesirile, criteriile de intrare si iesire, regulile pentru agenti si modul in care se verifica ca implementarea ramane curata, completa si fara presupuneri.
 
 Acest plan trebuie folosit astfel:
+
 - ca referinta program-level pentru ordonarea lucrului pe epics, milestones, sprints si tasks;
 - ca document de handoff pentru agenti care implementeaza fiecare pachet de lucru;
 - ca baza pentru aprobari, pentru review-uri de progres si pentru decizii de go or no-go;
@@ -2077,6 +2088,7 @@ Orice agent care primeste un task derivat din acest plan trebuie sa respecte sim
 ## Content: Program Execution Model
 
 Modelul de executie este secvential in dependinte, dar paralelizabil in interiorul etapelor care nu isi invalideaza reciproc rezultatele. Regulile de ordonare sunt:
+
 - governance si ADR-urile blocheaza tot ce presupune alegeri structurale persistente;
 - taxonomy si metadata blocheaza template packs, registry bindings si retrieval contracts;
 - schema registry blocheaza ingestia, query contracts si reconciliation-ul;
@@ -2088,6 +2100,7 @@ Modelul de executie este secvential in dependinte, dar paralelizabil in interior
 ## Content: What Clean Implementation Means in This Program
 
 Implementare curata si completa inseamna urmatoarele:
+
 - fiecare strat arhitectural are contracte explicite, nu dependinte implicite intre componente;
 - fiecare entitate si document important are identificatori stabili, ownership si provenienta;
 - registry-ul nu devine un depozit generic de JSON fara semantica si fara constrangeri;
@@ -2103,24 +2116,28 @@ Implementare curata si completa inseamna urmatoarele:
 Scopul acestui epic este sa elimine ambiguitatea structurala. Niciun agent nu trebuie sa inceapa design de schema, design de retrieval sau fluxuri de executie pana cand deciziile de baza nu sunt formulate in limbaj de decizie, nu doar in limbaj narativ.
 
 Intrari obligatorii:
+
 - blueprint-ul complet;
 - inventarul activelor existente din repo;
 - lista intrebarilor arhitecturale deschise;
 - decizia confirmata ca abordarea este enterprise-first, cu embeddings locale si cu aprobare pentru orice scriere.
 
 Iesiri obligatorii:
+
 - set de ADR-uri scurte si neambigue;
 - matrice de ownership pe roluri;
 - model de aprobare si escaladare;
 - regula de gestionare a conflictelor canonical vs observed.
 
 Instrucțiuni pentru agenti:
+
 - nu rescrie blueprint-ul; extrage deciziile care trebuie inghetate in ADR-uri;
 - nu atribui nume de persoane daca nu exista; foloseste roluri si marcheaza explicit ca rolurile trebuie numite de sponsor;
 - daca gasesti decizii contradictorii intre documente, nu alege singur; emite conflict record;
 - fiecare ADR trebuie sa includa motivatia, alternativa respinsa si impactul asupra epics-urilor dependente.
 
 Criteriu real de terminare:
+
 - un alt agent poate incepe epic-1 si epic-2 fara sa reinventeze regulile de adevar, ownership sau aprobare.
 
 ### Epic 1: Canonical Sources and Document Governance
@@ -2128,24 +2145,28 @@ Criteriu real de terminare:
 Acest epic transforma documentatia din continut liber in suprafata executabila. Fara el, nici registry-ul, nici retrieval-ul nu au o baza disciplinata.
 
 Ce trebuie produs in mod concret:
+
 - clase de documente pentru infrastructura, shared services, aplicatii, governance, runbooks si policies;
 - frontmatter standardizat pentru ownership, status, identifiers, relations, dependencies, approval state, provenance bindings;
 - conventii de naming si linking care permit traversarea determinista;
 - template packs minimale dar suficiente pentru adoptie operationala.
 
 Instrucțiuni pentru agenti:
+
 - proiecteaza taxonomia pentru utilitate operationala, nu pentru eleganta teoretica;
 - fiecare camp din metadata schema trebuie justificat printr-un consumer real: registry binding, retrieval filter, governance review, reconciliation sau audit;
 - evita template-urile gigantice; defineste mandatory, recommended si optional fields distinct;
 - valideaza pe documente reale din wave-1, nu doar pe exemple artificiale.
 
 Erori de evitat:
+
 - crearea unei taxonomii prea fine care obliga documente greu de mentinut;
 - lipsa unui identifier stabil per document si per entity binding;
 - campuri de metadata care nu pot fi validate automat;
 - template-uri care descriu prea putin pentru runtime dependencies si operational ownership.
 
 Criteriu real de terminare:
+
 - orice document nou din wave-1 poate fi creat, validat, legat in registry si interogat de retrieval fara interpretari ad-hoc.
 
 ### Epic 2: Operational Registry and Data Model
@@ -2153,6 +2174,7 @@ Criteriu real de terminare:
 Acesta este nucleul operational al programului. Scopul sau nu este sa mute adevarul din Git in baza de date, ci sa creeze un model queryable, coerent si auditabil al entitatilor, relatiilor si starilor relevante.
 
 Ce trebuie modelat explicit:
+
 - identitatea entitatilor infrastructurale si aplicative;
 - relatii structurale si dependinte operationale;
 - separarea starilor canonice, observate si dorite;
@@ -2160,6 +2182,7 @@ Ce trebuie modelat explicit:
 - legatura dintre documente canonice si entitati registry.
 
 Instrucțiuni pentru agenti:
+
 - nu accepta tabele generice care muta toata semantica in JSONB daca relatia este stabila si importanta;
 - foloseste JSONB pentru extensibilitate, nu pentru a evita modelarea;
 - defineste clar cheile naturale si cheile surrogate acolo unde este necesar;
@@ -2167,11 +2190,13 @@ Instrucțiuni pentru agenti:
 - include de la inceput coloane si structuri pentru provenienta si timestamps de observatie, nu ca post-scriptum.
 
 Verificari obligatorii:
+
 - schema review pe exemple reale din clusterul curent;
 - validarea faptului ca acelasi model suporta extindere la mai multe clustere;
 - verificarea faptului ca observatiile runtime nu pot suprascrie fara control definitiile canonice.
 
 Criteriu real de terminare:
+
 - query-urile esentiale pentru retrieval, reconciliation si audit se pot formula fara logica ascunsa in cod procedural excesiv.
 
 ### Epic 3: Discovery, Ingestion and Reconciliation
@@ -2179,6 +2204,7 @@ Criteriu real de terminare:
 Acest epic conecteaza platforma la realitatea infrastructurii. Fara el, platforma ramane o documentatie frumoasa dar oarba operational.
 
 Ce trebuie produs:
+
 - contracte de colectare pe surse prioritare;
 - reguli de normalizare si mapping la entitati registry;
 - reguli de confidence si provenance;
@@ -2186,6 +2212,7 @@ Ce trebuie produs:
 - model de drift si severity.
 
 Instrucțiuni pentru agenti:
+
 - trateaza scripturile existente de audit ca material de analiza si reutilizare, nu ca arhitectura finala;
 - normalizeaza denumiri, enum-uri, unitati de masura si identificatori inainte de persistenta;
 - capteaza provenance la nivel suficient: sursa, timestamp, collector version, host sau endpoint, eventual command fingerprint;
@@ -2193,12 +2220,14 @@ Instrucțiuni pentru agenti:
 - pentru drift, separa mismatches informative de mismatches care trebuie sa blocheze change flows.
 
 Verificari obligatorii:
+
 - sample ingestion pe surse reale din clusterul curent;
 - cazuri de drift simulate si reale;
 - freshness measurements pentru fiecare collector relevant;
 - audit review pe modul in care provenance este pastrat end-to-end.
 
 Criteriu real de terminare:
+
 - platforma poate spune cu evidenta ce crede despre starea curenta, de unde stie acel lucru si cat de proaspata este informatia.
 
 ### Epic 4: Retrieval and Evidence Brokerage
@@ -2206,6 +2235,7 @@ Criteriu real de terminare:
 Acesta este mecanismul prin care agentii primesc context util fara sa fie supra-alimentati cu documente brute. Este esential ca retrieval-ul sa fie intai determinist, apoi semantic, si intotdeauna bounded.
 
 Ce trebuie produs:
+
 - catalog de task types suportate;
 - contracte de evidence pack per task type;
 - query-uri structurate si lexical search pe subseturi aprobate;
@@ -2213,6 +2243,7 @@ Ce trebuie produs:
 - politici de token budget si truncation.
 
 Instrucțiuni pentru agenti:
+
 - defineste task types pornind de la lucrari reale: analiza infrastructura, modificare config, definire aplicatie, troubleshooting bounded, deploy controlat;
 - pentru fiecare task type, specifica exact ce dovezi sunt mandatory, recommended si disallowed;
 - in evidence pack, separa clar facts, constraints, unresolved gaps, candidate references si approval state;
@@ -2220,11 +2251,13 @@ Instrucțiuni pentru agenti:
 - proiecteaza pachete compacte, cu rationale de includere pentru fiecare componenta de context.
 
 Verificari obligatorii:
+
 - testare pe task-uri reale din wave-1;
 - comparatie intre context pack mare si context pack bounded pentru calitate si cost;
 - verificarea faptului ca provenance links se pastreaza pana in outputul folosit de agent.
 
 Criteriu real de terminare:
+
 - un agent poate executa un task suportat folosind un context pack mic, justificat si complet din punct de vedere al constrangerilor critice.
 
 ### Epic 5: Agent Control Plane, Policy and Approvals
@@ -2232,6 +2265,7 @@ Criteriu real de terminare:
 Acesta este stratul care transforma platforma din knowledge system intr-un execution system sigur. Fara el, agentii ar avea prea multa libertate si prea putina trasabilitate.
 
 Ce trebuie produs:
+
 - task class policy matrix;
 - clasificare de tool-uri si actiuni pe risc;
 - action contracts si approval workflow;
@@ -2239,6 +2273,7 @@ Ce trebuie produs:
 - run audit model.
 
 Instrucțiuni pentru agenti:
+
 - clasifica task-urile in functie de impact: read-only analysis, bounded write to repo, bounded runtime change, high-risk infrastructure change;
 - pentru fiecare clasa, defineste clar ce tool-uri sunt permise, ce approvals sunt necesare, ce evidence este mandatory si ce verificare post-executie este obligatorie;
 - nu lasa niciun write path in afara action broker-ului, nici macar pentru convenience operational;
@@ -2246,12 +2281,14 @@ Instrucțiuni pentru agenti:
 - auditul de run trebuie sa poata raspunde ulterior la intrebarea: cine a cerut, ce context a fost folosit, ce reguli s-au aplicat, ce s-a schimbat si cum s-a verificat.
 
 Verificari obligatorii:
+
 - teste pentru deny paths si expired approvals;
 - teste pentru audit completeness;
 - demonstratie ca read-only discovery poate rula fara aprobare dar cu audit complet;
 - demonstratie ca write actions sunt blocate in absenta aprobarii corespunzatoare.
 
 Criteriu real de terminare:
+
 - un agent nu mai poate executa operatii suportate in afara unui cadru controlat, auditat si aprobat.
 
 ### Epic 6: Delivery Control and Pilot Application Flow
@@ -2259,6 +2296,7 @@ Criteriu real de terminare:
 Acest epic trebuie sa dovedeasca faptul ca platforma produce valoare practica. Pilotul nu este demo; este validarea ca definitiile, retrieval-ul, politicile si broker-ele pot livra o aplicatie noua intr-un flux disciplinat.
 
 Ce trebuie produs:
+
 - selectie de pilot bounded;
 - application definition pack complet;
 - maparea dependintelor catre shared services si infrastructura;
@@ -2266,18 +2304,21 @@ Ce trebuie produs:
 - dovada de repetabilitate.
 
 Instrucțiuni pentru agenti:
+
 - alege pilotul pentru valoare de validare, nu pentru prestigiu sau complexitate maxima;
 - pack-ul aplicatiei trebuie sa includa runtime requirements, dependencies, ownership, operational checks, rollback expectations si acceptance rules;
 - orice pas manual ramas trebuie declarat ca gap al platformei, nu mascat;
 - comparatia dintre prima rulare si a doua rulare este obligatorie pentru a detecta dependinte ascunse sau drift de mediu.
 
 Verificari obligatorii:
+
 - aprobarea pachetului aplicatiei de catre owner-ul de domeniu;
 - audit complet al intregului flux;
 - raport de delta intre prima si a doua rulare;
 - verificare functionala post-deploy si verificare a contractelor dependente.
 
 Criteriu real de terminare:
+
 - platforma poate produce si verifica repetabil un rezultat end-to-end pe un caz real, fara improvizatii ascunse.
 
 ### Epic 7: Observability, Audit, Retention and Rollout
@@ -2287,6 +2328,7 @@ Acest epic inchide bucla operationala. Fara el, programul nu poate spune daca pl
 Grafana shared de pe `orchestrator` este suprafata operationala potrivita pentru dashboard-uri, consum de alerte si vizibilitate comuna de operare, dar nu trebuie tratata ca sursa canonica unica pentru definitiile de KPI/SLO, retention sau runbooks. Acestea trebuie sa ramana versionate si aprobate in plan, Git si politicile asociate, apoi proiectate disciplinat in suprafetele shared de observabilitate.
 
 Ce trebuie produs:
+
 - contract aprobat de semnale pentru metrics, logs, audit events si health queries derivate;
 - set de KPI-uri si SLO-uri;
 - dashboards shared in Grafana si alerting cu routing si escaladare testate;
@@ -2296,6 +2338,7 @@ Ce trebuie produs:
 - readiness review si criterii de wave-2.
 
 Instrucțiuni pentru agenti:
+
 - nu considera complet un dashboard daca nu are owner, semnal sursa clar, praguri utile si legatura catre raspuns operational;
 - trateaza contractele de semnal ca parte a produsului, nu ca detaliu de implementare lasat la latitudinea echipelor;
 - defineste KPI-uri care ajuta decizii, nu doar raportare decorativa;
@@ -2305,6 +2348,7 @@ Instrucțiuni pentru agenti:
 - readiness review trebuie sa fie bazat pe evidenta acumulata, nu pe optimism privind urmatorul val.
 
 Verificari obligatorii:
+
 - inventar aprobat de semnale si owneri pentru suprafetele critice din wave-1;
 - exercitii de alerting pe failure modes relevante;
 - testare a routing-ului si escaladarii pentru alertele critice, nu doar randare de dashboard-uri;
@@ -2314,6 +2358,7 @@ Verificari obligatorii:
 - gate review formal pentru extindere.
 
 Criteriu real de terminare:
+
 - exista o baza defensibila pentru decizia de a extinde platforma fara a-i rupe disciplina operationala, iar suprafata shared de observabilitate demonstreaza operabilitate reala, nu doar intentie documentata.
 
 ### Epic 8: Business Continuity, Backup, Restore and Disaster Recovery
@@ -2321,6 +2366,7 @@ Criteriu real de terminare:
 Acest epic transforma persistenta si backup-ul din presupunere operationala in capacitate verificata de recuperare. Fara el, existenta unor directoare de backup sau a unui volum persistent nu demonstreaza ca platforma poate reveni controlat dupa eroare, corupere sau pierdere de host.
 
 Ce trebuie produs:
+
 - obiective aprobate de RTO si RPO;
 - postura explicita HA versus single-instance tolerated pentru `internalCMDB`;
 - proceduri de backup si restore pentru baza de date si artefactele critice de audit;
@@ -2328,18 +2374,21 @@ Ce trebuie produs:
 - registru de remedieri rezultate din exercitii de recuperare.
 
 Instrucțiuni pentru agenti:
+
 - nu confunda existenta `backup_path` cu dovada de recoverability;
 - trateaza datele registry si artefactele de audit ca suprafete de recuperare diferite, cu cerinte diferite de validare;
 - declara explicit daca postura aprobata este single-instance acceptata sau daca exista cerinta de HA; nu lasa aceasta decizie implicita;
 - orice exercitiu de restore trebuie sa verifice nu doar revenirea procesului, ci si integritatea datelor, a migrarilor si a suprafetelor minime de query.
 
 Verificari obligatorii:
+
 - aprobare explicita pentru RTO/RPO si pentru postura de disponibilitate;
 - backup testat cu restore efectiv intr-un context controlat;
 - exercitiu de disaster simulation cu findings documentate;
 - verificare ca runbooks de recovery sunt suficient de clare pentru a fi executate fara cunoastere tacita.
 
 Criteriu real de terminare:
+
 - platforma poate demonstra cu evidenta ca isi poate recupera datele si artefactele critice in postura aprobata, nu doar ca le poate copia undeva.
 
 ### Epic 9: Secrets, PKI and Trust Management
@@ -2347,6 +2396,7 @@ Criteriu real de terminare:
 Acest epic inchide partea de incredere si credentiale. Fara el, control plane-ul si accesul la runtime raman vulnerabile la exceptii prelungite, credentiale netransparente si trust model implicit.
 
 Ce trebuie produs:
+
 - model aprobat de secret storage si boundary de acces;
 - separare de roluri pentru credentiale privilegiate;
 - rotatie a credentialelor bootstrap si reducerea exceptiilor temporare;
@@ -2354,18 +2404,21 @@ Ce trebuie produs:
 - audit trail pentru accesul privilegiat la secrete si materiale de incredere.
 
 Instrucțiuni pentru agenti:
+
 - nu pastra postura `temporary-no-password-exception` mai mult decat este aprobat explicit;
 - trateaza certificatele si cheile private ca artefacte guvernate, nu ca simple fisiere de configuratie;
 - nu propune secret handling nou in afara boundary-ului aprobat doar pentru convenience operational;
 - orice rotatie trebuie sa includa impact analysis pe serviciile dependente si cale de recovery in caz de esec.
 
 Verificari obligatorii:
+
 - review de access boundary pentru fiecare clasa de secret critic;
 - dovada ca bootstrap credentials au fost eliminate sau constrainse;
 - testare pentru renewal sau replacement pe cel putin un flux TLS relevant;
 - verificare ca accesul privilegiat lasa urme de audit suficiente pentru review ulterior.
 
 Criteriu real de terminare:
+
 - accesul privilegiat si increderea TLS nu mai depind de exceptii tacite, ci de un model explicit, rotabil si auditabil.
 
 ### Epic 10: Supply Chain Security and Release Integrity
@@ -2373,6 +2426,7 @@ Criteriu real de terminare:
 Acest epic controleaza integritatea componentelor software care intra in platforma. Fara el, runtime-ul poate fi corect functional dar indefensabil din punct de vedere al provenientei, licentierii si riscului third-party.
 
 Ce trebuie produs:
+
 - inventar de dependinte, imagini si surse third-party;
 - SBOM baseline pentru componentele principale;
 - dependency scanning si image scanning cu gates reviewable;
@@ -2380,18 +2434,21 @@ Ce trebuie produs:
 - baseline de license review pentru artefactele promovate.
 
 Instrucțiuni pentru agenti:
+
 - nu limita integritatea supply chain doar la imagini container; include si toolchain-ul Python, librariile si artefactele de build;
 - orice dependency critic neinventariat trebuie tratat ca gap, nu ca detaliu de implementare ulterior;
 - nu promova artefacte ca fiind curate daca rezultatele de scanare nu sunt evaluate conform unei politici explicite;
 - provenance trebuie sa lege artefactul de sursa si de decizia de promovare, nu doar de build-ul local.
 
 Verificari obligatorii:
+
 - inventar review pentru componentele si dependintele majore;
 - scanari efective cu rezultate pastrate pentru audit;
 - policy review pentru attestation sau signing;
 - verificare ca release artifacts promovate pot fi urmarite pana la sursa si evaluarea lor de risc.
 
 Criteriu real de terminare:
+
 - platforma poate demonstra de unde provin artefactele sale principale, ce risc software cunoscut au si de ce au fost acceptate in runtime.
 
 ### Epic 11: Environment Promotion and Release Management
@@ -2399,6 +2456,7 @@ Criteriu real de terminare:
 Acest epic standardizeaza trecerea schimbarilor intre medii si clase de release. Fara el, aprobarea si rollback-ul raman dependente de conventii locale si de memorie umana, nu de un contract operational clar.
 
 Ce trebuie produs:
+
 - model aprobat de environment classes si promotion gates;
 - release approval matrix pe clase de schimbare;
 - rollback contracts si migration recovery playbooks;
@@ -2406,18 +2464,21 @@ Ce trebuie produs:
 - reguli pentru go, hold si rollback in functie de semnalul operational.
 
 Instrucțiuni pentru agenti:
+
 - nu presupune existenta unui traseu clasic dev-test-prod daca modelul real de medii este diferit; documenteaza ce exista cu adevarat;
 - trateaza migrarile bazei de date ca schimbari cu contract de rollback sau recovery explicit, nu ca simple deploy-uri de cod;
 - promotion gate-urile trebuie sa fie corelate cu clasa de risc si cu suprafata afectata;
 - post-release verification trebuie sa fie parte din release contract, nu activitate optionala dupa deploy.
 
 Verificari obligatorii:
+
 - review al claselor de environment si al gates-urilor de promovare;
 - drill sau simulare pentru migration recovery si rollback;
 - verificare ca orice release promovat are evidence chain complet;
 - verificare ca deciziile de release sunt reconstructibile pentru audit sau incident review.
 
 Criteriu real de terminare:
+
 - schimbarile pot fi promovate, blocate sau retrase printr-un model explicit si auditabil, nu prin bune intentii locale.
 
 ### Epic 12: LLM Runtime, Model Registry and Evaluation Governance
@@ -2425,6 +2486,7 @@ Criteriu real de terminare:
 Acest epic inchide operational partea de runtime pentru modelele self-hosted folosite de agenti. Fara el, control plane-ul si retrieval-ul pot exista, dar selectia, rutarea si evaluarea modelelor raman prea informale pentru o platforma enterprise disciplinata.
 
 Ce trebuie produs:
+
 - model serving stack aprobat pentru clasele relevante de modele;
 - model registry si policy de activare/dezactivare a modelelor;
 - routing rules si fallback strategy pe task type sau task class;
@@ -2432,18 +2494,21 @@ Ce trebuie produs:
 - guardrails de latenta, cost si safety pentru comportamentul runtime.
 
 Instrucțiuni pentru agenti:
+
 - nu trata modelul activ ca detaliu de infrastructura interschimbabil fara impact asupra rezultatului; model choice este parte din governance;
 - benchmark-urile trebuie sa fie legate de task types aprobate, nu de exemple arbitrare convenabile;
 - fallback-ul trebuie sa degradeze controlat, nu sa schimbe tăcut semantica taskului sau nivelul de siguranta;
 - orice red-team sau safety check trebuie sa fie legat de suprafetele reale de risc ale agentilor, nu doar de benchmark-uri generice de laborator.
 
 Verificari obligatorii:
+
 - review pentru model registry si routing policy;
 - rulare repetabila a evaluation harness pe task types suportate;
 - verificare pentru fallback behavior sub esec, overload sau cost pressure;
 - validare ca guardrails de safety si cost sunt aplicabile operational, nu doar declarative.
 
 Criteriu real de terminare:
+
 - platforma poate justifica ce modele ruleaza, pentru ce taskuri, pe baza caror evaluari si cum se comporta sub esec sau degradare.
 
 ### Epic 13: Capacity, Performance and Resilience Engineering
@@ -2451,6 +2516,7 @@ Criteriu real de terminare:
 Acest epic cuantifica limitele platformei. Fara el, scale-out-ul, wave-2 si claims despre readiness raman nefundamentate in date de performanta, cost si comportament la esec.
 
 Ce trebuie produs:
+
 - model de capacitate pentru PostgreSQL, vector storage si brokeri;
 - baseline de cost si crestere a datelor;
 - load tests si stress tests pentru suprafetele critice;
@@ -2458,18 +2524,21 @@ Ce trebuie produs:
 - registru de remedieri pentru problemele de performanta si rezilienta descoperite.
 
 Instrucțiuni pentru agenti:
+
 - nu reduce capacity planning la CPU si RAM; include cresterea de date, query patterns, embeddings si concurenta pe brokeri;
 - foloseste failure modes relevante pentru infrastructura reala, nu scenarii exotice fara legatura cu clusterul curent;
 - orice prag de performanta sau latenta trebuie corelat cu task types si cu suprafetele pe care utilizatorii sau operatorii chiar le consuma;
 - daca un test arata comportament periculos, acesta trebuie documentat ca risc activ, nu relativizat prin comparatie cu asteptari neformalizate.
 
 Verificari obligatorii:
+
 - review pentru modelul de capacitate si cost;
 - load si stress tests pe suprafetele critice ale registry-ului si brokerilor;
 - exercitii de failure injection sau simulare de degradare;
 - verificare ca rezultatele sunt traduse in reguli operationale, nu doar intr-un raport uitat.
 
 Criteriu real de terminare:
+
 - platforma are limite de capacitate, performanta si comportament la esec cunoscute, masurate si folosite in deciziile de operare si extindere.
 
 ### Epic 14: Support Model, RACI Finalization and Service Operations
@@ -2477,6 +2546,7 @@ Criteriu real de terminare:
 Acest epic finalizeaza trecerea de la roluri abstracte la model operational uman complet. Fara el, chiar o platforma tehnic bine construita ramane greu de operat coerent in incident, review sau change governance.
 
 Ce trebuie produs:
+
 - RACI numit pe servicii, capabilitati si review loops;
 - model L1/L2/L3 si reguli de on-call si escaladare;
 - incident command baseline pentru incidentele critice;
@@ -2484,18 +2554,21 @@ Ce trebuie produs:
 - boundaries clare intre ownership tehnic, ownership de policy si ownership de domeniu.
 
 Instrucțiuni pentru agenti:
+
 - nu trata rolurile definite in plan ca inlocuitor pentru persoane sau grupuri reale; ele sunt doar scheletul guvernantei;
 - support model-ul trebuie legat de criticitatea serviciilor si de deny paths, nu doar de organigrama;
 - recurring reviews trebuie sa aiba owner, frecventa, input obligatoriu si output actionabil;
 - orice zona fara owner numit trebuie marcata ca risc operational, nu lasata in zona de bun-simt organizational.
 
 Verificari obligatorii:
+
 - review si aprobare pentru RACI numit;
 - testare sau simulare a traseului de escaladare si on-call pe un scenariu critic;
 - verificare ca recurring reviews sunt programate si au inputs definite;
 - verificare ca privileged access review este integrat in modelul operational si de risc.
 
 Criteriu real de terminare:
+
 - platforma are un model uman de operare si raspundere suficient de clar incat incidentele, review-urile si schimbarile sa nu depinda de memorie institutionala informala.
 
 ## Content: Program-Level Context and Agent Guidance by Epic
@@ -2503,25 +2576,30 @@ Criteriu real de terminare:
 ### Program Context for Epic 0: Program Foundations and Governance
 
 Ancore reale de context si evidenta:
+
 - blueprint-ul din `docs/blueprint_platforma_interna.md` ramane sursa arhitecturala primara;
 - planul curent codifica deja regulile audit-first, anti-hallucination, status governance si read-only discipline pentru agentii de implementare;
 - repo-ul activ si branch-ul de lucru exista deja, iar executia wave-1 se desfasoara pe baza activelor reale deja prezente in workspace;
 - deciziile deja validate pentru aceasta instanta includ distinctia explicita dintre doua suprafete PostgreSQL cu rol diferit: `postgres-main`, host existent si reachable care ruleaza `postgresql@18-main.service` pentru aplicatii, si runtime-ul dedicat `internalCMDB` planificat containerizat pe `orchestrator`, cu persistenta pe `/mnt/HC_Volume_105014654` si expunere tinta separata prin `postgres.orchestrator.neanelu.ro:5432` via Traefik TCP/SNI; la auditul de trust din 2026-03-08 ambele endpoint-uri publice `postgres.neanelu.ro:5432` si `postgres.orchestrator.neanelu.ro:5432` au raspuns cu `connection refused`, deci distinctia de rol este valida, dar expunerea publica efectiva pe `:5432` ramane de validat operational.
 
 Riscuri critice de continut inca deschise:
+
 - rolurile sunt definite corect la nivel de plan, dar nu sunt inca numite formal prin persoane sau grupuri reale;
 - setul de ADR-uri este implicit in plan, dar nu exista inca extras in artefacte ADR separate versionate;
 - modelul de exception handling este descris corect, dar nu este inca demonstrat prin cazuri reale de conflict canonical-versus-observed.
 
 Context pentru milestone-uri:
+
 - m0-1 inseamna congelarea bazei decizionale minime fara de care toate epicele urmatoare risca sa isi inventeze reguli locale;
 - m0-2 inseamna operationalizarea disciplinei de executie, astfel incat orice handoff catre agenti sa poata fi evaluat dupa aceleasi reguli de adevar, verificare si inchidere.
 
 Context pentru sprinturi:
+
 - sprint-1 trebuie tratat ca sprint de guvernanta executabila, nu ca sprint de implementare tehnica;
 - sprint-2 trebuie tratat ca sprint de stabilizare a regulilor de delivery, pentru a bloca proliferarea de exceptii locale in epicele tehnice.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-001 cere extragerea stricta a deciziilor deja sustinute de blueprint si de observatiile live deja validate, fara rescriere creativa a intentiei arhitecturale;
 - pt-002 cere matrice de ownership pe roluri reale de program, nu alias-uri tehnice ad-hoc si nu presupuneri despre cine aproba implicit;
 - pt-003 cere transformarea regulilor deja scrise in plan in disciplina executabila pentru taskuri, handoff, verificare si promovarea statusurilor.
@@ -2529,24 +2607,29 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 1: Canonical Sources and Document Governance
 
 Ancore reale de context si evidenta:
+
 - repo-ul contine deja artefactele canonice relevante pentru wave-1, in special `docs/blueprint_platforma_interna.md`, acest plan, `README.md`, `pyproject.toml`, `src/proiecteit/__main__.py`, `src/proiecteit/health.py` si testele existente;
 - directia declarata si deja aprobata in plan este ca adevarul canonic ramane in Git, nu intr-un document system of record separat;
 - pachetul minim de documente obligatorii pentru pilot este deja fixat: research dossier, application definition pack, verification specification si evidence map.
 
 Riscuri critice de continut inca deschise:
+
 - taxonomy si metadata schema sunt descrise si directionate, dar nu exista inca fisiere reale de template pack publicate in repo;
 - nu exista inca un set demonstrat de documente wave-1 migrate complet pe noul contract de frontmatter;
 - binding-ul document-la-entitate este definit conceptual, dar trebuie validat pe exemple reale de infrastructura si servicii deja auditate.
 
 Context pentru milestone-uri:
+
 - m1-1 trebuie sa produca exact campurile si regulile fara de care registry-ul si retrieval-ul nu pot filtra sau lega corect documentele;
 - m1-2 trebuie sa transforme schema de metadata in suprafata utilizabila de autori si revieweri, nu doar in contract teoretic.
 
 Context pentru sprinturi:
+
 - sprint-1 trebuie sa stabileasca taxonomia si identificatorii stabili inainte de orice volum mare de authoring;
 - sprint-2 trebuie sa demonstreze utilizabilitatea contractului prin template-uri si reguli de validare executabile.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-004 cere definirea claselor de documente plecand de la ce exista deja in repo si din blueprint, nu de la o taxonomie generica copiata din alte platforme;
 - pt-005 cere schema de metadata si conventii de linking care sa poata fi validate automat si consumate de registry si retrieval;
 - pt-006 cere template pack real, guidance de adoptie si dovada ca un document nou wave-1 poate fi creat si aprobat fara coaching informal.
@@ -2554,27 +2637,32 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 2: Operational Registry and Data Model
 
 Ancore reale de context si evidenta:
+
 - planul contine deja contractul extins de schema wave-1 pentru registry, retrieval si control plane in sectiunile de schema detaliata din partea a doua a documentului;
 - decizia operationala pentru system of record este deja fixata: PostgreSQL containerizat pe `orchestrator`, cu runtime dedicat `internalCMDB`;
 - observatiile live deja validate includ Docker root mutat pe `/mnt/HC_Volume_105014654/docker`, inexistenta unui PostgreSQL dedicat anterior pentru acest scop si topologia Proxmox reala: clusterul cu `orchestrator`, `hz.215`, `hz.223`, `hz.247`, plus instantele standalone `hz.118` si `hz.157`;
 - modelarea explicita pentru `proxmox_cluster`, `proxmox_cluster_member` si `standalone_proxmox_host` este deja introdusa in plan pentru a reflecta infrastructura reala, nu o abstractie presupusa.
 
 Riscuri critice de continut inca deschise:
+
 - schema este foarte detaliata, dar nu exista inca dovada de rulare a lantului de migrari pe baza reala `internalCMDB`;
 - politica exacta de versiune pentru extensii precum `pgvector` trebuie validata la momentul instalarii, nu doar asumata din blueprint;
 - query contracts sunt descrise functional, dar nu exista inca un pachet real de query-uri aprobate ca suprafata operationala minima.
 
 Context pentru milestone-uri:
+
 - m2-1 trebuie sa fixeze modelul logic astfel incat entitatile si relatiile reale din clusterul curent sa poata fi reprezentate fara ambiguitati si fara pseudo-entitati;
 - m2-2 trebuie sa transforme modelul logic in schema fizica si contracte de interogare care sustin retrieval, reconciliation si audit;
 - m2-3 trebuie sa faca schema reproductibila si reviewable prin migrari, seed-uri si dictionar de date.
 
 Context pentru sprinturi:
+
 - sprint-2 inchide partea de model logic si trebuie sa consume direct blueprint-ul si auditul live deja facut;
 - sprint-3 este sprintul in care teoria devine baza de date reala si contract de query, fara a muta semantica critica in JSONB generic;
 - sprint-4 trebuie sa lase schema suficient de stabila pentru ca epicul de discovery sa construiasca loadere reale peste ea.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-007 cere modelare stricta pe entitatile reale in scope: hosts, clustere, servicii, aplicatii, relatii de ownership, dovezi si stari;
 - pt-008 cere schema fizica si query contracts astfel incat taskurile de lookup, retrieval si reconciliation sa nu depinda de logica ascunsa in cod procedural;
 - pt-009 cere migrari reale, seed-uri de taxonomie si dictionar de date astfel incat implementatorii si reviewerii sa poata inspecta semantic schema fara interpretari paralele.
@@ -2582,26 +2670,31 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 3: Discovery, Ingestion and Reconciliation
 
 Ancore reale de context si evidenta:
+
 - repo-ul contine deja surse reale de audit read-only care trebuie refolosite disciplinat: `subprojects/cluster-full-audit/audit_full.py`, `subprojects/cluster-audit/audit_cluster.py`, `subprojects/cluster-ssh-checker/test_cluster_ssh.py` si `scripts/test_cluster_ssh.py`;
 - auditul live deja efectuat a confirmat acces read-only relevant in cluster si a produs informatii concrete despre topologia Proxmox si despre runtime-ul `orchestrator`;
 - planul cere explicit separarea dintre starea observata, starea canonica si starea dorita, ceea ce face provenance-ul obligatoriu la nivel de load batch si de record.
 
 Riscuri critice de continut inca deschise:
+
 - nu toate sursele wave-1 au inca definite valori numerice pentru freshness si severity, deci semnalul operational risc-sa-fie-neuniform daca nu se inchide aceasta parte;
 - scripturile existente au valoare de pornire, dar nu sunt inca demonstrat normalizate la contractele enterprise-grade ale registry-ului;
 - exista risc de acoperire partiala daca anumite servicii sau hosturi sunt reachable doar intermitent si acest fapt nu este modelat explicit in ingestie.
 
 Context pentru milestone-uri:
+
 - m3-1 cere inventar prioritizat de surse si mapping explicit spre schema, nu doar lista de scripturi existente;
 - m3-2 cere transformarea acestor surse in producatori si loadere repetabile, cu provenance end-to-end;
 - m3-3 cere primul baseline complet de reconciliere, adica punctul in care platforma poate explica ce a observat, de unde si cat de proaspat este.
 
 Context pentru sprinturi:
+
 - sprint-4 este sprintul in care se inchid contractele de colectare si se porneste ingestia reala pe subsetul prioritar;
 - sprint-5 este sprintul in care trebuie validate incarcarea completa, drift-ul si claritatea gap-urilor dintre plan si runtime;
 - sprint-6 este consumatorul natural al rezultatelor de reconciliere pentru operational sign-off in track-ul efectiv.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-010 cere inventariere bazata pe sursele deja existente si pe accesul read-only real, nu pe ideea teoretica a tuturor surselor posibile;
 - pt-011 cere normalizare si loadere care sa poata fi rerulate fara reparatii manuale si fara pierderea provenientei;
 - pt-012 cere prima incarcare completa si raportul de reconciliere care trebuie sa evidentieze si conflictele, si necunoscutele, nu doar succesele.
@@ -2609,26 +2702,31 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 4: Retrieval and Evidence Brokerage
 
 Ancore reale de context si evidenta:
+
 - blueprint-ul si planul curent fixeaza deja ordinea obligatorie: context structurat din documente canonice si registry inainte de lexical si semantic retrieval;
 - schema wave-1 contine deja obiectele necesare pentru `document_chunk`, `chunk_embedding`, `evidence_pack` si `evidence_pack_item`, ceea ce ofera o baza de date clara pentru implementare;
 - strategia aprobata este embeddings locale, vector storage in PostgreSQL si bounded context packs, nu semantic search global nefiltrat.
 
 Riscuri critice de continut inca deschise:
+
 - setul exact de task types suportate in wave-1 nu este inca nominalizat intr-o lista operationala aprobata;
 - modelul de embedding local este decis ca strategie, dar nu este inca pin-uit la o versiune sau la o selectie operationala specifica;
 - bugetele reale de token si regulile concrete de truncare nu sunt inca parametrizate pe task type, ceea ce poate genera variatie in calitatea contextului.
 
 Context pentru milestone-uri:
+
 - m4-1 trebuie sa defineasca exact pentru ce tipuri de taskuri exista suport si ce dovezi intra sau nu intra in evidence packs;
 - m4-2 trebuie sa demonstreze ordinea determinista si bounded a retrieval-ului, inclusiv filtrele de policy si de scope;
 - m4-3 trebuie sa valideze augmentarea semantica fara sa inverseze ordinea de incredere sau sa piarda provenance.
 
 Context pentru sprinturi:
+
 - sprint-6 trebuie tratat ca sprint de contracte si mecanism deterministic, nu ca sprint de tuning semantic;
 - sprint-7 trebuie sa inchida chunking, embeddings si rationale capture doar dupa ce ordinea retrieval-ului este deja blocata;
 - sprint-8 trebuie sa lase retrieval-ul pregatit pentru consum de catre control plane si pilot, nu doar ca experiment izolat.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-013 cere catalog de taskuri suportate si schema de evidence pack suficient de precisa incat un agent sa stie ce trebuie sa primeasca si ce nu are voie sa considere adevar;
 - pt-014 cere implementarea traseului deterministic-first cu filtre structurale si de policy inainte de orice strat semantic;
 - pt-015 cere semantic augmentation auditabila: chunks legate de versiuni canonice, vectori versiune-ati si rationale de selectie pentru fiecare element major inclus.
@@ -2636,26 +2734,31 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 5: Agent Control Plane, Policy and Approvals
 
 Ancore reale de context si evidenta:
+
 - regulile de operare pentru agenti sunt deja codificate in plan: fara scrieri directe, fara presupuneri, fara ocolirea action broker-ului si cu audit complet pentru orice run material;
 - `effective_delivery_track` are deja obiecte concrete pentru `prompt_template_registry`, `agent_run`, `agent_evidence` si `action_request`, ceea ce ofera o translatare operationala a control plane-ului;
 - modelul de aprobare cerut este deja fixat ca `approval-record-plus-scope-plus-expiry-plus-post-execution-verification`.
 
 Riscuri critice de continut inca deschise:
+
 - authority chain-ul este inca modelat pe roluri, nu pe identitati reale sau grupuri concrete de aprobare;
 - deny paths sunt definite conceptual, dar nu sunt inca enumerate pe fiecare clasa de tool si pe fiecare suprafata de write relevanta;
 - prompt governance este bine pozitionata conceptual, dar fara un registry real exista risc ca implementarea sa alunece inapoi spre prompturi ad-hoc.
 
 Context pentru milestone-uri:
+
 - m5-1 trebuie sa defineasca politica executabila pe clase de risc si sa inchida ce este permis, ce este blocat si ce necesita aprobare;
 - m5-2 trebuie sa operationalizeze ledger-ul de actiuni si aprobari astfel incat nicio scriere guvernata sa nu ocoleasca fluxul mediat;
 - m5-3 trebuie sa inchida auditul complet al run-urilor agentice si guvernanta template-urilor de prompt.
 
 Context pentru sprinturi:
+
 - sprint-7 defineste fundatia de policy si deny-by-default;
 - sprint-8 operationalizeaza aprobarea si executia mediata;
 - sprint-9 trebuie sa dovedeasca faptul ca auditul si prompt governance sunt suficient de solide pentru pilot si readiness review.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-016 cere clasificare de risc si policy matrix pe clase reale de actiuni, nu doar pe categorii generice;
 - pt-017 cere workflow mediat cu scope, intent, expiry si outcome astfel incat fiecare write sa poata fi explicat si revocat conceptual;
 - pt-018 cere registry de prompturi si ledger de run-uri care sa pastreze suficienta trasabilitate pentru review posterior si pentru investigatie de policy breach.
@@ -2663,26 +2766,31 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 6: Delivery Control and Pilot Application Flow
 
 Ancore reale de context si evidenta:
+
 - planul fixeaza deja setul de artefacte obligatorii pentru pilot: research dossier, application definition pack, verification specification si evidence map;
 - fluxul pilot trebuie sa consume context broker, retrieval broker, action broker si lantul de aprobare deja definite in program si in track-ul efectiv;
 - infrastructura reala deja auditata si shared services-urile observate in cluster ofera materialul factual pentru selectia unui pilot bounded, dar nu justifica inca selectarea implicita a unei aplicatii anume fara aprobare explicita.
 
 Riscuri critice de continut inca deschise:
+
 - pilotul concret nu este inca selectat si aprobat, ceea ce ramane cel mai mare gap de continut din tot planul program-level;
 - shared-service contracts necesare pentru pilot nu sunt inca transformate in pachet canonico-operational complet;
 - fara doua rulari efective pe acelasi pilot, orice afirmatie de repeatability ramane inca nevalidata.
 
 Context pentru milestone-uri:
+
 - m6-1 trebuie sa inchida alegerea pilotului si setul complet de artefacte obligatorii, altfel restul epic-ului ramane o schema de validare fara obiect real;
 - m6-2 trebuie sa produca prima dovada end-to-end ca platforma poate livra guvernat un rezultat real;
 - m6-3 trebuie sa masoare sincer repeatability si sa converteasca orice bypass manual ramas in gap explicit al platformei.
 
 Context pentru sprinturi:
+
 - sprint-8 trebuie sa fixeze pilotul si artefactele sale, nu sa porneasca executia in orb;
 - sprint-9 este sprintul de prima rulare guvernata si trebuie sa lase audit complet, nu doar rezultat functional;
 - sprint-10 este sprintul de verificare a repetabilitatii si de transformare a gap-urilor in backlog legitim.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-019 cere selectie bounded de pilot pe baza nevoii reale si a dependintelor deja observate, nu pe criterii de prestigiu sau complexitate maxima;
 - pt-020 cere executia pilotului exclusiv prin fluxurile guvernate, cu brokeri, aprobari si verificare post-run;
 - pt-021 cere a doua rulare si raportarea sincera a diferentelor, inclusiv acolo unde platforma inca depinde de interventie manuala.
@@ -2690,16 +2798,19 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 7: Observability, Audit, Retention and Rollout
 
 Ancore reale de context si evidenta:
+
 - in infrastructura reala exista deja suprafete de observabilitate si operare partajate in jurul `orchestrator`, inclusiv Traefik si servicii din zona Prometheus, Grafana si Loki observate anterior in cluster;
 - planul si track-ul efectiv cer explicit dashboards, alerting, retention, runbooks si KPI baseline pentru registry, discovery, retrieval si control plane;
 - readiness review este deja definit ca mecanism de decizie bazat pe evidenta, nu pe optimism.
 
 Riscuri critice de continut inca deschise:
+
 - KPI-urile si SLO-urile nu au inca praguri numerice aprobate;
 - retention-ul este cerut corect, dar nu are inca perioade concrete, clase de acces si cost boundaries fixate;
 - runbooks nu exista inca drept artefacte reale, iar fara ele alerting-ul risca sa fie doar semnalizare fara raspuns disciplinat.
 
 Context pentru milestone-uri:
+
 - m7-1 trebuie sa transforme observabilitatea din intentie in suprafata operationala utilizabila de operatori;
 - m7-2 trebuie sa inchida retention-ul, audit review si runbook-urile critice pentru scenariile relevante din wave-1;
 - m7-3 trebuie sa produca review-ul de readiness cu gap register si decizie explicita de go sau hold.
@@ -2708,6 +2819,7 @@ Context pentru milestone-uri:
 - m7-6 trebuie sa demonstreze ca retention-ul, runbook linkage si drill-urile de observabilitate functioneaza in practica, nu doar pe hartie.
 
 Context pentru sprinturi:
+
 - sprint-9 porneste observabilitatea pe suprafetele deja construite si validate in epicele anterioare;
 - sprint-10 inchide partea de retention si operare umana prin runbooks si procese de audit review;
 - sprint-11 trebuie sa fie sprint de verdict, nu sprint de cosmetizare a problemelor ramase.
@@ -2716,6 +2828,7 @@ Context pentru sprinturi:
 - sprint-22 trebuie sa valideze linkage-ul catre runbooks, enforcement-ul retention si drill-ul de observabilitate pentru failure modes relevante.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-022 cere KPI-uri si dashboards utile decizional pentru registry, discovery, retrieval, approvals si agent control, nu doar grafice decorative;
 - pt-023 cere reguli reale de retention, acces la audit si runbooks pentru scenarii critice de degradare si incident;
 - pt-024 cere review final onest, cu residual risks si open gaps, astfel incat extinderea wave-2 sa fie bazata pe evidenta acumulata in wave-1.
@@ -2732,25 +2845,30 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 8: Business Continuity, Backup, Restore and Disaster Recovery
 
 Ancore reale de context si evidenta:
+
 - runtime-ul `internalCMDB` este planificat pe `orchestrator`, cu date, backup-uri si exporturi pe `/mnt/HC_Volume_105014654/postgresql/internalcmdb/...`;
 - planul curent cere deja retention, runbooks si readiness review, dar nu demonstreaza inca recoverability testata;
 - accesul si topologia curenta indica o prima instanta operationala clara, ceea ce face decizia HA-versus-single-instance o chestiune de policy explicita, nu una care poate ramane implicita.
 
 Riscuri critice de continut inca deschise:
+
 - nu exista inca RTO/RPO aprobate formal;
 - nu exista inca dovada de restore testat pentru `internalCMDB` si artefactele sale critice;
 - nu exista inca verdict explicit daca single-instance este acceptat ca postura temporara sau daca se cere evolutie spre HA.
 
 Context pentru milestone-uri:
+
 - m8-1 inchide asteptarile de continuitate si elimina interpretarea libera a termenului `backup`;
 - m8-2 valideaza ca restaurarea functioneaza, nu doar ca fisierele pot fi copiate;
 - m8-3 transforma recovery intr-o disciplina testata si intr-un backlog de remediere, nu intr-un text aspirational.
 
 Context pentru sprinturi:
+
 - sprint-12 trebuie sa stabileasca obiectivele si postura de continuitate inainte de orice exercitiu de recuperare;
 - sprint-13 trebuie sa combine restore testing cu scenarii de disaster suficient de realiste pentru infrastructura curenta.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-025 cere definirea explicita a asteptarilor de continuitate si a posturii de disponibilitate;
 - pt-026 cere backup si restore validate pe date si artefacte critice, nu pe exemple abstracte;
 - pt-027 cere un exercitiu formal cu findings si actiuni, nu o simpla verificare de checklist.
@@ -2758,6 +2876,7 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 9: Secrets, PKI and Trust Management
 
 Ancore reale de context si evidenta:
+
 - auditul de trust din 2026-03-08 pe `orchestrator`, `postgres-main` si nodurile `hz.*` a observat pe toate hosturile SSH-reachable verificate setari `permitrootlogin yes`, `pubkeyauthentication yes` si `passwordauthentication yes`, ceea ce confirma o postura SSH functionala dar inca permisiva care trebuie tratata ca risc explicit, nu ca presupunere tacita;
 - acelasi audit a observat materiale de incredere si secrete distribuite pe hosturi diferite, inclusiv `root.crt` si chei SSH pe `postgres-main`, chei si artefacte `.env` pe `orchestrator` si `hz.164`, precum si certificate Let's Encrypt active pe `hz.164` pentru `geniuserp.app`, `manager.neanelu.ro` si `staging.cerniq.app`;
 - pentru suprafetele PostgreSQL publice relevante pentru wave-1, probele TLS catre `postgres.neanelu.ro:5432` si `postgres.orchestrator.neanelu.ro:5432` au returnat `connection refused` la momentul auditului, deci planul trebuie sa trateze conectivitatea externa pe `5432` ca obiectiv de validare si nu ca stare deja demonstrata;
@@ -2765,20 +2884,24 @@ Ancore reale de context si evidenta:
 - infrastructura curenta include servicii shared si expuneri externe unde trust model-ul nu poate ramane implicit.
 
 Riscuri critice de continut inca deschise:
+
 - exceptia bootstrap poate deveni risc persistent daca nu este inchisa disciplinat;
 - certificate lifecycle si trust anchors nu sunt inca detaliate operational;
 - secret storage si privileged access review nu sunt inca transformate in fluxuri aprobate si auditate end-to-end.
 
 Context pentru milestone-uri:
+
 - m9-1 defineste unde traiesc secretele si cine le poate atinge;
 - m9-2 inchide exceptiile bootstrap si impune separare reala pe roluri;
 - m9-3 operationalizeaza lifecycle-ul pentru certificate si recuperarea din expirare sau compromitere.
 
 Context pentru sprinturi:
+
 - sprint-13 fixeaza boundaries si modelul de stocare;
 - sprint-14 combina rotatia credentialelor cu lifecycle-ul de certificate pentru a reduce trust-ul implicit ramas din bootstrap.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-028 cere boundary model pentru secrete si materiale PKI care sa poata fi revizuit formal;
 - pt-029 cere reducerea concreta a expunerii bootstrap si auditarea accesului privilegiat;
 - pt-030 cere lifecycle complet pentru certificate si cale de recovery pentru esecuri de incredere.
@@ -2786,25 +2909,30 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 10: Supply Chain Security and Release Integrity
 
 Ancore reale de context si evidenta:
+
 - repo-ul contine componente Python, imagini containerizate si dependinte third-party care intra in runtime-ul platformei si in subproiectele suport;
 - planul existent cere deja runtime packaging clar, release evidence si gates pe clase de risc, dar nu inchide inca provenienta software;
 - folosirea de imagini Docker, pachete Python si toolchain-uri multiple cere control explicit de integritate pentru a sustine auditabilitatea enterprise.
 
 Riscuri critice de continut inca deschise:
+
 - lipsesc inventar complet, SBOM si scanari reviewabile pentru artefactele principale;
 - nu exista inca policy aprobat pentru provenance si attestation;
 - licentierea si acceptarea dependintelor third-party nu sunt inca transformate intr-o decizie de governance repetabila.
 
 Context pentru milestone-uri:
+
 - m10-1 stabileste ce trebuie controlat si din ce este compusa suprafata software reala;
 - m10-2 activeaza scanarea si controlul de integritate ca poarta reala, nu doar raportare;
 - m10-3 inchide provenance, attestation si baseline-ul de license review pentru artefactele promovate.
 
 Context pentru sprinturi:
+
 - sprint-14 produce inventarul si SBOM-ul;
 - sprint-15 introduce gates operationale si contractul de provenienta pentru release-uri.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-031 cere inventar si SBOM bazate pe componente reale din repo si runtime-uri aprobate;
 - pt-032 cere scanare cu consecinte reale in gates de promovare;
 - pt-033 cere policy de provenance si attestation suficient de precis incat un artefact promovat sa poata fi aparat la audit.
@@ -2812,25 +2940,30 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 11: Environment Promotion and Release Management
 
 Ancore reale de context si evidenta:
+
 - planul spune deja onest ca nu urmareste o transformare CI/CD completa beyond platform needs, dar asta nu elimina nevoia de release governance;
 - schimbarile pentru schema, runtime si brokeri cer oricum gates, rollback si dovezi de verificare dupa release;
 - relatia cu `orchestrator` si cu activele runtime reale inseamna ca release-urile nu pot fi tratate ca exercitii pur locale.
 
 Riscuri critice de continut inca deschise:
+
 - promotion model-ul pe medii sau clase de mediu nu este inca fixat formal;
 - migration rollback si release failure recovery nu sunt inca demonstrate ca discipline recurente;
 - release evidence chain nu este inca completata cap-coada pentru artefactele platformei.
 
 Context pentru milestone-uri:
+
 - m11-1 defineste cum se misca schimbarile si cine aproba fiecare clasa de promovare;
 - m11-2 inchide contractul de rollback si recovery pentru schimbarile cu impact operational real;
 - m11-3 transforma release-ul intr-o secventa auditabila de la artifact la verificare post-release.
 
 Context pentru sprinturi:
+
 - sprint-15 trebuie sa fixeze environment classes si gates de promovare;
 - sprint-16 trebuie sa valideze recovery si sa lege release evidence chain de integrity controls deja introduse.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-034 cere promotion gates si approval matrix fara presupuneri despre un pipeline standard generic;
 - pt-035 cere rollback drills si migration recovery explicite pentru suprafetele cu baza de date;
 - pt-036 cere lant complet de evidenta pentru release, de la integritate la verificarea de dupa deploy.
@@ -2838,25 +2971,30 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 12: LLM Runtime, Model Registry and Evaluation Governance
 
 Ancore reale de context si evidenta:
+
 - planul foloseste deja `embeddings_strategy: local-self-hosted` si retrieval bounded pentru agenti, ceea ce implica existenta unui strat de runtime si selectie de modele chiar daca nu era inca formalizat separat;
 - repo-ul contine subproiecte si active din zona AI infrastructure care pot fi refolosite ca baza de conventii de deployment si observare;
 - control plane-ul deja definit pentru agenti face imposibila tratarea modelelor ca detaliu nereglementat daca programul merge spre operare enterprise extinsa.
 
 Riscuri critice de continut inca deschise:
+
 - selectionarea modelelor si routing-ul lor nu sunt inca guvernate prin registry si policy aprobate;
 - nu exista inca evaluation harness formal pe task types suportate;
 - fallback, cost and latency guardrails si safety checks sunt inca doar necesitate recunoscuta, nu capacitate operationala demonstrata.
 
 Context pentru milestone-uri:
+
 - m12-1 fixeaza runtime-ul si registry-ul de modele ca suprafata guvernata;
 - m12-2 inchide partea de evaluare comparativa repetabila;
 - m12-3 inchide fallback, cost, latenta si safety ca reguli operationale, nu ca preferinte de laborator.
 
 Context pentru sprinturi:
+
 - sprint-16 defineste stack-ul si contractele de registry/routing;
 - sprint-17 aduce benchmark-uri, evaluare si guardrails pana la nivelul de comportament controlat sub degradare.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-037 cere model serving stack si routing rules legate de task types reale, nu doar listare de modele disponibile;
 - pt-038 cere benchmark intern si evaluation harness care sa poata fi rerulat si auditat;
 - pt-039 cere guardrails pentru fallback, cost si safety astfel incat degradarea modelului sa nu destabilizeze comportamentul platformei.
@@ -2864,25 +3002,30 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 13: Capacity, Performance and Resilience Engineering
 
 Ancore reale de context si evidenta:
+
 - planul actual introduce deja PostgreSQL, pgvector, retrieval brokers si control plane, toate cu impact direct de latenta, throughput si crestere a datelor;
 - infrastructura curenta si suprafetele partajate observate in cluster ofera punctul de plecare pentru modele de capacitate si semnale de performanta realiste;
 - readiness review si observabilitatea deja cerute nu pot fi sustinute enterprise-grade fara praguri si exercitii de performanta si rezilienta.
 
 Riscuri critice de continut inca deschise:
+
 - nu exista inca model formal de crestere pentru date, embeddings si query volume;
 - nu exista inca load characterization pentru registry si brokeri;
 - fail-open versus fail-closed nu este inca inchis prin exercitii si policy pentru componentele critice.
 
 Context pentru milestone-uri:
+
 - m13-1 inchide modelul de capacitate si cost ca baza de planificare;
 - m13-2 produce caracterizarea de performanta si concurenta pentru suprafetele critice;
 - m13-3 transforma rezilienta si failure behavior intr-o capacitate reviewabila, nu intr-o speranta.
 
 Context pentru sprinturi:
+
 - sprint-17 produce baseline-ul de capacitate si cost;
 - sprint-18 masoara performanta si exercita failure behavior pe componentele cheie.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-040 cere model de crestere si cost bazat pe suprafetele reale ale platformei, nu pe sizing generic;
 - pt-041 cere load/stress tests cu rezultate utile pentru praguri operationale si nu doar pentru benchmarking izolat;
 - pt-042 cere exercitii de failure behavior si traducerea lor in reguli operationale si backlog de remediere.
@@ -2890,25 +3033,30 @@ Context pentru taskuri si handoff catre agenti:
 ### Program Context for Epic 14: Support Model, RACI Finalization and Service Operations
 
 Ancore reale de context si evidenta:
+
 - planul a definit de la inceput roluri de program, dar a spus explicit ca ele trebuie numite inainte de executia reala;
 - observabilitatea, runbooks, approvals si review loops deja introduse cer un model uman de operare si suport ca sa functioneze in practica;
 - extinderea dincolo de wave-1 nu poate fi sustinuta credibil fara ownership real si cadence-uri recurente de governance.
 
 Riscuri critice de continut inca deschise:
+
 - RACI-ul este inca implicit legat de roluri abstracte, nu de persoane sau grupuri concrete;
 - suportul L1/L2/L3 si on-call nu sunt inca definite pentru suprafetele critice;
 - recurring review cadences nu sunt inca activate ca mecanism de prevenire a drift-ului organizational.
 
 Context pentru milestone-uri:
+
 - m14-1 inchide ownership-ul nominal si service boundaries;
 - m14-2 operationalizeaza modelul de suport, on-call si escaladare;
 - m14-3 transforma governance-ul uman intr-o rutina recurenta, nu intr-o activitate one-off.
 
 Context pentru sprinturi:
+
 - sprint-18 finalizeaza ownership-ul si boundaries;
 - sprint-19 operationalizeaza suportul si ritualurile recurente de review.
 
 Context pentru taskuri si handoff catre agenti:
+
 - pt-043 cere mapare pe owneri reali, nu doar confirmarea rolurilor abstracte deja existente in plan;
 - pt-044 cere model executabil de suport si incident command pentru suprafetele critice;
 - pt-045 cere calendar si input-uri obligatorii pentru review-uri recurente, astfel incat governance-ul sa nu se erodeze dupa lansare.
@@ -2918,6 +3066,7 @@ Context pentru taskuri si handoff catre agenti:
 Aceasta sectiune inchide explicit gap-urile de continut ramase pentru wave-1 prin definirea unor baseline-uri aprobabile. Aceste baseline-uri nu trebuie tratate ca adevar deja aprobat daca nu exista semnatura formala a ownerilor relevanti, dar trebuie tratate ca propunerea implicita de lucru a planului pana la aprobarea sau ajustarea lor explicita.
 
 Regula de utilizare:
+
 - daca un owner aproba explicit aceste baseline-uri, ele devin normative pentru implementare;
 - daca un owner le modifica, diferenta trebuie inregistrata ca delta de plan si propagata in handoff-urile afectate;
 - daca lipseste ownerul sau aprobarea, baseline-ul ramane `approval-candidate` si nu poate fi prezentat drept stare aprobata finala.
@@ -2927,54 +3076,55 @@ Regula de utilizare:
 Task types suportate pentru wave-1 trebuie limitate la urmatoarele clase, pentru ca acestea sunt sustinute de blueprint, de activele reale din repo si de modelul operational deja decis pentru instanta curenta.
 
 1. `infrastructure-readonly-analysis`
-Scop: analiza bounded a hosturilor, clusterelor, serviciilor shared si dependintelor lor folosind documente canonice, registry si date observate aprobate.
-Mandatory evidence: documente canonice relevante, query-uri registry pe entitatile din scope, observatii runtime cu provenance.
-Disallowed evidence: rezultate semantice globale fara filtrare structurata, capturi neprovenite din surse aprobate, memorii informale nevalidate.
-Write class: `read-only`.
+   Scop: analiza bounded a hosturilor, clusterelor, serviciilor shared si dependintelor lor folosind documente canonice, registry si date observate aprobate.
+   Mandatory evidence: documente canonice relevante, query-uri registry pe entitatile din scope, observatii runtime cu provenance.
+   Disallowed evidence: rezultate semantice globale fara filtrare structurata, capturi neprovenite din surse aprobate, memorii informale nevalidate.
+   Write class: `read-only`.
 
 2. `registry-query-and-evidence-lookup`
-Scop: compunerea de raspunsuri bounded pentru lookup operational, ownership, dependinte, provenienta si stare observata.
-Mandatory evidence: entity bindings, query contracts aprobate, evidence pack pentru entitatile in scope.
-Disallowed evidence: completari bazate pe similaritate semantica in absenta legaturilor canonice sau registry.
-Write class: `read-only`.
+   Scop: compunerea de raspunsuri bounded pentru lookup operational, ownership, dependinte, provenienta si stare observata.
+   Mandatory evidence: entity bindings, query contracts aprobate, evidence pack pentru entitatile in scope.
+   Disallowed evidence: completari bazate pe similaritate semantica in absenta legaturilor canonice sau registry.
+   Write class: `read-only`.
 
 3. `canonical-document-authoring`
-Scop: creare sau actualizare bounded de documente canonice in Git, conform taxonomy si metadata schema aprobate.
-Mandatory evidence: template pack aprobat, bindings la entitati registry, owner si approval state definite.
-Disallowed evidence: redactare libera fara frontmatter valid, documente fara owner sau fara identificatori stabili.
-Write class: `bounded-repo-write`.
+   Scop: creare sau actualizare bounded de documente canonice in Git, conform taxonomy si metadata schema aprobate.
+   Mandatory evidence: template pack aprobat, bindings la entitati registry, owner si approval state definite.
+   Disallowed evidence: redactare libera fara frontmatter valid, documente fara owner sau fara identificatori stabili.
+   Write class: `bounded-repo-write`.
 
 4. `registry-schema-and-migration-change`
-Scop: schimbari bounded la schema `internalCMDB`, migrari, seed taxonomies si dictionar de date.
-Mandatory evidence: ADR-uri relevante, impact analysis pentru retrieval/ingestion/audit, approval explicit pentru write.
-Disallowed evidence: modificari directe in baza fara lant de migrari si fara evaluare de impact.
-Write class: `controlled-schema-write`.
+   Scop: schimbari bounded la schema `internalCMDB`, migrari, seed taxonomies si dictionar de date.
+   Mandatory evidence: ADR-uri relevante, impact analysis pentru retrieval/ingestion/audit, approval explicit pentru write.
+   Disallowed evidence: modificari directe in baza fara lant de migrari si fara evaluare de impact.
+   Write class: `controlled-schema-write`.
 
 5. `discovery-collection-and-loader-run`
-Scop: rulare de colectori si loadere aprobate pentru actualizarea starii observate si a provenientei.
-Mandatory evidence: sursa de colectare aprobata, target scope explicit, provenance capture activ, contract de normalizare valid.
-Disallowed evidence: scripturi modificate ad-hoc fara review, SQL manual pentru repararea batch-urilor, write bypass in afara loaderelor guvernate.
-Write class: `controlled-data-write`.
+   Scop: rulare de colectori si loadere aprobate pentru actualizarea starii observate si a provenientei.
+   Mandatory evidence: sursa de colectare aprobata, target scope explicit, provenance capture activ, contract de normalizare valid.
+   Disallowed evidence: scripturi modificate ad-hoc fara review, SQL manual pentru repararea batch-urilor, write bypass in afara loaderelor guvernate.
+   Write class: `controlled-data-write`.
 
 6. `bounded-configuration-change`
-Scop: schimbari bounded de configuratie in repo sau runtime pentru suprafete deja modelate si aprobate.
-Mandatory evidence: configuration scope explicit, dependinte afectate, approval record valid, verificare post-change.
-Disallowed evidence: runtime mutation directa fara action broker, scope implicit, sau modificari care ating mai multe domenii fara extindere aprobata de scope.
-Write class: `bounded-runtime-or-repo-write`.
+   Scop: schimbari bounded de configuratie in repo sau runtime pentru suprafete deja modelate si aprobate.
+   Mandatory evidence: configuration scope explicit, dependinte afectate, approval record valid, verificare post-change.
+   Disallowed evidence: runtime mutation directa fara action broker, scope implicit, sau modificari care ating mai multe domenii fara extindere aprobata de scope.
+   Write class: `bounded-runtime-or-repo-write`.
 
 7. `governed-pilot-delivery-run`
-Scop: executia pilotului bounded prin brokeri, approvals si verificare post-run.
-Mandatory evidence: research dossier, application definition pack, verification specification, evidence map, approval chain activa.
-Disallowed evidence: bypass manual neauditat, lipsa oricarui artefact pilot mandatory, schimbari runtime in afara action broker-ului.
-Write class: `broker-mediated-governed-write`.
+   Scop: executia pilotului bounded prin brokeri, approvals si verificare post-run.
+   Mandatory evidence: research dossier, application definition pack, verification specification, evidence map, approval chain activa.
+   Disallowed evidence: bypass manual neauditat, lipsa oricarui artefact pilot mandatory, schimbari runtime in afara action broker-ului.
+   Write class: `broker-mediated-governed-write`.
 
 8. `observability-and-runbook-maintenance`
-Scop: definire sau actualizare bounded de dashboards, alerting, retention rules si runbooks pentru suprafetele wave-1.
-Mandatory evidence: KPI/SLO catalog relevant, surse de semnal aprobate, scenarii operationale reale, review de owner.
-Disallowed evidence: alerte fara runbook, retention fara justificare de audit sau cost, dashboard-uri decorative fara decizie operationala asociata.
-Write class: `bounded-ops-write`.
+   Scop: definire sau actualizare bounded de dashboards, alerting, retention rules si runbooks pentru suprafetele wave-1.
+   Mandatory evidence: KPI/SLO catalog relevant, surse de semnal aprobate, scenarii operationale reale, review de owner.
+   Disallowed evidence: alerte fara runbook, retention fara justificare de audit sau cost, dashboard-uri decorative fara decizie operationala asociata.
+   Write class: `bounded-ops-write`.
 
 Task types explicit nesuportate in wave-1:
+
 - `unbounded-autonomous-remediation`;
 - `cross-domain-bulk-refactoring-without-approved-scope`;
 - `high-risk-infrastructure-change-without-human-approval`;
@@ -2984,6 +3134,7 @@ Task types explicit nesuportate in wave-1:
 ### Deny Paths and Default Blocking Rules
 
 Deny paths obligatorii pentru wave-1:
+
 - se refuza orice write daca lipseste `approval_record` valid pentru clasa de risc respectiva;
 - se refuza orice actiune a carei intentie nu este legata explicit de scope-ul cerut si de artefactele de intrare aprobate;
 - se refuza orice write path care nu trece prin action broker, inclusiv SQL direct, editare runtime directa sau hotfix operational neauditabil;
@@ -2996,6 +3147,7 @@ Deny paths obligatorii pentru wave-1:
 - se refuza orice promovare la `completed` fara verificare critica finala si fara dovada inchiderii gap-urilor de implementare cunoscute.
 
 Exceptions handling rule:
+
 - nu exista exceptii implicite;
 - orice exceptie aprobata trebuie sa contina motiv, owner, expirare, masura compensatorie si plan de revenire la regula standard.
 
@@ -3004,66 +3156,67 @@ Exceptions handling rule:
 Pragurile de mai jos sunt baseline-uri aprobabile pentru wave-1. Ele sunt alese pentru o instanta initiala bounded, single-reference-cluster, si trebuie confirmate sau ajustate dupa primele rulari reale instrumentate.
 
 1. `discovery_freshness_core_hosts`
-Definition: vechimea maxima a ultimei observatii de succes pentru hosturile si nodurile de infrastructura in scope.
-Approval-candidate SLO target: `<= 24h`.
-Warning threshold: `> 24h and <= 48h`.
-Breach threshold: `> 48h`.
+   Definition: vechimea maxima a ultimei observatii de succes pentru hosturile si nodurile de infrastructura in scope.
+   Approval-candidate SLO target: `<= 24h`.
+   Warning threshold: `> 24h and <= 48h`.
+   Breach threshold: `> 48h`.
 
 2. `discovery_freshness_shared_services`
-Definition: vechimea maxima a ultimei observatii de succes pentru serviciile shared critice din wave-1.
-Approval-candidate SLO target: `<= 24h`.
-Warning threshold: `> 24h and <= 72h`.
-Breach threshold: `> 72h`.
+   Definition: vechimea maxima a ultimei observatii de succes pentru serviciile shared critice din wave-1.
+   Approval-candidate SLO target: `<= 24h`.
+   Warning threshold: `> 24h and <= 72h`.
+   Breach threshold: `> 72h`.
 
 3. `registry_binding_coverage`
-Definition: procentul entitatilor wave-1 active care au binding la cel putin un artefact canonic relevant.
-Approval-candidate SLO target: `>= 95%`.
-Warning threshold: `< 95% and >= 90%`.
-Breach threshold: `< 90%`.
+   Definition: procentul entitatilor wave-1 active care au binding la cel putin un artefact canonic relevant.
+   Approval-candidate SLO target: `>= 95%`.
+   Warning threshold: `< 95% and >= 90%`.
+   Breach threshold: `< 90%`.
 
 4. `reconciliation_unresolved_high_severity_age`
-Definition: varsta maxima admisa pentru discrepante high-severity intre canonical si observed state fara owner si actiune.
-Approval-candidate SLO target: `<= 2 business days`.
-Warning threshold: `> 2 and <= 5 business days`.
-Breach threshold: `> 5 business days`.
+   Definition: varsta maxima admisa pentru discrepante high-severity intre canonical si observed state fara owner si actiune.
+   Approval-candidate SLO target: `<= 2 business days`.
+   Warning threshold: `> 2 and <= 5 business days`.
+   Breach threshold: `> 5 business days`.
 
 5. `evidence_pack_completeness_supported_tasks`
-Definition: procentul rularilor pentru task types suportate in care toate dovezile mandatory sunt prezente in evidence pack.
-Approval-candidate SLO target: `>= 99%`.
-Warning threshold: `< 99% and >= 97%`.
-Breach threshold: `< 97%`.
+   Definition: procentul rularilor pentru task types suportate in care toate dovezile mandatory sunt prezente in evidence pack.
+   Approval-candidate SLO target: `>= 99%`.
+   Warning threshold: `< 99% and >= 97%`.
+   Breach threshold: `< 97%`.
 
 6. `approval_turnaround_standard_bounded_write`
-Definition: timpul dintre crearea cererii de actiune si decizia de aprobare pentru bounded writes standard.
-Approval-candidate SLO target: `<= 1 business day`.
-Warning threshold: `> 1 and <= 2 business days`.
-Breach threshold: `> 2 business days`.
+   Definition: timpul dintre crearea cererii de actiune si decizia de aprobare pentru bounded writes standard.
+   Approval-candidate SLO target: `<= 1 business day`.
+   Warning threshold: `> 1 and <= 2 business days`.
+   Breach threshold: `> 2 business days`.
 
 7. `unauthorized_write_denial_rate`
-Definition: procentul tentativelor de write neaprobate care sunt blocate corect de control plane.
-Approval-candidate SLO target: `100%`.
-Warning threshold: `anything below 100% is a breach`.
-Breach threshold: `< 100%`.
+   Definition: procentul tentativelor de write neaprobate care sunt blocate corect de control plane.
+   Approval-candidate SLO target: `100%`.
+   Warning threshold: `anything below 100% is a breach`.
+   Breach threshold: `< 100%`.
 
 8. `pilot_repeatability_success_rate`
-Definition: raportul dintre pasii obligatorii ai pilotului care ruleaza identic sau explicabil intre prima si a doua executie guvernata.
-Approval-candidate SLO target: `100% of mandatory steps repeatable or explicitly explained by approved delta`.
-Warning threshold: `any unexplained variance in non-critical steps`.
-Breach threshold: `any unexplained variance in critical or approval-gated steps`.
+   Definition: raportul dintre pasii obligatorii ai pilotului care ruleaza identic sau explicabil intre prima si a doua executie guvernata.
+   Approval-candidate SLO target: `100% of mandatory steps repeatable or explicitly explained by approved delta`.
+   Warning threshold: `any unexplained variance in non-critical steps`.
+   Breach threshold: `any unexplained variance in critical or approval-gated steps`.
 
 9. `alert_actionability_rate`
-Definition: procentul alertelor active care au runbook si owner asociat.
-Approval-candidate SLO target: `100%`.
-Warning threshold: `< 100% and >= 95%`.
-Breach threshold: `< 95%`.
+   Definition: procentul alertelor active care au runbook si owner asociat.
+   Approval-candidate SLO target: `100%`.
+   Warning threshold: `< 100% and >= 95%`.
+   Breach threshold: `< 95%`.
 
 10. `audit_record_completeness`
-Definition: procentul run-urilor materiale pentru care exista scope, evidence, decision trail, approvals si verification outcome.
-Approval-candidate SLO target: `100%`.
-Warning threshold: `anything below 100% is a breach candidate`.
-Breach threshold: `< 100%`.
+    Definition: procentul run-urilor materiale pentru care exista scope, evidence, decision trail, approvals si verification outcome.
+    Approval-candidate SLO target: `100%`.
+    Warning threshold: `anything below 100% is a breach candidate`.
+    Breach threshold: `< 100%`.
 
 Threshold governance rule:
+
 - daca primele doua cicluri masurate reale arata ca un prag este prea lax sau prea strict, el trebuie recalibrat prin review formal, nu ajustat tacit in implementare;
 - pentru orice prag numeric ramas neaprobat la momentul handoff-ului, agentul trebuie sa-l trateze ca `approval-candidate` si sa ceara confirmare de owner inainte de a raporta conformitate finala.
 
@@ -3072,36 +3225,37 @@ Threshold governance rule:
 Clasele de retention pentru wave-1 trebuie sa fie urmatoarele.
 
 1. `collection-output-short-lived`
-Artifact classes: output brut de colectare, fisiere temporare de export, capturi intermediare necanonice.
-Approval-candidate retention: `30 days`.
-Default access: discovery owner, platform engineering lead, audit reviewers on demand.
-Rationale: utile pentru debugging si replay scurt, dar nu trebuie pastrate indefinit daca sunt substituite de fapte normalizate si evidence artifacts persistente.
+   Artifact classes: output brut de colectare, fisiere temporare de export, capturi intermediare necanonice.
+   Approval-candidate retention: `30 days`.
+   Default access: discovery owner, platform engineering lead, audit reviewers on demand.
+   Rationale: utile pentru debugging si replay scurt, dar nu trebuie pastrate indefinit daca sunt substituite de fapte normalizate si evidence artifacts persistente.
 
 2. `reconciliation-and-quality-reports`
-Artifact classes: rapoarte de reconciliere, coverage reports, freshness reports, quality anomaly reports.
-Approval-candidate retention: `180 days`.
-Default access: platform program manager, data registry owner, discovery owner, audit reviewers.
-Rationale: necesare pentru urmarirea trendurilor si a gap-urilor pe parcursul wave-1.
+   Artifact classes: rapoarte de reconciliere, coverage reports, freshness reports, quality anomaly reports.
+   Approval-candidate retention: `180 days`.
+   Default access: platform program manager, data registry owner, discovery owner, audit reviewers.
+   Rationale: necesare pentru urmarirea trendurilor si a gap-urilor pe parcursul wave-1.
 
 3. `evidence-pack-and-agent-context`
-Artifact classes: evidence packs, evidence pack items, rationale de selectie, context summaries pentru run-uri materiale.
-Approval-candidate retention: `180 days` minimum.
-Default access: platform engineering lead, security and policy owner, designated audit reviewers, domain owner when run-ul vizeaza domeniul lui.
-Rationale: necesare pentru audit, dispute review si analiza calitatii retrieval-ului.
+   Artifact classes: evidence packs, evidence pack items, rationale de selectie, context summaries pentru run-uri materiale.
+   Approval-candidate retention: `180 days` minimum.
+   Default access: platform engineering lead, security and policy owner, designated audit reviewers, domain owner when run-ul vizeaza domeniul lui.
+   Rationale: necesare pentru audit, dispute review si analiza calitatii retrieval-ului.
 
 4. `agent-run-and-approval-ledger`
-Artifact classes: agent runs, approval records, action requests, deny decisions, post-execution verification records.
-Approval-candidate retention: `365 days` minimum.
-Default access: security and policy owner, executive sponsor, platform program manager, designated audit reviewers.
-Rationale: reprezinta coloana vertebrala a trasabilitatii pentru actiuni materiale si trebuie pastrate cel mai mult dintre artefactele operationale wave-1.
+   Artifact classes: agent runs, approval records, action requests, deny decisions, post-execution verification records.
+   Approval-candidate retention: `365 days` minimum.
+   Default access: security and policy owner, executive sponsor, platform program manager, designated audit reviewers.
+   Rationale: reprezinta coloana vertebrala a trasabilitatii pentru actiuni materiale si trebuie pastrate cel mai mult dintre artefactele operationale wave-1.
 
 5. `canonical-pilot-artifacts`
-Artifact classes: research dossier, application definition pack, verification specification, evidence map si variantele lor aprobate.
-Approval-candidate retention: `retain for full life of wave-1 plus any active wave-2 onboarding period`.
-Default access: domain owners, platform architecture lead, platform program manager, audit reviewers.
-Rationale: sunt artefacte canonice, nu doar output operational, si trebuie pastrate cat timp valideaza modelul programului.
+   Artifact classes: research dossier, application definition pack, verification specification, evidence map si variantele lor aprobate.
+   Approval-candidate retention: `retain for full life of wave-1 plus any active wave-2 onboarding period`.
+   Default access: domain owners, platform architecture lead, platform program manager, audit reviewers.
+   Rationale: sunt artefacte canonice, nu doar output operational, si trebuie pastrate cat timp valideaza modelul programului.
 
 Retention enforcement rules:
+
 - stergerea sau arhivarea unui artifact nu poate rupe posibilitatea de a audita o decizie materiala in intervalul de retention aprobat;
 - daca un artifact face parte dintr-un incident, dispute review sau exception path deschis, retention-ul se suspenda pana la inchiderea formala a cazului;
 - access-ul la clasele de retention trebuie acordat pe need-to-know si roluri aprobate, nu pe convenience operational.
@@ -3122,12 +3276,15 @@ Criteriile de selectie pentru primul pilot trebuie sa fie cumulative, nu optiona
 10. Pilotul trebuie sa fie suficient de mic incat orice gap ramas sa poata fi atribuit platformei, nu complexitatii excesive a cazului.
 
 Tie-break rule pentru selectie:
+
 - daca mai multe candidate satisfac criteriile de mai sus, se alege candidatul cu cea mai mare densitate de validare pentru registry plus retrieval plus audit, nu candidatul cu cea mai mare suprafata de business.
 
 Wave-1 recommended pilot baseline:
+
 - baseline-ul recomandat ramane aplicatia interna read-only de interogare si navigare a `internalCMDB` pentru operatori, deoarece valideaza direct registry-ul, retrieval-ul bounded, evidence traceability si disciplina de delivery fara a introduce prematur write automation cu risc mare.
 
 Pilot disqualification criteria:
+
 - necesita integrare noua externa majora care nu este deja auditata sau modelata;
 - necesita write-uri production-high-risk inainte de validarea control plane-ului;
 - nu poate produce dovezi clare de provenienta pentru raspunsurile cheie;
@@ -3137,10 +3294,12 @@ Pilot disqualification criteria:
 ## Content: Critical Enterprise Completeness Gap Register Beyond Wave-1 Foundation
 
 Aceasta sectiune face explicita distinctia dintre:
+
 - plan material complet pentru fundatia enterprise wave-1;
 - plan complet enterprise-wide in sens maximal, multi-workstream, cu operare matura si validari repetate.
 
 Verdict normativ de interpretare:
+
 - documentul de fata nu poate fi prezentat onest ca `100% complet` sau `100% corect` in sens enterprise absolut;
 - documentul poate fi prezentat onest ca `materially complete for wave-1 foundation` si `expanded-enterprise-draft-for-implementation-review`;
 - orice claim mai puternic necesita inchiderea formala a gap-urilor de mai jos prin artefacte, aprobari, teste si operare sustinuta.
@@ -3148,34 +3307,34 @@ Verdict normativ de interpretare:
 Gap domains care raman in afara completitudinii absolute actuale:
 
 1. Business continuity, backup, restore and disaster recovery.
-Gap concret: lipsesc RTO/RPO aprobate, restore drills periodice, scenarii de failover, exercitii de disaster simulation si decizia explicita de toleranta sau non-toleranta la single-instance failure pentru `internalCMDB`.
+   Gap concret: lipsesc RTO/RPO aprobate, restore drills periodice, scenarii de failover, exercitii de disaster simulation si decizia explicita de toleranta sau non-toleranta la single-instance failure pentru `internalCMDB`.
 
 2. Secrets management, PKI and trust lifecycle.
-Gap concret: lipsesc secret storage standardizat, rotatie de credentiale, lifecycle pentru certificate, private key handling, trust model intern si review periodic pentru acces privilegiat.
+   Gap concret: lipsesc secret storage standardizat, rotatie de credentiale, lifecycle pentru certificate, private key handling, trust model intern si review periodic pentru acces privilegiat.
 
 3. Supply chain security and software integrity.
-Gap concret: lipsesc SBOM, dependency scanning formal, image scanning, signing/provenance pentru artefacte, verificare de licente si control explicit asupra surselor third-party.
+   Gap concret: lipsesc SBOM, dependency scanning formal, image scanning, signing/provenance pentru artefacte, verificare de licente si control explicit asupra surselor third-party.
 
 4. Environment promotion and release governance.
-Gap concret: lipsesc modele complete de promotion gates, artifact governance, release approval per environment, rollback drills si lanturi de evidenta pentru release management.
+   Gap concret: lipsesc modele complete de promotion gates, artifact governance, release approval per environment, rollback drills si lanturi de evidenta pentru release management.
 
 5. Named RACI, support model and service operations.
-Gap concret: rolurile sunt definite la nivel de plan, dar nu exista inca persoane sau grupuri reale numite, nici L1/L2/L3 support model, on-call, incident command model sau cadence-uri de service review.
+   Gap concret: rolurile sunt definite la nivel de plan, dar nu exista inca persoane sau grupuri reale numite, nici L1/L2/L3 support model, on-call, incident command model sau cadence-uri de service review.
 
 6. Capacity, cost, performance and resilience engineering.
-Gap concret: lipsesc capacity model pentru PostgreSQL si vector storage, load/concurrency targets pentru brokeri, cost envelope, stress tests, failure injection si latency budgets pe task type.
+   Gap concret: lipsesc capacity model pentru PostgreSQL si vector storage, load/concurrency targets pentru brokeri, cost envelope, stress tests, failure injection si latency budgets pe task type.
 
 7. LLM runtime, model registry and evaluation governance.
-Gap concret: planul acopera control plane-ul agentilor, dar nu inchide operational model serving stack, model registry, fallback strategy, evaluation harness, red-team tests si governance pentru runtime-ul modelelor self-hosted.
+   Gap concret: planul acopera control plane-ul agentilor, dar nu inchide operational model serving stack, model registry, fallback strategy, evaluation harness, red-team tests si governance pentru runtime-ul modelelor self-hosted.
 
 8. Data governance and internal compliance controls.
-Gap concret: lipsesc data classification matrix, redaction rules, access review cadence, privileged access review, exception register de conformitate si tratament explicit pentru date sensibile sau personale.
+   Gap concret: lipsesc data classification matrix, redaction rules, access review cadence, privileged access review, exception register de conformitate si tratament explicit pentru date sensibile sau personale.
 
 9. Sustained operation proof versus milestone acceptance.
-Gap concret: unele milestone-uri inchid definirea sau activarea initiala, dar nu demonstreaza inca operare repetata, review recurent si comportament stabil in timp.
+   Gap concret: unele milestone-uri inchid definirea sau activarea initiala, dar nu demonstreaza inca operare repetata, review recurent si comportament stabil in timp.
 
 10. Full cross-environment drift governance.
-Gap concret: exista drift detection canonical-versus-observed, dar nu este inca completata disciplina pentru migration drift, broker/policy/runtime drift, taxonomy upgrade playbooks si backward compatibility rules pentru evidence packs si prompt templates.
+    Gap concret: exista drift detection canonical-versus-observed, dar nu este inca completata disciplina pentru migration drift, broker/policy/runtime drift, taxonomy upgrade playbooks si backward compatibility rules pentru evidence packs si prompt templates.
 
 ### Supplemental Enterprise Workstreams Required for Absolute Enterprise Completeness
 
@@ -3190,17 +3349,20 @@ Planul livrabil actual inchide fundatia wave-1. Cele 9 workstream-uri de mai jos
 Scop: definirea si validarea unei posturi explicite de continuitate pentru `internalCMDB` si artefactele sale critice, cu RTO/RPO aprobate si exercitii formale executate si inregistrate.
 
 **Postura wave-1 acceptata explicit:**
+
 - Single-instance deployment pe `orchestrator`; HA nu este ceruta pentru wave-1.
 - Decizia de single-instance trebuie documentata intr-un document de tip `policy_pack` cu owner si data de semnatura.
 - HA este obligatorie inainte de orice pretentie de wave-2 multi-domain scale-out.
 
 **Thresholds aprobate obligatorii:**
+
 - RTO ≤4h pentru `internalCMDB` in caz de failure total al serviciului (recuperare manuala acceptata pentru wave-1).
 - RPO ≤24h pentru PostgreSQL state (nightly pg_dump minim obligatoriu pe volumul `HC_Volume_105014654`).
 - RPO ≤7d pentru artefacte de audit non-critice.
 - Orice deviere de la aceste thresholds necesita document de risk acceptance semnat de `executive_sponsor`.
 
 **Artefacte obligatorii:**
+
 - `rto-rpo-baseline`: document `policy_pack`, semnat de `executive_sponsor` si `sre_observability_owner`.
 - `ha-posture-acceptance`: document `policy_pack` cu decizie binara (single-instance-accepted / HA-required) si rationale.
 - `backup-procedure`: runbook testat cu path-uri exacte pe `orchestrator` si volumul de date.
@@ -3210,6 +3372,7 @@ Scop: definirea si validarea unei posturi explicite de continuitate pentru `inte
 - `corrective-actions-register`: entry in `governance.change_log` pentru fiecare finding deschis.
 
 **Drill requirements:**
+
 - Primul drill de restore: obligatoriu inainte de inchiderea `m8-2`; trebuie sa restaureze starea intr-un schema sau db separata si sa valideze query-urile cheie.
 - DR simulation (failure de host PostgreSQL): obligatorie inainte de inchiderea `m8-3`.
 - Cadenta minima: anual dupa wave-1 GA; rezultatele inregistrate in `evidence_pack`.
@@ -3223,22 +3386,26 @@ Scop: definirea si validarea unei posturi explicite de continuitate pentru `inte
 Scop: eliminarea credentialelor ad-hoc, definirea unui model complet de secret storage cu tooling named, rotatie si lifecycle de certificate operationalizat.
 
 **Decizie obligatorie de secret storage (ADR named, inainte de m9-1):**
+
 - Tooling-ul trebuie ales si documentat intr-un ADR inainte de inchiderea `m9-1`.
 - Optiuni acceptabile: Docker Secrets, age-encrypted files cu permisiuni 0600 minime, HashiCorp Vault, SOPS cu backend aprobat.
 - Stocarea secretelor in `.env` files fara restrictie de permisiuni sau in git history este conditie de esec automat pentru `m9-1`.
 
 **Clase de credentiale gestionate obligatoriu:**
+
 - bootstrap: temporare; trebuie rotate sau dezafectate inainte ca `epic-5` (policy engine) sa intre in productie.
 - service-to-service: `internalCMDB app → PostgreSQL`; trebuie sa foloseasca credential rotabila, nu hardcodata.
 - admin: root SSH pe `orchestrator` si `postgres-main`, DB superuser; accesul trasat si periodic reviewed.
 - external: certificate TLS pentru orice endpoint expus public; renewal process obligatoriu.
 
 **Certificate lifecycle rules:**
+
 - Certificatele care expira in mai putin de 30 de zile declanseaza procesul de reneware.
 - Certificate wildcard fara owner explicit documentat in `change_log` sunt interzise.
 - CA self-signed: trebuie sa existe un scope document si un expiry management plan.
 
 **Artefacte obligatorii:**
+
 - `secrets-storage-adr`: decizie tehnica documentata cu tool ales, scope si access model.
 - `credential-class-register`: inventar al tuturor claselor de credentiale cu owner, rotation schedule si status curent.
 - `bootstrap-secret-rotation-evidence`: dovada ca credentialele bootstrap au fost rotate sau decommissionate.
@@ -3256,21 +3423,25 @@ Scop: eliminarea credentialelor ad-hoc, definirea unui model complet de secret s
 Scop: controlul integritatii artefactelor software cu tooling explicit, thresholds de acceptanta pentru vulnerabilitati si review de licente.
 
 **Decizie de tooling SBOM (obligatorie inainte de m10-1):**
+
 - SBOM generation: Syft (recomandat pentru Python + container inventory) sau echivalent documentat in ADR.
 - Vulnerability scan: Trivy sau echivalent aprobat.
 - Format obligatoriu: SPDX 2.3 sau CycloneDX 1.4+.
 - Scope acoperit obligatoriu: Python packages din `internalCMDB`, imagini Docker din `docker-compose.yml` si `llm.yml`.
 
 **Scanning thresholds obligatorii:**
+
 - CRITICAL CVEs in imagini promovate: zero fara exception aprobata explicit in exception register.
 - HIGH CVEs: reviewed in 5 zile lucratoare de la descoperire; patch sau exception documentata inainte de urmatorul sprint release.
 - Scan results: stocate ca `evidence_pack` document legat de release record.
 
 **License review:**
+
 - Verificare compatibilitate licente pentru toate dependintele din scope (GPL contamination check).
 - Completata inainte de `m10-3`.
 
 **Artefacte obligatorii:**
+
 - `sbom-baseline`: SBOM complet in format standardizat.
 - `dependency-scan-results-v1`: rezultate de scan cu severitate, remediation notes si decizii de exceptie.
 - `image-scan-results-v1`: imagini scanate cu findings si status.
@@ -3286,20 +3457,24 @@ Scop: controlul integritatii artefactelor software cu tooling explicit, threshol
 Scop: standardizarea promotiei intre medii cu gates explicite, dovezi de rollback si traseabilitate completa per release.
 
 **Mediile explicite ale acestui program:**
+
 - `local-dev`: masina macOS a dezvoltatorului; governance obligatorie: branch naming si teste locale.
 - `integration`: serviciu pe `orchestrator` in stare non-production; schimbarile de schema trebuie testate si validate inainte de promotia la production.
 - `production`: `orchestrator` (internalCMDB runtime activat); necesita aprobare formala si rollback contract documentat.
 
 **Promotion gates obligatorii:**
+
 - Schema migration: testata in `integration`, revizuita de cel putin 1 approver, data loss verificata explicit (zero tolerance).
 - Application changes: code review complet, toate testele trec, scan results revizuite fara CRITICAL deschis.
 - Rollback contract: documentat pentru fiecare migrare inainte de promotia la `production`.
 
 **Rollback drill requirement:**
+
 - Cel putin un rollback drill complet inainte de prima migrare de schema in `production`.
 - Rezultatele stocate ca `evidence_pack` legat de `m11-2`.
 
 **Artefacte obligatorii:**
+
 - `environment-classification-doc`: tipuri de medii, scope si reguli de promotie.
 - `promotion-gates-policy`: gates explicite per clasa de schimbare.
 - `release-approval-matrix`: cine aproba ce clasa de release.
@@ -3314,11 +3489,13 @@ Scop: standardizarea promotiei intre medii cu gates explicite, dovezi de rollbac
 Scop: trecerea de la roluri abstracte la model operational uman complet cu owners reali, tiers de suport definite si cadente de review cu output obligatoriu.
 
 **TBD-as-explicit-blocker rule (non-negociabila):**
+
 - Orice rol abstract in RACI fara un owner real sau team real = blocker explicit pentru `m14-1`.
 - TBD trebuie sa apara ca field `tbd_owner_gap: true` in ownership matrix, nu omis tacit.
 - RACI cu roluri neatribuite nu poate fi marcat approved.
 
 **Support tier model:**
+
 - L1: alert response initial, health check, restart procedural; responsabil: `platform_engineering_lead` sau delegate nominalizat explicit.
 - L2: diagnosticare root cause, executie runbook; responsabil: `platform_engineering_lead`.
 - L3: problema la nivel de arhitectura, escaladare externa sau schimbare de design; responsabili: `architecture_board` + `executive_sponsor`.
@@ -3326,11 +3503,13 @@ Scop: trecerea de la roluri abstracte la model operational uman complet cu owner
 - P1 SLA: ≤2h pentru a ajunge la L2; ≤4h pentru implicarea `executive_sponsor`.
 
 **Cadente de review obligatorii cu output documentat:**
+
 - Lunar: service health review (dashboard + alerts + open action items); minutes inregistrate.
 - Trimestrial: privileged access review (who has what, any changes needed); output documentat in `change_log`.
 - Post-incident: incident review in maximum 5 zile lucratoare; corrective actions in `change_log`.
 
 **Artefacte obligatorii:**
+
 - `named-raci-matrix`: ownership matrix cu names reale sau TBD explicit marcat ca gap.
 - `service-boundary-map`: servicii critice, tiers asociate, boundaries de responsabilitate.
 - `on-call-and-escalation-rules`: SLA-uri, contacte, proceduri.
@@ -3345,7 +3524,8 @@ Scop: trecerea de la roluri abstracte la model operational uman complet cu owner
 Scop: cuantificarea si validarea capacitatii, performantei si comportamentului la esec al platformei cu thresholds numerice explicite si failure injection exercitata.
 
 **Capacity model wave-1 baseline (bazat pe infrastructura observata):**
-- `host`: ~15 rows (11 hz.* + orchestrator + postgres-main + imac).
+
+- `host`: ~15 rows (11 hz.\* + orchestrator + postgres-main + imac).
 - `service`: ~50–100 rows (estimate pe baza serviciilor observate in audit 2026-03-08).
 - `observed_fact`: ~500–2,000 rows baseline; crestere ~200/luna cu colectari saptamanale.
 - `chunk_embedding` (pgvector): ~1,000 rows corpus initial de documente.
@@ -3353,27 +3533,32 @@ Scop: cuantificarea si validarea capacitatii, performantei si comportamentului l
 - Total tinta wave-1 GA: ≤10,000 rows aggregate; wave-2 tinta: ≤100,000 rows.
 
 **Latency budgets obligatorii:**
+
 - Registry point lookup (host by PK): <50ms p95.
 - Registry list query (services per host): <200ms p95.
 - Retrieval evidence pack assembly (bounded task): <2s p95.
 - Action broker approval path: <500ms p95.
 
 **Load test scope obligatoriu:**
+
 - Minim 50 concurrent registry lookups fara degradare observabila.
 - Rezultate stocate ca `evidence_pack` inainte de `m13-2` closure.
 
 **Failure injection scenarios obligatorii (minim):**
+
 - PostgreSQL service restart pe `orchestrator` → internalCMDB trebuie sa detecteze si sa raporteze, nu sa corupа starea.
 - Disk near-full pe `HC_Volume_105014654` → write-path behavior definit explicit (reject cu eroare clara, nu silent data loss).
 - Broker crash → registry trebuie sa ramana stabil; broker restart trebuie sa fie graceful.
 - `fail-open vs fail-closed` rules: documentate explicit per componenta inainte de `m13-3`.
 
 **Cost envelope wave-1:**
+
 - Complet self-hosted; zero costuri API externe fara decizie explicita.
 - Daca LLM extern este activat: cost cap lunar definit inainte de activare, owner de cost nominalizat.
 - pgvector in-PostgreSQL: zero cost suplimentar de infrastructura.
 
 **Artefacte obligatorii:**
+
 - `capacity-model-doc`: tabel cu row estimates, growth model, storage footprint.
 - `latency-budget-baseline`: thresholds per surface cu metoda de masurare.
 - `load-test-results-v1`: rezultate cu concurrency, p95, saturation indicators.
@@ -3387,6 +3572,7 @@ Scop: cuantificarea si validarea capacitatii, performantei si comportamentului l
 Scop: operationalizarea completa a runtime-ului de modele self-hosted cu model registry guvernat, evaluation harness repetabil si safety controls testate formal.
 
 **Model registry: campuri obligatorii per intrare:**
+
 - `model_id`, `model_class` (completion / embedding / reranker), `version`.
 - `evaluated_at`, `evaluation_harness_run_id` (FK la evidence_pack).
 - `supported_task_types`: lista de task type ID-uri aprobate.
@@ -3396,23 +3582,27 @@ Scop: operationalizarea completa a runtime-ului de modele self-hosted cu model r
 - `fallback_model_id` (FK la un alt model inregistrat sau null).
 
 **Evaluation harness requirements:**
+
 - Trebuie sa acopere ≥3 task types suportate.
 - Rezultatele stocate in `evidence_pack` legate de versiunea de model.
 - Benchmark repeat-testabil: rulat de doua ori pe acelasi task set trebuie sa produca rezultate in tolerance.
 - Model selection trebuie sa citeze rezultate de evaluare, nu preferinta operatorului.
 
 **Red-team minimum scope (obligatoriu inainte de operational approval):**
+
 - Prompt injection: incercare de a overrida system prompt prin vector content malitios.
 - Data exfiltration: incercare de a extrage continut din registry prin manipulare de prompt.
 - Role confusion: incercare de a face agentul sa claim actiuni in afara policy scope-ului sau.
 - Toate findings documentate in `evidence_pack` de tip safety review inainte de `m12-3` closure.
 
 **Fallback triggers expliciti:**
+
 - Local model p95 latency >10s pentru orice task type suportat → trigger automat de fallback.
 - Error rate >5% in fereastra de 5 minute → fallback trigger.
 - Fallback target: model inregistrat cu propriul latency budget SAU defined degraded-mode response documentata.
 
 **Artefacte obligatorii:**
+
 - `model-registry-contract`: schema si campuri obligatorii per model inregistrat.
 - `evaluation-harness-spec`: task set, metode, tolerance thresholds.
 - `model-evaluation-results-v1`: rezultate pentru modelele curente in use.
@@ -3428,34 +3618,39 @@ Scop: clasificarea datelor stocate in registry, aplicarea redactarii la ingestie
 
 **Data classification matrix (wave-1 internalCMDB):**
 
-| Clasa | Exemple                                                        | Restrictie                                                              |
-|-------|----------------------------------------------------------------|-------------------------------------------------------------------------|
-| A     | Host FQDN, service names, port numbers, observed status flags  | Interna, fara restrictii suplimentare                                    |
-| B     | IP addresses, user accounts observate, SSH key fingerprints    | Acces limitat la roluri platform_engineering; exclusa din retrieval public |
-| C     | Credentiale, private keys, bootstrap secrets                   | NU trebuie stocate in registry; numai in approved secret storage         |
-| D     | Date personale (email, nume)                                   | Interzise in wave-1 fara aprobare explicita DPO-equivalent               |
+| Clasa | Exemple                                                       | Restrictie                                                                 |
+| ----- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| A     | Host FQDN, service names, port numbers, observed status flags | Interna, fara restrictii suplimentare                                      |
+| B     | IP addresses, user accounts observate, SSH key fingerprints   | Acces limitat la roluri platform_engineering; exclusa din retrieval public |
+| C     | Credentiale, private keys, bootstrap secrets                  | NU trebuie stocate in registry; numai in approved secret storage           |
+| D     | Date personale (email, nume)                                  | Interzise in wave-1 fara aprobare explicita DPO-equivalent                 |
 
 **Redaction/masking rules obligatorii la ingestie:**
+
 - Scanner la ingest: orice `observed_fact` sau chunk care contine pattern de tip credential trebuie RESPINS, nu inregistrat.
 - Patterns minime de detectat: `-----BEGIN.*PRIVATE KEY-----`, `password=`, `secret=`, `api_key=`, `token=` in context de valoare.
 - Rejection trebuie logat in `collection_run` cu statusul `rejected_sensitive_content`.
 
 **Access control rules:**
+
 - Class B: role check obligatoriu la query time; exclusa din retrieval public.
 - Class C in registry: daca este descoperita, se declanseaza procedura de incident (cleanup + postmortem).
 - Access review: trimestrial, documentat in `change_log`.
 
 **Retention and deletion:**
+
 - `observed_fact` fara legatura la `evidence_pack` activ: retine 90 zile, apoi delete conform procedurii.
 - `agent_run` si `evidence_pack`: retine 1 an pentru audit, apoi archive sau delete aprobat.
 - `chunk_embedding`: retine pana la retragerea documentului parinte + 30 zile.
 - Runbook de deletie: documentat si testat per clasa de date inainte de `m15-3`.
 
 **Exception register:**
+
 - Orice abatere de la regulile de clasificare inregistrata in `governance.change_log` cu aprobare explicita.
 - Exceptii fara remediation plan dupa 30 zile → escaladare la `security_and_policy_owner`.
 
 **Artefacte obligatorii:**
+
 - `data-classification-matrix`: document `policy_pack` cu toate clasele, exemple si restrictii.
 - `ingest-redaction-policy`: reguli de scanner si rejection procedure.
 - `access-control-model-for-classified-data`: cine acceseaza ce si in ce conditii.
@@ -3474,6 +3669,7 @@ Scop: demonstrarea ca platforma nu a fost doar initial activata, ci este operata
 **Principiu fundamental:** o operatiune executata o singura data este o demonstratie de setup. Operarea executata de doua ori sau mai mult, cu rezultate comparabile si fara regresie nedocumentata, este operare sustinuta. Aceasta distinctie este non-negociabila pentru inchiderea Epic 16.
 
 **Proof requirements (toate obligatorii):**
+
 1. Backup/restore drill: executat de cel putin doua ori; al doilea drill executat de un operator diferit de primul (daca este posibil); ambele rezultate stocate in `evidence_pack`.
 2. Load test: rulat de doua ori cu rezultate comparate; orice degradare documentata ca finding deschis cu proprietar si remediation plan.
 3. Model evaluation harness: rulat de doua ori; al doilea run nu trebuie sa arate regresie; daca o arata, finding documentat si remediat inainte de sustained operation declaration.
@@ -3482,20 +3678,24 @@ Scop: demonstrarea ca platforma nu a fost doar initial activata, ci este operata
 6. Alert response drill: cel putin un alert declansat manual si traseul L1 → L2 verificat cu doua persoane; record in `evidence_pack`.
 
 **Runbook verification requirement:**
+
 - Cel putin 3 runbook-uri operationale executate de cineva altul decat autorul original.
 - Execution records stocate in `evidence_pack`.
 
 **Governance cadence proof:**
+
 - `governance.change_log` trebuie sa contina minimum 10 entries din operatii post-deployment initial (nu din setup sau migrari initiale).
 - `reconciliation_result` trebuie sa arate minimum 3 collection runs dupa baseline initial.
 
 **Sustained operation declaration (artefact formal de inchidere):**
+
 - Document de tip `operational_declaration`.
 - Aprobat de `executive_sponsor`.
 - Continut obligatoriu: toate loop-urile recurente executate de minim 2 ori, toate drill-urile completate, toate regression checks trecute sau issues documentate si remediate.
 - Acest document gateaza orice comunicare publica de wave-2 readiness.
 
 **Artefacte obligatorii:**
+
 - `backup-restore-drill-evidence-cycle-1` si `cycle-2`.
 - `load-test-results-v1` si `v2` cu comparison report.
 - `model-evaluation-results-cycle-2` cu regression summary.
@@ -3508,11 +3708,13 @@ Scop: demonstrarea ca platforma nu a fost doar initial activata, ci este operata
 ---
 
 **Regula de inchidere formala a celor 9 blocuri:**
+
 - Blocurile 1–7 sunt inchise individual cand toate artefactele, drill-urile si criteriile de acceptanta ale epic-ului corespunzator sunt indeplinite simultan.
 - Blocul 8 (Data Governance) este inchis cand classification matrix, redaction controls, access model si retention runbook sunt active si testate, iar declaratia de conformitate este semnata.
 - Blocul 9 (Sustained Operation Proof) nu poate fi inchis inainte ca blocurile 1–8 sa fi produs cel putin un ciclu operational complet. El este intentionat ultimul.
 
 **Interpretation rule for these supplemental workstreams:**
+
 - Absenta lor nu invalideaza afirmatia ca planul actual este puternic pentru wave-1 foundation.
 - Absenta lor invalideaza orice pretentie ca programul este deja complet enterprise-wide in sens maximal.
 - Inchiderea formala a tuturor celor 9 blocuri, inclusiv Blocul 9 (Sustained Operation Proof), este conditia necesara si suficienta pentru a declara `complete enterprise operating model`.
@@ -3520,6 +3722,7 @@ Scop: demonstrarea ca platforma nu a fost doar initial activata, ci este operata
 ## Content: Handoff Instructions for Execution Agents
 
 Pentru orice task din acest plan, agentul executor trebuie sa primeasca cel putin urmatorul pachet de context:
+
 - obiectivul task-ului si ID-ul lui din plan;
 - epic, milestone si sprint de apartenenta;
 - intrarile canonice aprobate relevante;
@@ -3528,6 +3731,7 @@ Pentru orice task din acest plan, agentul executor trebuie sa primeasca cel puti
 - definitia de done si acceptanta task-ului.
 
 Format minim al handoff-ului catre agent:
+
 - Purpose: ce trebuie schimbat sau produs si de ce exista task-ul;
 - In Scope: ce intra explicit in responsabilitatea lui;
 - Out of Scope: ce nu are voie sa extinda;
@@ -3538,6 +3742,7 @@ Format minim al handoff-ului catre agent:
 - Escalation Conditions: ce tip de ambiguitate sau conflict blocheaza si trebuie escaladat.
 
 Reguli de handoff:
+
 - daca task-ul modifica modelul de date, handoff-ul trebuie sa includa impactul asupra retrieval, ingestie si audit;
 - daca task-ul modifica retrieval-ul, handoff-ul trebuie sa includa task types afectate si politica de token budget;
 - daca task-ul modifica policy sau approvals, handoff-ul trebuie sa includa explicit deny paths, exceptions si audit expectations;
@@ -3553,6 +3758,7 @@ Template-urile de mai jos specializeaza formatul minim de handoff. Ele trebuie f
 Se aplica in principal la epicele `epic-2`, `epic-3` si la taskuri derivate din schema, migrari, taxonomii, query contracts si loadere.
 
 Campuri obligatorii suplimentare:
+
 - Registry Scope: tabele, scheme, taxonomii, entitati si relatii afectate;
 - Canonical Inputs: documente, audit findings si reguli deja aprobate care justifica schimbarea;
 - Query Impact: ce query-uri, retrieval flows, reconciliation checks sau audit surfaces sunt afectate;
@@ -3560,6 +3766,7 @@ Campuri obligatorii suplimentare:
 - Data Risk Notes: ce date pot deveni invalide, incomplete sau ambigue daca schimbarea este gresita.
 
 Checklist minim pentru agent:
+
 - demonstreaza de ce schimbarea nu poate fi exprimata doar prin JSONB sau logica procedurala ascunsa;
 - arata impactul asupra retrieval, ingestie, audit si evidence provenance;
 - include verificari pe exemple reale din clusterul curent si nu doar pe date sintetice;
@@ -3570,6 +3777,7 @@ Checklist minim pentru agent:
 Se aplica in principal la `epic-8` si la orice task ce atinge backup, restore, export, retention operationala de recovery sau HA posture.
 
 Campuri obligatorii suplimentare:
+
 - Recovery Objective: RTO, RPO si postura aprobata de disponibilitate vizata de task;
 - Recovery Scope: ce suprafete trebuie recuperate, in ce ordine si cu ce dependinte;
 - Restore Evidence Plan: cum se demonstreaza ca restaurarea a reusit functional si nu doar procedural;
@@ -3577,6 +3785,7 @@ Campuri obligatorii suplimentare:
 - Residual Risk Statement: ce NU acopera exercitiul sau procedura respectiva.
 
 Checklist minim pentru agent:
+
 - nu considera backup-ul valid daca restore-ul nu este exercitat efectiv;
 - valideaza atat baza de date cat si artefactele critice de audit sau configuratie unde este relevant;
 - include un punct clar de decizie pentru single-instance accepted versus HA required;
@@ -3587,6 +3796,7 @@ Checklist minim pentru agent:
 Se aplica in principal la `epic-10` si `epic-11`, plus taskuri de SBOM, scanning, provenance, release gates, rollback si promotion.
 
 Campuri obligatorii suplimentare:
+
 - Artifact Scope: ce pachete, imagini, build outputs sau release bundles sunt in scope;
 - Provenance Inputs: de unde provin artefactele si ce surse third-party sunt implicate;
 - Integrity Controls: ce scanari, semnari, attestations sau gates se aplica;
@@ -3594,6 +3804,7 @@ Campuri obligatorii suplimentare:
 - Rollback Contract: ce se intampla daca verificarea post-release esueaza.
 
 Checklist minim pentru agent:
+
 - leaga fiecare artifact promovat de inventar, provenance si decizia de acceptare;
 - nu marcheaza un artifact ca acceptabil fara rezultate de scanare sau fara review-ul politicii relevante;
 - include rollback sau recovery pentru schimbarile care ating schema sau runtime critic;
@@ -3604,6 +3815,7 @@ Checklist minim pentru agent:
 Se aplica in principal la `epic-12` si la taskuri despre model serving, model registry, evaluation harness, routing, fallback, latency, cost sau safety controls.
 
 Campuri obligatorii suplimentare:
+
 - Model Scope: modele, versiuni, task types si clase de workload afectate;
 - Evaluation Basis: benchmark-uri, task sets, safety checks si criterii de selectie folosite;
 - Runtime Guardrails: limite de latenta, cost, fallback, overload sau degradare;
@@ -3611,6 +3823,7 @@ Campuri obligatorii suplimentare:
 - Broker Interaction: cum afecteaza taskul retrieval broker, context broker sau action broker.
 
 Checklist minim pentru agent:
+
 - justifica model selection prin evaluare repetabila, nu prin preferinta operatorului;
 - trateaza fallback-ul ca schimbare de comportament guvernata, nu ca mecanism opac de convenience;
 - include impactul asupra task types suportate si asupra calitatii evidence-backed outputs;
@@ -3621,6 +3834,7 @@ Checklist minim pentru agent:
 Se aplica in principal la `epic-14`, dar si la taskuri despre RACI, on-call, support tiers, incident command, recurring reviews sau privileged access review.
 
 Campuri obligatorii suplimentare:
+
 - Ownership Scope: servicii, capabilitati, review loops sau accesuri privilegiate acoperite;
 - Named Roles or Groups: cine raspunde efectiv, nu doar ce rol abstract exista in plan;
 - Operational Cadence: frecventa review-urilor, on-call windows, escalation deadlines;
@@ -3628,6 +3842,7 @@ Campuri obligatorii suplimentare:
 - Governance Outputs: ce artefacte, minute, decizii sau registre trebuie sa rezulte recurent.
 
 Checklist minim pentru agent:
+
 - nu considera rolurile abstracte drept substitute pentru owneri reali;
 - defineste L1/L2/L3 si escalation paths suficient de clar pentru executie sub presiune;
 - leaga recurring reviews de input-uri si output-uri obligatorii, nu doar de intalniri recurente;
@@ -3638,22 +3853,23 @@ Checklist minim pentru agent:
 Strategia de verificare trebuie sa combine patru niveluri de control.
 
 1. Verificare structurala.
-Se confirma ca documentele, schemele, contractele si pachetele respecta structura si validarile definite.
+   Se confirma ca documentele, schemele, contractele si pachetele respecta structura si validarile definite.
 
 2. Verificare comportamentala.
-Se confirma ca registry-ul raspunde la query-uri relevante, collectorii ingereaza corect, retrieval-ul compune context util, action broker-ul blocheaza sau permite corect si pilotul ruleaza repetabil.
+   Se confirma ca registry-ul raspunde la query-uri relevante, collectorii ingereaza corect, retrieval-ul compune context util, action broker-ul blocheaza sau permite corect si pilotul ruleaza repetabil.
 
 3. Verificare de guvernanta.
-Se confirma ca owners, approvals, exception paths si audit trails exista efectiv, nu doar declarativ.
+   Se confirma ca owners, approvals, exception paths si audit trails exista efectiv, nu doar declarativ.
 
 4. Verificare operationala.
-Se confirma ca dashboard-urile, alertele, retention-ul si runbook-urile permit operarea sistemului in conditii reale.
+   Se confirma ca dashboard-urile, alertele, retention-ul si runbook-urile permit operarea sistemului in conditii reale.
 
 Niciun epic nu se considera incheiat daca are doar livrabile create dar nu are verificarea corespunzatoare nivelului sau de risc.
 
 ## Content: Scope Boundaries and Anti-Patterns
 
 Nu intra in wave-1:
+
 - o platforma UI completa pentru tot ecosistemul;
 - automatizare nelimitata a agentilor;
 - introducerea unei noi baze de date de graf ca sistem core inainte sa existe nevoia demonstrata;
@@ -3661,6 +3877,7 @@ Nu intra in wave-1:
 - pilot supra-dimensionat care combina prea multe necunoscute.
 
 Anti-patterns explicite:
+
 - registry folosit ca dump generic de JSON;
 - retrieval care sare direct la vector search fara filtre structurale;
 - aprobari in afara sistemului, nelegate de run records;
@@ -3671,12 +3888,14 @@ Anti-patterns explicite:
 ## Content: Recommended First Files and Work Packages
 
 Primele active existente care trebuie folosite ca baza de lucru sunt:
+
 - blueprint-ul existent ca sursa de adevar arhitectural;
 - audit_full.py ca referinta pentru colectare de fapte runtime si pentru vocabular de infrastructura;
 - docker-compose si llm.yml din ai-infrastructure ca referinte pentru modul de ambalare a serviciilor infrastructurale;
-- __main__.py, health.py si testele existente ca puncte de plecare pentru conventiile de CLI, health si testare.
+- **main**.py, health.py si testele existente ca puncte de plecare pentru conventiile de CLI, health si testare.
 
 Primele pachete de lucru recomandate dupa aprobarea acestui plan sunt:
+
 1. extragerea ADR-urilor si definirea ownership matrix;
 2. taxonomy + metadata schema + linking rules;
 3. model logic registry + query contracts;
@@ -3689,6 +3908,7 @@ Aceasta ordine minimizeaza rework-ul si tine controlate dependintele dintre docu
 ## Content: Definition of Done at Program Level
 
 Programul poate fi declarat implementat corect pentru wave-1 doar daca toate conditiile de mai jos sunt simultan adevarate:
+
 - exista documente canonice standardizate pentru domeniile wave-1;
 - registry-ul ruleaza si poate raspunde la query-uri esentiale cu provenance si state separation;
 - colectarea si reconcilierea functioneaza pe sursele wave-1 cu freshness si drift severity definite;
@@ -3699,6 +3919,7 @@ Programul poate fi declarat implementat corect pentru wave-1 doar daca toate con
 - review-ul de readiness aproba explicit extinderea catre wave-2.
 
 Clarificare obligatorie de interpretare:
+
 - aceasta definitie de done inchide fundatia programului pentru wave-1 si nu trebuie interpretata ca definitie de completitudine absoluta enterprise-wide;
 - completitudinea enterprise maxima necesita inchiderea explicita a `Critical Enterprise Completeness Gap Register Beyond Wave-1 Foundation` si a workstream-urilor suplimentare aplicabile.
 
@@ -3707,6 +3928,7 @@ Clarificare obligatorie de interpretare:
 Acest addendum transforma planul din roadmap generic de program in plan de implementare efectiva pentru instanta concreta ceruta acum.
 
 Constrangeri si decizii de executie pentru aceasta implementare:
+
 - dezvoltarea initiala se face local pe macOS, pe masina curenta;
 - versionarea sursei se face in Git, cu remote tinta: `https://github.com/neacisu/internal_CMDB.git`;
 - runtime-ul PostgreSQL pentru system of record se ruleaza pe hostul `orchestrator.neanelu.ro`, accesat prin `ssh orchestrator`, ca serviciu containerizat dedicat gestionat prin Docker Compose, nu ca instalare directa in sistemul Debian;
@@ -3762,19 +3984,116 @@ effective_delivery_track:
         failed_hosts:
           - host: imac
             detail: "ssh: connect to host 192.168.100.9 port 22: Operation timed out"
-        reachable_hosts: [orchestrator, postgres-main, hz.62, hz.113, hz.118, hz.123, hz.157, hz.164, hz.215, hz.223, hz.247]
+        reachable_hosts:
+          [
+            orchestrator,
+            postgres-main,
+            hz.62,
+            hz.113,
+            hz.118,
+            hz.123,
+            hz.157,
+            hz.164,
+            hz.215,
+            hz.223,
+            hz.247,
+          ]
       runtime_posture_confirmed:
-        orchestrator: {os: "Debian GNU/Linux 13 (trixie)", docker: true, containers: 21, key_containers: [traefik, prometheus, grafana, loki, tempo, otel-collector, openbao, zitadel, roundcube, llm-guard, redis-shared, watchtower, pve-exporter, cloudbeaver]}
-        postgres_main: {os: "Ubuntu 24.04 LTS", docker: false, postgres_services: [postgresql.service, "postgresql@18-main.service", postgres-exporter.service], cron_backups: true}
-        hz_113: {os: "Ubuntu 24.04.4 LTS", docker: true, containers: 7, ai_runtime: [vllm-qwen-14b, vllm-qwq-32b, open-webui, openbao-agent-llm]}
-        hz_62: {os: "Ubuntu 24.04.4 LTS", docker: true, containers: 4, role: [ollama-embed, cadvisor, node-exporter, nvidia-gpu-exporter]}
-        hz_123: {os: "Ubuntu 24.04.3 LTS", docker: true, containers: 8, stack: flowxify, services: [n8n, activepieces, postgres-17, redis]}
-        hz_164: {os: "Ubuntu 24.04.3 LTS", docker: true, containers: 57, lets_encrypt_certs: 6}
-        hz_118: {os: "Debian GNU/Linux 13 (trixie)", docker: false, role: standalone_proxmox}
-        hz_157: {os: "Debian GNU/Linux 11 (bullseye)", docker: false, role: standalone_proxmox}
-        hz_215: {os: "Debian GNU/Linux 13 (trixie)", docker: false, role: proxmox_cluster_member}
-        hz_223: {os: "Debian GNU/Linux 13 (trixie)", docker: false, role: proxmox_cluster_member}
-        hz_247: {os: "Debian GNU/Linux 13 (trixie)", docker: false, role: proxmox_cluster_member}
+        orchestrator:
+          {
+            os: "Debian GNU/Linux 13 (trixie)",
+            docker: true,
+            containers: 21,
+            key_containers:
+              [
+                traefik,
+                prometheus,
+                grafana,
+                loki,
+                tempo,
+                otel-collector,
+                openbao,
+                zitadel,
+                roundcube,
+                llm-guard,
+                redis-shared,
+                watchtower,
+                pve-exporter,
+                cloudbeaver,
+              ],
+          }
+        postgres_main:
+          {
+            os: "Ubuntu 24.04 LTS",
+            docker: false,
+            postgres_services:
+              [
+                postgresql.service,
+                "postgresql@18-main.service",
+                postgres-exporter.service,
+              ],
+            cron_backups: true,
+          }
+        hz_113:
+          {
+            os: "Ubuntu 24.04.4 LTS",
+            docker: true,
+            containers: 7,
+            ai_runtime:
+              [vllm-qwen-14b, vllm-qwq-32b, open-webui, openbao-agent-llm],
+          }
+        hz_62:
+          {
+            os: "Ubuntu 24.04.4 LTS",
+            docker: true,
+            containers: 4,
+            role: [ollama-embed, cadvisor, node-exporter, nvidia-gpu-exporter],
+          }
+        hz_123:
+          {
+            os: "Ubuntu 24.04.3 LTS",
+            docker: true,
+            containers: 8,
+            stack: flowxify,
+            services: [n8n, activepieces, postgres-17, redis],
+          }
+        hz_164:
+          {
+            os: "Ubuntu 24.04.3 LTS",
+            docker: true,
+            containers: 57,
+            lets_encrypt_certs: 6,
+          }
+        hz_118:
+          {
+            os: "Debian GNU/Linux 13 (trixie)",
+            docker: false,
+            role: standalone_proxmox,
+          }
+        hz_157:
+          {
+            os: "Debian GNU/Linux 11 (bullseye)",
+            docker: false,
+            role: standalone_proxmox,
+          }
+        hz_215:
+          {
+            os: "Debian GNU/Linux 13 (trixie)",
+            docker: false,
+            role: proxmox_cluster_member,
+          }
+        hz_223:
+          {
+            os: "Debian GNU/Linux 13 (trixie)",
+            docker: false,
+            role: proxmox_cluster_member,
+          }
+        hz_247:
+          {
+            os: "Debian GNU/Linux 13 (trixie)",
+            docker: false,
+            role: proxmox_cluster_member,
+          }
       trust_surface_confirmed:
         postgres_neanelu_ro_5432: "connection refused - not yet routed through Traefik"
         postgres_orchestrator_neanelu_ro_5432: "connection refused - internalCMDB PostgreSQL not yet deployed"
@@ -4509,6 +4828,7 @@ effective_delivery_track:
 ## Content: Live Audit Synthesis and Exact Wave-1 Registry Contract
 
 Contractul de mai jos nu mai este doar o intentie abstracta derivata din blueprint. El este calibrat pe baza verificarilor read-only executate live cu scripturile existente din repo:
+
 - `subprojects/cluster-full-audit/audit_full.py` pe toate cele 9 noduri `hz.*` din cluster;
 - `subprojects/cluster-audit/audit_cluster.py` pe toate cele 9 noduri `hz.*` pentru topologia de retea si vSwitch;
 - `subprojects/cluster-ssh-checker/test_cluster_ssh.py` pe inventory-ul aprobat pentru aceasta infrastructura: cele 9 noduri `hz.*`, plus `orchestrator`, `postgres-main` si `imac`;
@@ -4516,6 +4836,7 @@ Contractul de mai jos nu mai este doar o intentie abstracta derivata din bluepri
 - `subprojects/trust-surface-audit/audit_trust_surface.py` pe `orchestrator`, `postgres-main`, `imac` si toate cele 9 noduri `hz.*`, plus probe TLS catre `postgres.neanelu.ro:5432` si `postgres.orchestrator.neanelu.ro:5432`.
 
 Fapte observate care trebuie inghetate in modelul wave-1:
+
 - clusterul auditat operational contine 9 noduri `hz.*`, toate accesibile prin audit read-only;
 - inventory-ul operational suplimentar in scope contine `orchestrator`, `postgres-main` si `imac`; din acestea, auditul SSH din 2026-03-08 a confirmat `orchestrator` si `postgres-main` ca reachable, iar `imac` a raspuns cu `connection refused` pe portul 22;
 - familiile OS observate in cluster sunt `Ubuntu 24.04.3 LTS`, `Ubuntu 24.04.4 LTS`, `Debian GNU/Linux 13 (trixie)` si `Debian GNU/Linux 11 (bullseye)`;
@@ -4541,6 +4862,7 @@ Taxonomiile wave-1 trebuie implementate in PostgreSQL ca vocabulary controlat ve
 ### 1. Taxonomy Domain `entity_kind`
 
 Valori obligatorii wave-1:
+
 - `cluster`
 - `proxmox_cluster`
 - `host`
@@ -4580,11 +4902,13 @@ Valori obligatorii wave-1:
 - `change_log`
 
 Regula de normalizare pentru `entity_kind`:
+
 - lista `entity_kind` trebuie sa acopere toate tabelele relationale care pot fi tinta pentru ownership, approval, document binding, evidence binding, reconciliation sau change logging; aliasurile conceptuale din blueprint care nu au tabel dedicat in wave-1 se modeleaza prin combinatia dintre entitatea relationala existenta si taxonomia asociata, nu prin termeni fara suport in schema.
 
 ### 2. Taxonomy Domain `host_role`
 
 Valori obligatorii wave-1:
+
 - `physical_cluster_node`
 - `proxmox_hypervisor`
 - `proxmox_cluster_member`
@@ -4603,6 +4927,7 @@ Valori obligatorii wave-1:
 ### 3. Taxonomy Domain `environment`
 
 Valori obligatorii wave-1:
+
 - `production`
 - `shared-platform`
 - `development`
@@ -4612,6 +4937,7 @@ Valori obligatorii wave-1:
 ### 4. Taxonomy Domain `service_kind`
 
 Valori obligatorii wave-1, derivate din blueprint si din auditul live:
+
 - `postgresql`
 - `pgbouncer`
 - `redis`
@@ -4649,11 +4975,13 @@ Valori obligatorii wave-1, derivate din blueprint si din auditul live:
 - `job_scheduler`
 
 Regula de mapare obligatorie pentru `service_kind`:
+
 - vocabularul retine produsul sau clasa canonica a serviciului, iar identificatori runtime-specifici precum `redis-shared`, numele containerului sau numele Compose raman in `instance_name`, `container_name` si `compose_project_name`, nu inlocuiesc taxonomia controlata.
 
 ### 5. Taxonomy Domain `runtime_kind`
 
 Valori obligatorii wave-1:
+
 - `systemd_service`
 - `docker_container`
 - `docker_compose_stack`
@@ -4665,6 +4993,7 @@ Valori obligatorii wave-1:
 ### 6. Taxonomy Domain `network_segment_kind`
 
 Valori obligatorii wave-1:
+
 - `public_underlay`
 - `private_vswitch`
 - `docker_bridge`
@@ -4676,6 +5005,7 @@ Valori obligatorii wave-1:
 ### 7. Taxonomy Domain `address_scope`
 
 Valori obligatorii wave-1:
+
 - `public_ipv4`
 - `public_ipv6`
 - `private_ipv4`
@@ -4686,6 +5016,7 @@ Valori obligatorii wave-1:
 ### 8. Taxonomy Domain `exposure_method`
 
 Valori obligatorii wave-1:
+
 - `traefik_http`
 - `traefik_https`
 - `traefik_tcp_sni`
@@ -4698,6 +5029,7 @@ Valori obligatorii wave-1:
 ### 9. Taxonomy Domain `storage_kind`
 
 Valori obligatorii wave-1:
+
 - `local_disk`
 - `mdraid`
 - `nvme`
@@ -4709,6 +5041,7 @@ Valori obligatorii wave-1:
 ### 10. Taxonomy Domain `document_kind`
 
 Valori obligatorii wave-1, conform blueprint-ului:
+
 - `adr`
 - `cluster_overview`
 - `node_record`
@@ -4754,6 +5087,7 @@ Valori obligatorii wave-1, conform blueprint-ului:
 ### 11. Taxonomy Domain `os_family`
 
 Valori obligatorii wave-1:
+
 - `ubuntu`
 - `debian`
 - `macos`
@@ -4762,6 +5096,7 @@ Valori obligatorii wave-1:
 ### 12. Taxonomy Domain `lifecycle_status`
 
 Valori obligatorii wave-1:
+
 - `planned`
 - `active`
 - `degraded`
@@ -4772,6 +5107,7 @@ Valori obligatorii wave-1:
 ### 13. Taxonomy Domain `observation_status`
 
 Valori obligatorii wave-1:
+
 - `observed`
 - `partially_observed`
 - `unreachable`
@@ -4781,6 +5117,7 @@ Valori obligatorii wave-1:
 ### 14. Taxonomy Domain `discovery_source_kind`
 
 Valori obligatorii wave-1:
+
 - `ssh_full_audit`
 - `ssh_network_audit`
 - `ssh_connectivity_check`
@@ -4799,6 +5136,7 @@ Valori obligatorii wave-1:
 ### 15. Taxonomy Domain `evidence_kind`
 
 Valori obligatorii wave-1:
+
 - `command_stdout`
 - `parsed_config_file`
 - `structured_json_export`
@@ -4816,6 +5154,7 @@ Valori obligatorii wave-1:
 ### 16. Taxonomy Domain `membership_role`
 
 Valori obligatorii wave-1:
+
 - `operational_cluster_member`
 - `proxmox_quorum_member`
 - `proxmox_non_quorate_member`
@@ -4825,6 +5164,7 @@ Valori obligatorii wave-1:
 ### 17. Taxonomy Domain `interface_kind`
 
 Valori obligatorii wave-1:
+
 - `physical_nic`
 - `bond`
 - `linux_bridge`
@@ -4838,6 +5178,7 @@ Valori obligatorii wave-1:
 ### 18. Taxonomy Domain `owner_type`
 
 Valori obligatorii wave-1:
+
 - `named_individual`
 - `team`
 - `role_group`
@@ -4848,6 +5189,7 @@ Valori obligatorii wave-1:
 ### 19. Taxonomy Domain `collection_run_status`
 
 Valori obligatorii wave-1:
+
 - `queued`
 - `running`
 - `succeeded`
@@ -4859,6 +5201,7 @@ Valori obligatorii wave-1:
 ### 20. Taxonomy Domain `reconciliation_result_status`
 
 Valori obligatorii wave-1:
+
 - `matched`
 - `drift_detected`
 - `missing_canonical`
@@ -4870,6 +5213,7 @@ Valori obligatorii wave-1:
 ### 21. Taxonomy Domain `exposure_health`
 
 Valori obligatorii wave-1:
+
 - `healthy`
 - `degraded`
 - `connection_refused`
@@ -4882,6 +5226,7 @@ Valori obligatorii wave-1:
 ### 22. Taxonomy Domain `relationship_kind`
 
 Valori obligatorii wave-1:
+
 - `contains`
 - `hosts`
 - `member_of`
@@ -4903,7 +5248,9 @@ Schema wave-1 trebuie organizata pe schemate functionale clare. Denumirile de ma
 ### Schema `taxonomy`
 
 #### Table `taxonomy_domain`
+
 Coloane obligatorii:
+
 - `taxonomy_domain_id` UUID PK
 - `domain_code` TEXT UNIQUE
 - `name` TEXT
@@ -4914,7 +5261,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `taxonomy_term`
+
 Coloane obligatorii:
+
 - `taxonomy_term_id` UUID PK
 - `taxonomy_domain_id` UUID FK -> `taxonomy_domain`
 - `term_code` TEXT
@@ -4930,7 +5279,9 @@ Coloane obligatorii:
 ### Schema `registry`
 
 #### Table `cluster`
+
 Coloane obligatorii:
+
 - `cluster_id` UUID PK
 - `cluster_code` TEXT UNIQUE
 - `name` TEXT
@@ -4944,7 +5295,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `host`
+
 Coloane obligatorii:
+
 - `host_id` UUID PK
 - `cluster_id` UUID NULL FK -> `cluster` (`primary operational cluster when applicable`)
 - `host_code` TEXT UNIQUE
@@ -4971,7 +5324,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `host_role_assignment`
+
 Coloane obligatorii:
+
 - `host_role_assignment_id` UUID PK
 - `host_id` UUID FK -> `host`
 - `host_role_term_id` UUID FK -> `taxonomy_term` (`host_role` domain)
@@ -4983,7 +5338,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `cluster_membership`
+
 Coloane obligatorii:
+
 - `cluster_membership_id` UUID PK
 - `cluster_id` UUID FK -> `cluster`
 - `host_id` UUID FK -> `host`
@@ -4998,7 +5355,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `host_hardware_snapshot`
+
 Coloane obligatorii:
+
 - `host_hardware_snapshot_id` UUID PK
 - `host_id` UUID FK -> `host`
 - `collection_run_id` UUID FK -> `discovery.collection_run`
@@ -5015,7 +5374,9 @@ Coloane obligatorii:
 - `observed_at` TIMESTAMPTZ
 
 #### Table `gpu_device`
+
 Coloane obligatorii:
+
 - `gpu_device_id` UUID PK
 - `host_id` UUID FK -> `host`
 - `gpu_index` INTEGER
@@ -5037,7 +5398,9 @@ Coloane obligatorii:
 - `observed_at` TIMESTAMPTZ
 
 #### Table `network_segment`
+
 Coloane obligatorii:
+
 - `network_segment_id` UUID PK
 - `segment_code` TEXT UNIQUE
 - `name` TEXT
@@ -5052,7 +5415,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `network_interface`
+
 Coloane obligatorii:
+
 - `network_interface_id` UUID PK
 - `host_id` UUID FK -> `host`
 - `network_segment_id` UUID NULL FK -> `network_segment`
@@ -5068,7 +5433,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `ip_address_assignment`
+
 Coloane obligatorii:
+
 - `ip_address_assignment_id` UUID PK
 - `network_interface_id` UUID FK -> `network_interface`
 - `network_segment_id` UUID NULL FK -> `network_segment`
@@ -5081,7 +5448,9 @@ Coloane obligatorii:
 - `collection_run_id` UUID FK -> `discovery.collection_run`
 
 #### Table `route_entry`
+
 Coloane obligatorii:
+
 - `route_entry_id` UUID PK
 - `host_id` UUID FK -> `host`
 - `network_segment_id` UUID NULL FK -> `network_segment`
@@ -5095,7 +5464,9 @@ Coloane obligatorii:
 - `observed_at` TIMESTAMPTZ
 
 #### Table `dns_resolver_state`
+
 Coloane obligatorii:
+
 - `dns_resolver_state_id` UUID PK
 - `host_id` UUID FK -> `host`
 - `resolver_list_text` TEXT
@@ -5104,7 +5475,9 @@ Coloane obligatorii:
 - `observed_at` TIMESTAMPTZ
 
 #### Table `storage_asset`
+
 Coloane obligatorii:
+
 - `storage_asset_id` UUID PK
 - `host_id` UUID FK -> `host`
 - `storage_kind_term_id` UUID FK -> `taxonomy_term`
@@ -5120,7 +5493,9 @@ Coloane obligatorii:
 - `observed_at` TIMESTAMPTZ
 
 #### Table `shared_service`
+
 Coloane obligatorii:
+
 - `shared_service_id` UUID PK
 - `service_code` TEXT UNIQUE
 - `name` TEXT
@@ -5134,7 +5509,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `service_instance`
+
 Coloane obligatorii:
+
 - `service_instance_id` UUID PK
 - `shared_service_id` UUID FK -> `shared_service`
 - `host_id` UUID NULL FK -> `host`
@@ -5152,7 +5529,9 @@ Coloane obligatorii:
 - `observed_at` TIMESTAMPTZ NULL
 
 #### Table `service_exposure`
+
 Coloane obligatorii:
+
 - `service_exposure_id` UUID PK
 - `service_instance_id` UUID FK -> `service_instance`
 - `exposure_method_term_id` UUID FK -> `taxonomy_term`
@@ -5178,7 +5557,9 @@ Coloane obligatorii:
 - `observed_at` TIMESTAMPTZ NULL
 
 #### Table `service_dependency`
+
 Coloane obligatorii:
+
 - `service_dependency_id` UUID PK
 - `source_service_instance_id` UUID FK -> `service_instance`
 - `target_service_instance_id` UUID NULL FK -> `service_instance`
@@ -5191,7 +5572,9 @@ Coloane obligatorii:
 - `observed_at` TIMESTAMPTZ NULL
 
 #### Table `ownership_assignment`
+
 Coloane obligatorii:
+
 - `ownership_assignment_id` UUID PK
 - `entity_kind_term_id` UUID FK -> `taxonomy_term`
 - `entity_id` UUID
@@ -5205,7 +5588,9 @@ Coloane obligatorii:
 ### Schema `docs`
 
 #### Table `document`
+
 Coloane obligatorii:
+
 - `document_id` UUID PK
 - `document_kind_term_id` UUID FK -> `taxonomy_term`
 - `document_path` TEXT UNIQUE
@@ -5219,7 +5604,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `document_version`
+
 Coloane obligatorii:
+
 - `document_version_id` UUID PK
 - `document_id` UUID FK -> `document`
 - `git_commit_sha` TEXT
@@ -5230,7 +5617,9 @@ Coloane obligatorii:
 - `created_at` TIMESTAMPTZ
 
 #### Table `document_entity_binding`
+
 Coloane obligatorii:
+
 - `document_entity_binding_id` UUID PK
 - `document_version_id` UUID FK -> `document_version`
 - `entity_kind_term_id` UUID FK -> `taxonomy_term`
@@ -5242,7 +5631,9 @@ Coloane obligatorii:
 ### Schema `retrieval`
 
 #### Table `document_chunk`
+
 Coloane obligatorii:
+
 - `document_chunk_id` UUID PK
 - `document_version_id` UUID FK -> `docs.document_version`
 - `chunk_index` INTEGER
@@ -5254,7 +5645,9 @@ Coloane obligatorii:
 - `created_at` TIMESTAMPTZ
 
 #### Table `chunk_embedding`
+
 Coloane obligatorii:
+
 - `chunk_embedding_id` UUID PK
 - `document_chunk_id` UUID FK -> `document_chunk`
 - `embedding_model_code` TEXT
@@ -5265,7 +5658,9 @@ Coloane obligatorii:
 - `created_at` TIMESTAMPTZ
 
 #### Table `evidence_pack`
+
 Coloane obligatorii:
+
 - `evidence_pack_id` UUID PK
 - `pack_code` TEXT UNIQUE
 - `task_type_code` TEXT
@@ -5276,7 +5671,9 @@ Coloane obligatorii:
 - `created_at` TIMESTAMPTZ
 
 #### Table `evidence_pack_item`
+
 Coloane obligatorii:
+
 - `evidence_pack_item_id` UUID PK
 - `evidence_pack_id` UUID FK -> `evidence_pack`
 - `item_order` INTEGER
@@ -5291,7 +5688,9 @@ Coloane obligatorii:
 ### Schema `discovery`
 
 #### Table `discovery_source`
+
 Coloane obligatorii:
+
 - `discovery_source_id` UUID PK
 - `source_kind_term_id` UUID FK -> `taxonomy_term`
 - `source_code` TEXT UNIQUE
@@ -5303,7 +5702,9 @@ Coloane obligatorii:
 - `created_at` TIMESTAMPTZ
 
 #### Table `collection_run`
+
 Coloane obligatorii:
+
 - `collection_run_id` UUID PK
 - `discovery_source_id` UUID FK -> `discovery_source`
 - `run_code` TEXT UNIQUE
@@ -5316,7 +5717,9 @@ Coloane obligatorii:
 - `summary_jsonb` JSONB
 
 #### Table `observed_fact`
+
 Coloane obligatorii:
+
 - `observed_fact_id` UUID PK
 - `collection_run_id` UUID FK -> `collection_run`
 - `entity_kind_term_id` UUID FK -> `taxonomy_term`
@@ -5329,7 +5732,9 @@ Coloane obligatorii:
 - `observed_at` TIMESTAMPTZ
 
 #### Table `evidence_artifact`
+
 Coloane obligatorii:
+
 - `evidence_artifact_id` UUID PK
 - `collection_run_id` UUID FK -> `collection_run`
 - `evidence_kind_term_id` UUID FK -> `taxonomy_term`
@@ -5341,7 +5746,9 @@ Coloane obligatorii:
 - `created_at` TIMESTAMPTZ
 
 #### Table `reconciliation_result`
+
 Coloane obligatorii:
+
 - `reconciliation_result_id` UUID PK
 - `entity_kind_term_id` UUID FK -> `taxonomy_term`
 - `entity_id` UUID
@@ -5358,7 +5765,9 @@ Coloane obligatorii:
 ### Schema `agent_control`
 
 #### Table `prompt_template_registry`
+
 Coloane obligatorii:
+
 - `prompt_template_registry_id` UUID PK
 - `template_code` TEXT UNIQUE
 - `task_type_code` TEXT
@@ -5371,7 +5780,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `agent_run`
+
 Coloane obligatorii:
+
 - `agent_run_id` UUID PK
 - `run_code` TEXT UNIQUE
 - `agent_identity` TEXT
@@ -5386,7 +5797,9 @@ Coloane obligatorii:
 - `created_at` TIMESTAMPTZ
 
 #### Table `agent_evidence`
+
 Coloane obligatorii:
+
 - `agent_evidence_id` UUID PK
 - `agent_run_id` UUID FK -> `agent_run`
 - `entity_kind_term_id` UUID FK -> `taxonomy_term`
@@ -5398,7 +5811,9 @@ Coloane obligatorii:
 - `created_at` TIMESTAMPTZ
 
 #### Table `action_request`
+
 Coloane obligatorii:
+
 - `action_request_id` UUID PK
 - `request_code` TEXT UNIQUE
 - `agent_run_id` UUID NULL FK -> `agent_run`
@@ -5413,7 +5828,9 @@ Coloane obligatorii:
 ### Schema `governance`
 
 #### Table `policy_record`
+
 Coloane obligatorii:
+
 - `policy_record_id` UUID PK
 - `policy_code` TEXT UNIQUE
 - `name` TEXT
@@ -5424,7 +5841,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `approval_record`
+
 Coloane obligatorii:
+
 - `approval_record_id` UUID PK
 - `approval_code` TEXT UNIQUE
 - `entity_kind_term_id` UUID FK -> `taxonomy_term`
@@ -5438,7 +5857,9 @@ Coloane obligatorii:
 - `updated_at` TIMESTAMPTZ
 
 #### Table `change_log`
+
 Coloane obligatorii:
+
 - `change_log_id` UUID PK
 - `change_code` TEXT UNIQUE
 - `entity_kind_term_id` UUID FK -> `taxonomy_term`
@@ -5460,6 +5881,7 @@ Coloane obligatorii:
 ## Content: Modeling Rules for Columns and Constraints
 
 Regulile obligatorii pentru coloanele wave-1 sunt urmatoarele:
+
 - IP-urile se stocheaza in `INET`, subretelele in `CIDR`, nu in `TEXT` liber;
 - metadata variabila merge in `JSONB`, dar doar dupa ce a fost extras tot ce este stabil si interogabil in coloane relationale dedicate;
 - toate tabelele de business au `created_at`, `updated_at`, iar tabelele observate au suplimentar `observed_at` sau `started_at`/`finished_at`;
@@ -5488,6 +5910,7 @@ Regulile obligatorii pentru coloanele wave-1 sunt urmatoarele:
 ## Content: Why This Schema Is Mandatory for Wave-1
 
 Aceasta schema nu este optionala si nu trebuie amanata pentru un „v2 mai curat”, deoarece auditul live a confirmat deja ca infrastructura reala contine simultan:
+
 - noduri fizice si hypervisoare Proxmox;
 - runtime-uri Docker dense si hosturi fara Docker;
 - servicii shared de observability, AI, IAM, secrets si baze de date;
@@ -5502,6 +5925,7 @@ In plus, blueprint-ul nu cere doar un registry relational si un set de colectori
 ## Content: Effective Execution Notes for This Concrete Instance
 
 Pentru aceasta instanta de implementare, ordinea efectiva trebuie sa fie:
+
 1. se pregateste repository-ul local si structura de cod a proiectului `internal_CMDB`;
 2. se provisioneaza un runtime PostgreSQL containerizat dedicat pe `orchestrator`, cu Compose separat, cu bind mounts pentru date, backup-uri si exporturi pe `/mnt/HC_Volume_105014654`; accesul extern standard prin Traefik shared la `postgres.orchestrator.neanelu.ro:5432` ramane target-state si trebuie activat doar dupa validarea live a rutarii TCP/SNI, deoarece auditul din 2026-03-08 a observat `connection refused` pe ambele endpoint-uri publice PostgreSQL relevante;
 3. se creeaza `internalCMDB`, migrarea initiala si dictionarul de date complet;
@@ -5516,6 +5940,7 @@ Pentru aceasta instanta de implementare, ordinea efectiva trebuie sa fie:
 12. se activeaza KPI-urile, alerting-ul, retention-ul, audit trails si runbook-urile necesare pentru operare enterprise-grade.
 
 Scripturile candidate care trebuie evaluate primele pentru adaptare sunt:
+
 - `subprojects/cluster-full-audit/audit_full.py`;
 - `subprojects/cluster-audit/audit_cluster.py`;
 - `subprojects/cluster-ssh-checker/test_cluster_ssh.py`;
@@ -5523,6 +5948,7 @@ Scripturile candidate care trebuie evaluate primele pentru adaptare sunt:
 - orice alte scripturi locale care deja extrag inventar, retea, storage, servicii si configuratii.
 
 Ce trebuie implementat explicit in schema `internalCMDB`, fara a lasa goluri pentru mai tarziu:
+
 - entitati pentru hosturi, noduri, VM-uri, containere, servicii shared, instante de servicii, retele, interfete, storage, volume, procese relevante, porturi, politici, ownership si evidenta;
 - tabele de relatii pentru depedinte structurale si operationale;
 - tabele pentru stare canonica, stare observata, evidenta si provenance;
@@ -5532,6 +5958,7 @@ Ce trebuie implementat explicit in schema `internalCMDB`, fara a lasa goluri pen
 - comentarii de schema si dictionary coverage pentru exploatare enterprise-grade.
 
 Ce nu trebuie facut in aceasta etapa, chiar daca cerinta operationala este urgenta:
+
 - nu se sare peste migrations in favoarea unui bootstrap manual direct in baza de date;
 - nu se scriu date brute, ne-normalizate, direct in tabelele finale;
 - nu se echivaleaza `RLS pe coloane` cu ceva nativ in PostgreSQL; restrictia de coloane trebuie implementata corect, nu doar declarata;
@@ -5546,6 +5973,7 @@ Pentru ca planul sa acopere in mod profesionist si executabil blueprint-ul, wave
 ### 1. Broker-e obligatorii, nu doar intentii de arhitectura
 
 Implementarea wave-1 trebuie sa produca trei componente distincte:
+
 - `Context Broker`, responsabil sa clasifice task-ul, sa aplice filtre de securitate si scope si sa construiasca evidence packs bounded;
 - `Retrieval Broker`, responsabil sa execute pipeline-ul corect: exact lookup, metadata filtering, lexical search, semantic retrieval pe subset prefiltrat, reranking si selection rationale;
 - `Action Broker`, responsabil sa impuna approval-uri, sa verifice scopul schimbarii, sa inregistreze cererea, sa aplice deny paths si sa capteze rezultatul executiei.
@@ -5555,6 +5983,7 @@ Aceste componente nu pot ramane doar ca reguli narative, deoarece blueprint-ul l
 ### 2. Obiecte wave-1 obligatorii pentru retrieval si control plane
 
 Planul wave-1 trebuie sa includa explicit urmatoarele obiecte persistente:
+
 - `document_chunk`, pentru fragmentarea controlata a documentelor canonice;
 - `chunk_embedding`, pentru semantic retrieval cu provenance si model versioning;
 - `evidence_pack` si `evidence_pack_item`, pentru context assembly bounded si explicabil;
@@ -5568,6 +5997,7 @@ Fara aceste obiecte, planul ar modela doar un registry de infrastructura si o do
 ### 3. Artefacte obligatorii pentru orice aplicatie noua
 
 Pentru orice aplicatie noua livrata prin platforma, wave-1 trebuie sa includa task-uri si reguli concrete pentru crearea, aprobarea si binding-ul urmatoarelor artefacte:
+
 - `Research Dossier` ca sursa initiala versionata de fapte, constrangeri si reutilizari;
 - `Application Definition Pack` ca pachet canonic complet al aplicatiei;
 - `Verification Specification` ca definitie executabila a corectitudinii;
@@ -5582,6 +6012,7 @@ Pentru primul pilot wave-1, exemplul recomandat si suficient de bounded este o a
 Maparea minima obligatorie a artefactelor pentru acest pilot trebuie sa fie urmatoarea.
 
 `Research Dossier` pentru primul pilot:
+
 - scop: demonstreaza ca exista suficient context real pentru o aplicatie interna de consultare a registry-ului;
 - surse canonice minime: blueprint-ul, planul curent, taxonomiile wave-1, contractele pentru PostgreSQL si Traefik shared;
 - surse observate minime: auditul live pentru nodurile `hz.*`, topologia Proxmox validata live, serviciile shared observate pe `orchestrator`, runtime-ul PostgreSQL observat pe `postgres-main` si starea curenta a rutelor PostgreSQL relevante, inclusiv probele `connection refused` din 2026-03-08 pentru endpoint-urile publice `:5432`;
@@ -5589,6 +6020,7 @@ Maparea minima obligatorie a artefactelor pentru acest pilot trebuie sa fie urma
 - output obligatoriu: scope bounded, constrangeri de acces, dependinte, riscuri si gap-uri ramase deschise.
 
 `Application Definition Pack` pentru primul pilot:
+
 - `Product Intent Record`: aplicatia ofera interogare read-only pentru `internalCMDB`, cautare de entitati, vizualizare de dependinte si evidenta de provenienta, fara write-path direct in wave-1;
 - `Context Boundary Record`: target doar mediul curent, doar clusterul actual si hosturile shared confirmate ca reachable sau marcate explicit ca gap operational, cu acces la `internalCMDB` si fara permisiuni de schimbare infrastructurala;
 - `Canonical Domain Model`: entitati principale `cluster`, `host`, `shared_service`, `service_instance`, `network_segment`, `document`, `observed_fact`, `evidence_artifact`;
@@ -5596,6 +6028,7 @@ Maparea minima obligatorie a artefactelor pentru acest pilot trebuie sa fie urma
 - `Shared Service Contracts`: doua suprafete PostgreSQL distincte trebuie modelate explicit: `postgres-main` ca runtime existent pentru aplicatii, asociat cu `postgres.neanelu.ro`, si runtime-ul dedicat `internalCMDB` planificat pe `orchestrator`, asociat cu `postgres.orchestrator.neanelu.ro`; auditul din 2026-03-08 a confirmat separarea de rol, reachability SSH pentru ambele hosturi si faptul ca ambele endpoint-uri publice `:5432` necesita inca validare operationala, iar Traefik shared si observability shared raman suprafete comune de control si evidenta.
 
 `Verification Specification` pentru primul pilot:
+
 - teste functionale pentru lookup de host dupa `host_code`, `hostname` si IP;
 - teste de consistenta pentru traversarea `host -> service_instance -> service_exposure -> evidence_artifact`;
 - teste de autorizare care confirma absenta write-path-urilor neaprobate;
@@ -5603,6 +6036,7 @@ Maparea minima obligatorie a artefactelor pentru acest pilot trebuie sa fie urma
 - criteriu de acceptanta: orice raspuns al pilotului catre operator trebuie sa poata arata sursa canonica sau observata folosita.
 
 `Evidence Map` pentru primul pilot:
+
 - leaga ecranele sau endpoint-urile pilotului de obiecte precise din registry si de documentele canonice sursa;
 - leaga fiecare afirmatie operationala critica de `document_version`, `observed_fact`, `evidence_artifact` sau `agent_evidence`;
 - marcheaza explicit unde afirmatia este canonica, observata sau rezultatul unei inferente controlate;
@@ -5611,6 +6045,7 @@ Maparea minima obligatorie a artefactelor pentru acest pilot trebuie sa fie urma
 ### 4. Observability, KPI, retention si runbooks ca livrabile operationale
 
 Wave-1 trebuie sa produca explicit:
+
 - dashboard-uri pentru starea registry-ului, freshness-ul colectorilor, calitatea retrieval-ului si executiile agentilor;
 - alerting pentru drift critic, colectori esuati, approval expirate, broker deny paths neasteptate si probleme de ingestie;
 - politici de retention pentru audit records, evidence packs, agent runs si artefacte de colectare;
@@ -5622,6 +6057,7 @@ Fara aceste livrabile, planul poate produce componente tehnice, dar nu poate sus
 ### 5. Pozitie onesta privind completitudinea planului
 
 Chiar si dupa extinderea curenta, planul trebuie tratat profesional ca `expanded-enterprise-draft-for-implementation-review`, nu ca document „100% complet si 100% corect” in sens absolut. Motivul este simplu:
+
 - planul depinde in continuare de validari live asupra infrastructurii reale;
 - anumite decizii de ownership, approval scopes si sequencing operational trebuie inca inghetate prin executie si review formal;
 - orice plan serios pentru un sistem dependent de infrastructura vie trebuie sa accepte delta controlata, nu sa pretinda infailibilitate.
@@ -5631,6 +6067,7 @@ Formularea corecta enterprise-grade este urmatoarea: planul este substantial ext
 ## Content: Final Recommendation
 
 Blueprint-ul curent trebuie pastrat ca document de arhitectura tinta. Planul de fata trebuie mentinut separat ca document de executie si program management. Separarea este importanta pentru ca:
+
 - blueprint-ul trebuie sa ramana stabil si conceptual;
 - planul trebuie sa poata evolua pe masura ce apar decizii, riscuri, rezultate de pilot si ajustari de sequencing;
 - agentii executori au nevoie de reguli operationale si handoff-uri clare, nu doar de viziunea arhitecturala.

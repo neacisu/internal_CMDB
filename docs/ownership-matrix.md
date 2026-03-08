@@ -1,3 +1,16 @@
+---
+id: GOV-001
+title: internalCMDB — Ownership Matrix & RACI
+doc_class: ownership_matrix
+domain: platform-foundations
+version: "1.0"
+status: approved
+created: 2026-03-08
+updated: 2026-03-08
+owner: executive_sponsor
+tags: [ownership, raci, escalation, wave-1]
+---
+
 # internalCMDB — Ownership Matrix & RACI
 
 **Version**: 1.0
@@ -124,4 +137,69 @@ single-engineer posture and must be revisited before any external operator is gr
 
 ---
 
-*Generated: 2026-03-08 | Evidence: collection_run_id=aa5c8b96-07cb-492c-b322-399e0574d738*
+## Approval Authority Requirements
+
+Each decision class requires a minimum approval set before execution:
+
+| Decision Class | Minimum Approvers | Risk Class (ADR-004) | Notes |
+|---|---|---|---|
+| ADR creation or amendment | Architecture Board | RC-2 | Executive Sponsor if strategic scope |
+| Schema migration (staging) | Data Registry Owner | RC-3 | |
+| Schema migration (production) | Architecture Board + Executive Sponsor | RC-4 | Dual approval required |
+| Taxonomy term addition | Architecture Board | RC-2 | |
+| Taxonomy term deprecation | Architecture Board + Data Registry Owner | RC-3 | |
+| Policy document update | Security & Policy Owner + Executive Sponsor | RC-3 | |
+| Discovery loader modification | Discovery Owner | RC-2 | |
+| New discovery source onboarding | Data Registry Owner + Architecture Board | RC-3 | |
+| Traefik / networking change | SRE Owner + Architecture Board | RC-4 | |
+| Secret rotation | Security & Policy Owner | RC-4 | |
+| Agent policy modification | Security & Policy Owner + Architecture Board | RC-4 | |
+| New role assignment | Executive Sponsor | RC-3 | |
+| Wave-1 baseline sign-off | Executive Sponsor + Architecture Board | RC-4 | |
+
+---
+
+## Escalation Paths
+
+Escalation follows the chain below. Each level is invoked only when the previous level is
+unavailable, has a conflict of interest, or the decision scope exceeds their authority.
+
+### Level 1 — Role Owner (default)
+The named owner of the affected capability resolves within their authority scope.
+
+### Level 2 — Platform Program Manager
+Routing conflicts, timeline disputes, dependency unblocking, cross-role coordination.
+Invoked when: a role owner is blocked for > 24h without a path forward.
+
+### Level 3 — Architecture Board
+Architectural disputes, ADR conflicts, scope boundary questions, exception requests.
+Invoked when: a program-level decision requires canonical architectural approval.
+
+### Level 4 — Executive Sponsor
+Budget, priority reprioritization, external dependencies, security exceptions, wave-2 gates.
+Invoked when: Architecture Board escalation is insufficient or a non-negotiable is at risk.
+
+### Escalation response SLAs
+
+| Escalation Level | Normal Response | Critical Response |
+|---|---|---|
+| L1 Role Owner | 4h (business hours) | 1h |
+| L2 Program Manager | 8h | 2h |
+| L3 Architecture Board | 24h | 4h |
+| L4 Executive Sponsor | 48h | 8h |
+
+**Critical** = production outage, security incident, data integrity risk, or non-negotiable violation.
+
+### Exception approval model
+
+All exceptions to plan rules, non-negotiables, or approved ADRs must be recorded in
+`governance.change_log` with:
+- `exception_type`: rule or ADR being excepted
+- `justification`: why the exception is necessary
+- `approved_by`: minimum L3 for architectural exceptions, L4 for non-negotiable exceptions
+- `expires_at`: all exceptions expire; no standing exceptions without review
+- `remediation_plan`: path to remove the exception
+
+---
+
+*Generated: 2026-03-08 | Updated: 2026-03-08 (pt-002: escalation model added) | Evidence: collection_run_id=aa5c8b96-07cb-492c-b322-399e0574d738*
