@@ -163,25 +163,21 @@ def _parse_metadata_line(result: NetworkAuditResult, line: str) -> bool:
 def _append_section_line(
     section: SectionName,
     line: str,
-    interfaces: list[str],
-    vlans: list[str],
-    vlan_ids: list[str],
-    routes: list[str],
-    private_ips: list[str],
+    result: NetworkAuditResult,
 ) -> None:
     stripped = line.strip()
     if not stripped:
         return
     if section == "iface":
-        interfaces.append(stripped)
+        result["interfaces"].append(stripped)
     elif section == "vlans" and stripped != "(none)":
-        vlans.append(stripped)
+        result["vlans"].append(stripped)
     elif section == "vlan_ids" and "no vlan ids" not in line:
-        vlan_ids.append(stripped)
+        result["vlan_ids"].append(stripped)
     elif section == "routes":
-        routes.append(stripped)
+        result["routes"].append(stripped)
     elif section == "private" and stripped != "(none)":
-        private_ips.append(stripped)
+        result["private_ips"].append(stripped)
 
 
 def _update_netplan(
@@ -205,11 +201,6 @@ def parse_output(alias: str, pub_ip: str, raw: str) -> NetworkAuditResult:
     section: SectionName = None
     netplan_file = None
     netplan_content: dict[str, list[str]] = {}
-    interfaces: list[str] = []
-    vlans: list[str] = []
-    vlan_ids: list[str] = []
-    routes: list[str] = []
-    private_ips: list[str] = []
 
     for line in raw.splitlines():
         if _parse_metadata_line(result, line):
@@ -227,19 +218,11 @@ def parse_output(alias: str, pub_ip: str, raw: str) -> NetworkAuditResult:
         _append_section_line(
             section,
             line,
-            interfaces,
-            vlans,
-            vlan_ids,
-            routes,
-            private_ips,
+            result,
         )
 
-    result["interfaces"] = interfaces
-    result["vlans"] = vlans
-    result["vlan_ids"] = vlan_ids
-    result["routes"] = routes
     result["netplan"] = netplan_content
-    result["private_ips"] = private_ips
+
     return result
 
 
