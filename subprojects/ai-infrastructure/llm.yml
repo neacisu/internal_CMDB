@@ -37,6 +37,21 @@ http:
         domains:
           - main: "llm.neanelu.ro"
 
+    # Qwen3-Embedding-8B Q5_K_M via Ollama pe hz.62
+    # Proxiat prin HAProxy VIP 10.0.1.10:49003 -> 10.0.1.62:11434
+    # API: POST /v1/embeddings  (OpenAI-compatible)
+    llm-embeddings:
+      rule: "Host(`embeddings.neanelu.ro`)"
+      service: llm-embeddings-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-llm
+      tls:
+        certResolver: cloudflare
+        domains:
+          - main: "embeddings.neanelu.ro"
+
   services:
     # Open WebUI pe hz.113, proxiat prin HAProxy VIP 10.0.1.10:49003
     # -> 10.0.1.13:3000 (container open-webui).
@@ -51,3 +66,15 @@ http:
           timeout: "10s"
         responseForwarding:
           flushInterval: "-1"
+
+    # Ollama pe hz.62 - REST synchronous, fara SSE, flush standard 100ms
+    llm-embeddings-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.10:49003"
+        healthCheck:
+          path: "/"
+          interval: "30s"
+          timeout: "10s"
+        responseForwarding:
+          flushInterval: "100ms"

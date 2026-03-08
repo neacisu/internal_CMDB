@@ -15,6 +15,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 CLUSTER: list[tuple[str, str]] = [
+    ("hz.62", "95.216.66.62"),
     ("hz.113", "49.13.97.113"),
     ("hz.118", "95.216.72.118"),
     ("hz.123", "94.130.68.123"),
@@ -38,9 +39,13 @@ _SSH_OPTS = [
     "LogLevel=ERROR",
 ]
 
+ADD_MARKER = "[ADD ]"
+SKIP_MARKER = "[SKIP]"
+ERROR_MARKER = "[ERR ]"
+
 
 def ssh(host: str, command: str, timeout: int = 30) -> tuple[int, str, str]:
-    cmd = ["ssh"] + _SSH_OPTS + [host, command]
+    cmd = ["ssh", *_SSH_OPTS, host, command]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         return r.returncode, r.stdout.strip(), r.stderr.strip()
@@ -60,17 +65,15 @@ def allow_ufw(alias: str, peer_ips: list[str]) -> list[str]:
     logs = []
     for ip in peer_ips:
         # Check if rule already exists
-        rc_check, out_check, _ = ssh(
-            alias, f"ufw status | grep -qF '{ip}' && echo EXISTS || echo MISSING"
-        )
+        _, out_check, _ = ssh(alias, f"ufw status | grep -qF '{ip}' && echo EXISTS || echo MISSING")
         if "EXISTS" in out_check:
-            logs.append(f"  [SKIP] {ip} already in ufw rules")
+            logs.append(f"  {SKIP_MARKER} {ip} already in ufw rules")
             continue
         rc, _, err = ssh(alias, f"ufw allow from {ip} to any comment 'cluster-mesh' && echo UFW_OK")
         if rc == 0:
-            logs.append(f"  [ADD ] ufw allow from {ip}")
+            logs.append(f"  {ADD_MARKER} ufw allow from {ip}")
         else:
-            logs.append(f"  [ERR ] ufw allow from {ip}: {err[:80]}")
+            logs.append(f"  {ERROR_MARKER} ufw allow from {ip}: {err[:80]}")
     return logs
 
 
@@ -83,22 +86,19 @@ def allow_iptables(alias: str, peer_ips: list[str]) -> list[str]:
             check = f"iptables -C {chain} {flag} {ip} -j ACCEPT 2>/dev/null"
             rc_check, _, _ = ssh(alias, check)
             if rc_check == 0:
-                logs.append(f"  [SKIP] iptables {chain} {flag} {ip} ACCEPT — already exists")
+                logs.append(f"  {SKIP_MARKER} iptables {chain} {flag} {ip} ACCEPT - already exists")
                 continue
             rc, _, err = ssh(alias, f"iptables -I {chain} 1 {flag} {ip} -j ACCEPT")
             if rc == 0:
-                logs.append(f"  [ADD ] iptables -I {chain} 1 {flag} {ip} ACCEPT")
+                logs.append(f"  {ADD_MARKER} iptables -I {chain} 1 {flag} {ip} ACCEPT")
             else:
-                logs.append(f"  [ERR ] iptables {chain} {flag} {ip}: {err[:80]}")
+                logs.append(f"  {ERROR_MARKER} iptables {chain} {flag} {ip}: {err[:80]}")
     return logs
 
 
 def process_node(alias: str, peer_ips: list[str]) -> tuple[str, str, list[str]]:
     fw = detect_firewall(alias)
-    if fw == "ufw":
-        logs = allow_ufw(alias, peer_ips)
-    else:
-        logs = allow_iptables(alias, peer_ips)
+    logs = allow_ufw(alias, peer_ips) if fw == "ufw" else allow_iptables(alias, peer_ips)
     return alias, fw, logs
 
 
@@ -110,7 +110,7 @@ RESET = "\033[0m"
 
 def main() -> int:
     aliases = [a for a, _ in CLUSTER]
-    ip_map = {a: ip for a, ip in CLUSTER}
+    ip_map = dict(CLUSTER)
     print(f"{BOLD}Cluster IPs to allow: {', '.join(ip_map.values())}{RESET}\n")
 
     results: list[tuple[str, str, list[str]]] = []
@@ -125,13 +125,14 @@ def main() -> int:
     results.sort(key=lambda r: r[0])
     errors = 0
     for alias, fw, logs in results:
-        adds = sum(1 for l in logs if "[ADD " in l)
-        skips = sum(1 for l in logs if "[SKIP]" in l)
-        errs = sum(1 for l in logs if "[ERR ]" in l)
+        adds = sum(1 for log_line in logs if ADD_MARKER in log_line)
+        skips = sum(1 for log_line in logs if SKIP_MARKER in log_line)
+        errs = sum(1 for log_line in logs if ERROR_MARKER in log_line)
         errors += errs
         color = RED if errs else GREEN
         print(
-            f"{BOLD}[{alias}]{RESET} firewall={fw}  added={color}{adds}{RESET}  skipped={skips}  errors={errs}"
+            f"{BOLD}[{alias}]{RESET} firewall={fw} "
+            f" added={color}{adds}{RESET} skipped={skips} errors={errs}"
         )
         for line in logs:
             print(line)

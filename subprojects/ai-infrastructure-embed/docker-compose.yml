@@ -1,0 +1,50 @@
+# hz.62 — Qwen3-Embedding-8B Q5_K_M via Ollama (import din Qwen official GGUF)
+# GPU: NVIDIA GTX 1080 8 GB (CUDA compute 6.1 / Pascal – suportat din Ollama 0.1+)
+# Endpoint: 10.0.1.62:11434  →  HAProxy VIP 10.0.1.10:49003
+#           OpenAI-compatible: POST /v1/embeddings
+# Model ref in API: "qwen3-embedding-8b-q5km"  (5.1 GB VRAM, dim=4096, Q5_K_M)
+#
+# Model importat o singura data pe 2026-03-06 din:
+#   Qwen/Qwen3-Embedding-8B-GGUF (official) via:
+#   curl -o /ai-infrastructure-embed/models/Qwen3-Embedding-8B-Q5_K_M.gguf \
+#        https://huggingface.co/Qwen/Qwen3-Embedding-8B-GGUF/resolve/main/Qwen3-Embedding-8B-Q5_K_M.gguf
+#   docker exec ollama-embed ollama create qwen3-embedding-8b-q5km -f /root/.ollama/Modelfile.Q5_K_M
+#
+# Prerequisite pe host (realizate deja pe 2026-03-06):
+#   - nvidia-driver-550-server instalat + rebooted
+#   - nvidia-container-toolkit 1.18.2 configurat
+#   - docker daemon restartat dupa nvidia-ctk
+
+services:
+  ollama-embed:
+    image: ollama/ollama:latest
+    container_name: ollama-embed
+    runtime: nvidia
+    restart: unless-stopped
+    ipc: host
+    ports:
+      - "10.0.1.62:11434:11434"
+    volumes:
+      - /ai-infrastructure-embed/models:/root/.ollama
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: "24h"
+      OLLAMA_NUM_PARALLEL: "2"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  default:
+    driver: bridge

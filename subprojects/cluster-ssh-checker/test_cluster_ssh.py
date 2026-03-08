@@ -4,7 +4,8 @@
 Examples:
   python subprojects/cluster-ssh-checker/test_cluster_ssh.py
   python subprojects/cluster-ssh-checker/test_cluster_ssh.py --timeout 4 --workers 12
-  python subprojects/cluster-ssh-checker/test_cluster_ssh.py --include-regex '^(hz\\.|orchestrator|postgres-main)'
+    python subprojects/cluster-ssh-checker/test_cluster_ssh.py \
+        --include-regex '^(hz\\.|orchestrator|postgres-main)'
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+HOST_DIRECTIVE_MIN_PARTS = 2
 
 
 @dataclass(frozen=True)
@@ -40,7 +43,7 @@ def parse_hosts(config_path: Path) -> list[str]:
             continue
 
         parts = shlex.split(line)
-        if len(parts) < 2:
+        if len(parts) < HOST_DIRECTIVE_MIN_PARTS:
             continue
 
         if parts[0].lower() != "host":

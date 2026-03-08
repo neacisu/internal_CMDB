@@ -10,8 +10,32 @@ import argparse
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Literal, TypedDict
+
+INTERFACE_ADDR_INDEX = 2
+SUBNET_OCTET_COUNT = 3
+
+
+class NetworkAuditResult(TypedDict):
+    alias: str
+    pub_ip: str
+    error: str | None
+    hostname: str
+    kernel: str
+    os: str
+    interfaces: list[str]
+    vlans: list[str]
+    vlan_ids: list[str]
+    routes: list[str]
+    netplan: dict[str, list[str]]
+    private_ips: list[str]
+
+
+SectionName = Literal["iface", "vlans", "vlan_ids", "routes", "netplan", "private"] | None
+VSwitchNodeSummary = tuple[str, list[str], list[str]]
 
 CLUSTER: list[tuple[str, str]] = [
+    ("hz.62", "95.216.66.62"),
     ("hz.113", "49.13.97.113"),
     ("hz.118", "95.216.72.118"),
     ("hz.123", "94.130.68.123"),
@@ -51,7 +75,8 @@ ip route 2>/dev/null
 echo "--- NETPLAN ---"
 for f in /etc/netplan/*.yaml; do echo "FILE:$f"; cat "$f"; echo "ENDFILE"; done
 echo "--- PRIVATE IPS ---"
-ip addr 2>/dev/null | grep "inet " | grep -v "127.0.0.1" | awk '{print $2}' | grep -vE "^49\.|^95\.|^94\.|^135\.|^77\." || echo "(none)"
+ip addr 2>/dev/null | grep "inet " | grep -v "127.0.0.1" | awk '{print $2}' \
+| grep -vE "^49\.|^95\.|^94\.|^135\.|^77\." || echo "(none)"
 echo "--- END ---"
 """
 
@@ -67,7 +92,7 @@ RESET = "\033[0m"
 
 def ssh(alias: str, cmd: str) -> tuple[int, str, str]:
     result = subprocess.run(
-        ["ssh"] + _SSH_OPTS + [alias, cmd],
+        ["ssh", *_SSH_OPTS, alias, cmd],
         check=False,
         capture_output=True,
         text=True,
@@ -76,19 +101,36 @@ def ssh(alias: str, cmd: str) -> tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
-def audit_node(alias: str, pub_ip: str) -> dict:
+def _empty_result(alias: str, pub_ip: str, error: str | None = None) -> NetworkAuditResult:
+    return {
+        "alias": alias,
+        "pub_ip": pub_ip,
+        "error": error,
+        "hostname": "",
+        "kernel": "",
+        "os": "",
+        "interfaces": [],
+        "vlans": [],
+        "vlan_ids": [],
+        "routes": [],
+        "netplan": {},
+        "private_ips": [],
+    }
+
+
+def audit_node(alias: str, pub_ip: str) -> NetworkAuditResult:
     try:
         rc, out, err = ssh(alias, _AUDIT_CMD)
         if rc != 0:
-            return {"alias": alias, "pub_ip": pub_ip, "error": err.strip() or f"exit {rc}"}
+            return _empty_result(alias, pub_ip, err.strip() or f"exit {rc}")
         return parse_output(alias, pub_ip, out)
     except Exception as e:
-        return {"alias": alias, "pub_ip": pub_ip, "error": str(e)}
+        return _empty_result(alias, pub_ip, str(e))
 
 
-def parse_output(alias: str, pub_ip: str, raw: str) -> dict:
-    result: dict = {"alias": alias, "pub_ip": pub_ip, "error": None}
-    section = None
+def parse_output(alias: str, pub_ip: str, raw: str) -> NetworkAuditResult:
+    result = _empty_result(alias, pub_ip)
+    section: SectionName = None
     netplan_file = None
     netplan_content: dict[str, list[str]] = {}
     interfaces: list[str] = []
@@ -146,7 +188,7 @@ def parse_output(alias: str, pub_ip: str, raw: str) -> dict:
     return result
 
 
-def print_node_report(r: dict) -> None:
+def print_node_report(r: NetworkAuditResult) -> None:
     alias = r["alias"]
     pub_ip = r["pub_ip"]
 
@@ -159,7 +201,8 @@ def print_node_report(r: dict) -> None:
     print(f"\n{CYAN}{'═' * 60}{RESET}")
     print(f"{BOLD}{CYAN}  {alias}  ({pub_ip}){RESET}")
     print(
-        f"{DIM}  OS: {r.get('os', '?')}  |  Kernel: {r.get('kernel', '?')}  |  Host: {r.get('hostname', '?')}{RESET}"
+        f"{DIM}  OS: {r.get('os', '?')}  |  Kernel: {r.get('kernel', '?')}"
+        f"  |  Host: {r.get('hostname', '?')}{RESET}"
     )
 
     # Interfețe
@@ -168,7 +211,11 @@ def print_node_report(r: dict) -> None:
         parts = iface.split()
         name = parts[0] if parts else iface
         state = parts[1] if len(parts) > 1 else ""
-        addrs = " ".join(parts[2:]) if len(parts) > 2 else "(no IP)"
+        addrs = (
+            " ".join(parts[INTERFACE_ADDR_INDEX:])
+            if len(parts) > INTERFACE_ADDR_INDEX
+            else "(no IP)"
+        )
         state_col = GREEN if state == "UP" else (YELLOW if state == "UNKNOWN" else RED)
         print(f"    {state_col}{name:<30}{RESET}  {state:<8}  {addrs}")
 
@@ -214,20 +261,20 @@ def print_node_report(r: dict) -> None:
             print(f"    {DIM}{rt}{RESET}")
 
 
-def print_summary(results: list[dict]) -> None:
+def print_summary(results: list[NetworkAuditResult]) -> None:
     print(f"\n\n{'═' * 60}")
     print(f"{BOLD}  SUMAR VSWITCH CLUSTER{RESET}")
     print(f"{'═' * 60}")
 
-    has_vswitch = []
-    no_vswitch = []
-    errors = []
+    has_vswitch: list[VSwitchNodeSummary] = []
+    no_vswitch: list[str] = []
+    errors: list[str] = []
 
     for r in results:
         if r.get("error"):
             errors.append(r["alias"])
-        elif r.get("private_ips") or r.get("vlan_ids"):
-            has_vswitch.append((r["alias"], r.get("private_ips", []), r.get("vlan_ids", [])))
+        elif r["private_ips"] or r["vlan_ids"]:
+            has_vswitch.append((r["alias"], r["private_ips"], r["vlan_ids"]))
         else:
             no_vswitch.append(r["alias"])
 
@@ -257,10 +304,10 @@ def print_summary(results: list[dict]) -> None:
         all_vids.extend(r.get("vlan_ids", []))
 
     if all_private:
-        subnets = set()
+        subnets: set[str] = set()
         for ip_cidr in all_private:
             parts = ip_cidr.split(".")
-            if len(parts) >= 3:
+            if len(parts) >= SUBNET_OCTET_COUNT:
                 subnets.add(f"{parts[0]}.{parts[1]}.{parts[2]}.x")
         print(f"\n  {BOLD}Subnete private detectate:{RESET} {', '.join(sorted(subnets))}")
 
@@ -287,7 +334,7 @@ def main() -> None:
     print(f"{BOLD}  {len(targets)} noduri  |  workers={args.workers}{RESET}")
     print(f"{BOLD}{'═' * 60}{RESET}")
 
-    results: list[dict] = [{}] * len(targets)
+    results: list[NetworkAuditResult] = [_empty_result(alias, ip) for alias, ip in targets]
     alias_index = {a: i for i, (a, _) in enumerate(targets)}
 
     with ThreadPoolExecutor(max_workers=args.workers) as ex:

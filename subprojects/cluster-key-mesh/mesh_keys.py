@@ -18,13 +18,14 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 # ---------------------------------------------------------------------------
 # Cluster definition — alias (used from localhost) + IP (used for node↔node)
 # ---------------------------------------------------------------------------
 CLUSTER: list[tuple[str, str]] = [
+    ("hz.62", "95.216.66.62"),
     ("hz.113", "49.13.97.113"),
     ("hz.118", "95.216.72.118"),
     ("hz.123", "94.130.68.123"),
@@ -48,6 +49,10 @@ _SSH_OPTS = [
     "LogLevel=ERROR",
 ]
 
+SSH_TIMEOUT_EXIT_CODE = 124
+SSH_KEY_MIN_PARTS = 2
+MAX_VERIFY_WORKERS = 32
+
 
 # ---------------------------------------------------------------------------
 # Core SSH helper
@@ -55,7 +60,7 @@ _SSH_OPTS = [
 
 
 def ssh(host: str, command: str, timeout: int = 20) -> tuple[int, str, str]:
-    cmd = ["ssh"] + _SSH_OPTS + [host, command]
+    cmd = ["ssh", *_SSH_OPTS, host, command]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         return r.returncode, r.stdout.strip(), r.stderr.strip()
@@ -71,7 +76,7 @@ def ssh(host: str, command: str, timeout: int = 20) -> tuple[int, str, str]:
 @dataclass
 class CollectResult:
     alias: str
-    keys: list[str] = field(default_factory=list)
+    keys: list[str] = field(default_factory=lambda: [])
     error: str | None = None
 
 
@@ -80,7 +85,7 @@ def collect_pubkeys(alias: str) -> CollectResult:
         alias,
         'for f in /root/.ssh/*.pub; do [ -f "$f" ] && cat "$f"; done 2>/dev/null || true',
     )
-    if rc == 124:
+    if rc == SSH_TIMEOUT_EXIT_CODE:
         return CollectResult(alias=alias, error="timeout connecting")
     if rc not in (0, 1):
         return CollectResult(alias=alias, error=f"rc={rc}: {err[:120]}")
@@ -100,14 +105,14 @@ class DistributeResult:
     alias: str
     added: int = 0
     skipped: int = 0
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=lambda: [])
 
 
 def install_keys_on_host(alias: str, all_keys: list[str], dry_run: bool) -> DistributeResult:
     result = DistributeResult(alias=alias)
     for key in all_keys:
         parts = key.split()
-        if len(parts) < 2:
+        if len(parts) < SSH_KEY_MIN_PARTS:
             continue
         key_body = parts[1]  # base64 portion — stable unique identifier, quote-safe
 
@@ -179,12 +184,7 @@ def header(s: str) -> str:
     return f"{BOLD}{s}{RESET}"
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-
-def main() -> int:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Full-mesh SSH key distribution for Hetzner cluster."
     )
@@ -200,135 +200,174 @@ def main() -> int:
     parser.add_argument(
         "--verify-timeout", type=int, default=8, help="Timeout in seconds for each verify hop"
     )
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    aliases = [a for a, _ in CLUSTER]
-    ips = {a: ip for a, ip in CLUSTER}
-    w = max(len(a) for a in aliases)
 
-    # ── Phase 1: Collect ──────────────────────────────────────────────────
+def print_phase_header(title: str) -> None:
     print(header(f"\n{'═' * 60}"))
-    print(header(" PHASE 1 — Collecting public keys from all nodes"))
+    print(header(f" {title}"))
     print(header(f"{'═' * 60}"))
 
+
+def collect_all_keys(
+    aliases: list[str],
+    workers: int,
+    width: int,
+) -> tuple[dict[str, CollectResult], list[str]]:
+    print_phase_header("PHASE 1 - Collecting public keys from all nodes")
+
     collect_results: dict[str, CollectResult] = {}
-    with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futures = {ex.submit(collect_pubkeys, alias): alias for alias in aliases}
-        for future in as_completed(futures):
-            r = future.result()
-            collect_results[r.alias] = r
-            status = ok(f"{len(r.keys)} key(s)") if not r.error else fail(f"ERROR: {r.error}")
-            print(f"  [{r.alias:<{w}}]  {status}")
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(collect_pubkeys, alias): alias for alias in aliases}
+        for collect_future in as_completed(futures):
+            collect_result = collect_future.result()
+            collect_results[collect_result.alias] = collect_result
+            status = (
+                ok(f"{len(collect_result.keys)} key(s)")
+                if not collect_result.error
+                else fail(f"ERROR: {collect_result.error}")
+            )
+            print(f"  [{collect_result.alias:<{width}}]  {status}")
 
     all_keys: list[str] = []
     seen_bodies: set[str] = set()
     for alias in aliases:
         for key in collect_results[alias].keys:
             parts = key.split()
-            if len(parts) >= 2 and parts[1] not in seen_bodies:
+            if len(parts) >= SSH_KEY_MIN_PARTS and parts[1] not in seen_bodies:
                 seen_bodies.add(parts[1])
                 all_keys.append(key)
 
     print(f"\n  Total unique keys collected: {BOLD}{len(all_keys)}{RESET}")
+    return collect_results, all_keys
+
+
+def distribute_all_keys(
+    aliases: list[str],
+    all_keys: list[str],
+    dry_run: bool,
+    workers: int,
+    width: int,
+) -> list[DistributeResult]:
+    action = "Simulating distribution" if dry_run else "Distributing keys"
+    print_phase_header(f"PHASE 2 - {action} to all nodes")
+
+    dist_results: list[DistributeResult] = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures_d: dict[Future[DistributeResult], str] = {
+            executor.submit(install_keys_on_host, alias, all_keys, dry_run): alias
+            for alias in aliases
+        }
+        for distribute_future in as_completed(futures_d):
+            distribute_result = distribute_future.result()
+            dist_results.append(distribute_result)
+            status = (
+                ok(f"added={distribute_result.added}")
+                if not distribute_result.errors
+                else fail(f"added={distribute_result.added} skipped={distribute_result.skipped}")
+            )
+            print(f"  [{distribute_result.alias:<{width}}]  {status}")
+            for error_line in distribute_result.errors:
+                print(f"    {fail(error_line)}")
+
+    return dist_results
+
+
+def verify_mesh(
+    aliases: list[str],
+    ips: dict[str, str],
+    workers: int,
+    verify_timeout: int,
+    width: int,
+) -> list[VerifyResult]:
+    pair_count = len(aliases) * (len(aliases) - 1)
+    print_phase_header(f"PHASE 3 - Verifying pairwise connectivity ({pair_count} pairs)")
+
+    verify_results: list[VerifyResult] = []
+    pairs = [
+        (src, dst_alias, ips[dst_alias])
+        for src in aliases
+        for dst_alias in aliases
+        if src != dst_alias
+    ]
+
+    with ThreadPoolExecutor(max_workers=min(workers * 4, MAX_VERIFY_WORKERS)) as executor:
+        futures_v: dict[Future[VerifyResult], tuple[str, str]] = {
+            executor.submit(verify_pair, src, dst_alias, dst_ip, verify_timeout): (src, dst_alias)
+            for src, dst_alias, dst_ip in pairs
+        }
+        for verify_future in as_completed(futures_v):
+            verify_results.append(verify_future.result())
+
+    verify_results.sort(key=lambda result: (result.src, result.dst_alias))
+    return verify_results
+
+
+def print_verify_report(aliases: list[str], verify_results: list[VerifyResult], width: int) -> None:
+    print(f"\n  {'FROM \\ TO':<{width}}  " + "  ".join(f"{alias:<{width}}" for alias in aliases))
+    print(f"  {'-' * width}  " + "  ".join("-" * width for _ in aliases))
+
+    by_src: dict[str, dict[str, VerifyResult]] = {}
+    for verify_result in verify_results:
+        by_src.setdefault(verify_result.src, {})[verify_result.dst_alias] = verify_result
+
+    ok_total = 0
+    fail_total = 0
+    for src in aliases:
+        row = f"  {src:<{width}}  "
+        for dst in aliases:
+            if src == dst:
+                row += f"{'--':<{width}}  "
+                continue
+
+            current_result = by_src.get(src, {}).get(dst)
+            if current_result and current_result.ok:
+                row += ok(f"{'OK':<{width}}") + "  "
+                ok_total += 1
+            else:
+                row += fail(f"{'FAIL':<{width}}") + "  "
+                fail_total += 1
+        print(row)
+
+    fail_label = fail(str(fail_total)) if fail_total else ok("0")
+    print(f"\n  Pairs OK: {ok(str(ok_total))}  |  Pairs FAIL: {fail_label}")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def main() -> int:
+    args = parse_args()
+
+    aliases = [a for a, _ in CLUSTER]
+    ips = dict(CLUSTER)
+    width = max(len(alias) for alias in aliases)
+
+    _, all_keys = collect_all_keys(aliases, args.workers, width)
 
     if not all_keys:
         print(fail("No keys collected. Cannot continue."))
         return 2
 
     if args.dry_run:
-        print(
-            f"\n  {YELLOW}[DRY-RUN]{RESET} Would distribute {len(all_keys)} keys to {len(aliases)} nodes."
+        dry_run_message = (
+            f"\n  {YELLOW}[DRY-RUN]{RESET} Would distribute {len(all_keys)} keys "
+            f"to {len(aliases)} nodes."
         )
+        print(dry_run_message)
 
-    # ── Phase 2: Distribute ───────────────────────────────────────────────
-    print(header(f"\n{'═' * 60}"))
-    action = "Simulating distribution" if args.dry_run else "Distributing keys"
-    print(header(f" PHASE 2 — {action} to all nodes"))
-    print(header(f"{'═' * 60}"))
-
-    dist_results: list[DistributeResult] = []
-    with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futures_d = {
-            ex.submit(install_keys_on_host, alias, all_keys, args.dry_run): alias
-            for alias in aliases
-        }
-        for future in as_completed(futures_d):
-            r = future.result()
-            dist_results.append(r)
-            status = (
-                ok(f"added={r.added}")
-                if not r.errors
-                else fail(f"added={r.added} skipped={r.skipped}")
-            )
-            print(f"  [{r.alias:<{w}}]  {status}")
-            for e in r.errors:
-                print(f"    {fail(e)}")
+    dist_results = distribute_all_keys(aliases, all_keys, args.dry_run, args.workers, width)
 
     total_added = sum(r.added for r in dist_results)
     total_errors = sum(len(r.errors) for r in dist_results)
-    print(
-        f"\n  Total keys installed: {BOLD}{total_added}{RESET}  |  Errors: {fail(str(total_errors)) if total_errors else ok('0')}"
-    )
+    error_label = fail(str(total_errors)) if total_errors else ok("0")
+    print(f"\n  Total keys installed: {BOLD}{total_added}{RESET}  |  Errors: {error_label}")
 
-    # ── Phase 3: Verify (optional) ────────────────────────────────────────
     if args.verify:
-        print(header(f"\n{'═' * 60}"))
-        print(
-            header(
-                f" PHASE 3 — Verifying pairwise connectivity ({len(aliases) * (len(aliases) - 1)} pairs)"
-            )
-        )
-        print(header(f"{'═' * 60}"))
-
-        verify_results: list[VerifyResult] = []
-        pairs = [
-            (src, dst_alias, ips[dst_alias])
-            for src in aliases
-            for dst_alias in aliases
-            if src != dst_alias
-        ]
-
-        with ThreadPoolExecutor(max_workers=min(args.workers * 4, 32)) as ex:
-            futures_v = {
-                ex.submit(verify_pair, src, dst_alias, dst_ip, args.verify_timeout): (
-                    src,
-                    dst_alias,
-                )
-                for src, dst_alias, dst_ip in pairs
-            }
-            for future in as_completed(futures_v):
-                verify_results.append(future.result())
-
-        verify_results.sort(key=lambda r: (r.src, r.dst_alias))
-
-        # Print matrix-style
-        print(f"\n  {'FROM \\ TO':<{w}}  " + "  ".join(f"{a:<{w}}" for a in aliases))
-        print(f"  {'-' * w}  " + "  ".join("-" * w for _ in aliases))
-
-        by_src: dict[str, dict[str, VerifyResult]] = {}
-        for vr in verify_results:
-            by_src.setdefault(vr.src, {})[vr.dst_alias] = vr
-
-        ok_total = fail_total = 0
-        for src in aliases:
-            row = f"  {src:<{w}}  "
-            for dst in aliases:
-                if src == dst:
-                    row += f"{'--':<{w}}  "
-                else:
-                    vr = by_src.get(src, {}).get(dst)
-                    if vr and vr.ok:
-                        row += ok(f"{'OK':<{w}}") + "  "
-                        ok_total += 1
-                    else:
-                        detail = vr.detail[:w] if vr else "err"
-                        row += fail(f"{'FAIL':<{w}}") + "  "
-                        fail_total += 1
-            print(row)
-
-        print(
-            f"\n  Pairs OK: {ok(str(ok_total))}  |  Pairs FAIL: {fail(str(fail_total)) if fail_total else ok('0')}"
-        )
+        verify_results = verify_mesh(aliases, ips, args.workers, args.verify_timeout, width)
+        print_verify_report(aliases, verify_results, width)
 
     print(header(f"\n{'═' * 60}\n"))
     return 0 if total_errors == 0 else 1
