@@ -22,10 +22,31 @@ coverage.xml
 # Type checker and linter caches
 .mypy_cache/
 .ruff_cache/
+.pyre/
+.pytype/
 
 # IDE/editor
 .vscode/*.code-workspace
+.idea/
+.cursor/
 .DS_Store
 
 # Security and scan reports
 *.sarif
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime logs and temporary outputs
+*.log
+tmp/
+.tmp/
+
+# Local database and migration artifacts
+*.sqlite3
+*.db
+pgdata/
+postgres-data/
+alembic.ini.local
