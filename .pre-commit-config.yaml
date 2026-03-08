@@ -17,3 +17,11 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: ["types-setuptools>=80.9.0.20250822"]
+  - repo: local
+    hooks:
+      - id: gitleaks-pre-push
+        name: gitleaks pre-push
+        entry: bash -c 'command -v gitleaks >/dev/null 2>&1 || { echo "gitleaks is required in PATH for pre-push secret scanning."; exit 1; }; gitleaks dir . --no-banner --redact'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

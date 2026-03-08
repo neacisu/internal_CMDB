@@ -38,6 +38,7 @@ coverage.xml
 .env
 .env.*
 !.env.example
+.secrets/
 
 # Runtime logs and temporary outputs
 *.log
