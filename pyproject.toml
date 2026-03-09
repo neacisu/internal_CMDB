@@ -92,3 +92,36 @@ confidence = "medium"
 [tool.pip-audit]
 progress-spinner = "off"
 strict = true
+
+# ---------------------------------------------------------------------------
+# Pylint — suppress known false positives and project-wide style conventions
+# ---------------------------------------------------------------------------
+
+[tool.pylint.main]
+# Subprojects are standalone scripts whose local-module imports (audit_result_store)
+# cannot be resolved from the project root.  Migration files follow alembic naming
+# and length conventions that differ from the main package.
+ignore-paths = [
+    "subprojects/",
+    "src/internalcmdb/migrations/",
+]
+
+[tool.pylint.TYPECHECK]
+# Alembic wraps context and op in dynamic proxy objects whose members are not
+# discoverable at import time; suppress the resulting false-positive E1101 errors.
+generated-members = [
+    "alembic.context.*",
+    "alembic.op.*",
+]
+
+[tool.pylint."MESSAGES CONTROL"]
+disable = [
+    # Docstring coverage is enforced at code-review level; blanket per-symbol
+    # pylint checks produce only noise for SQLAlchemy model classes.
+    "missing-class-docstring",     # C0115
+    "missing-function-docstring",  # C0116
+    "missing-module-docstring",    # C0114
+    # Infrastructure loaders deliberately catch broad exceptions at the boundary
+    # so that a failed individual record never aborts a batch load.
+    "broad-exception-caught",      # W0718
+]

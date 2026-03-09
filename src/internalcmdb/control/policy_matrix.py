@@ -380,7 +380,7 @@ class PolicyEnforcer:
     # Internal check helpers (each covers one deny-rule group)
     # ------------------------------------------------------------------
 
-    def _check_approval(self, ctx: EnforcementContext, policy: PolicyEntry) -> list[str]:
+    def _check_approval(self, ctx: EnforcementContext, _policy: PolicyEntry) -> list[str]:
         """Return deny reasons for approval-related rules (D-003 through D-005)."""
         reasons: list[str] = []
         rec = ctx.approval_record

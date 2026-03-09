@@ -216,7 +216,7 @@ def _upsert_host(
     conn: sa.engine.Connection,
     node: dict[str, Any],
     term_map: dict[tuple[str, str], uuid.UUID],
-    run_id: uuid.UUID,
+    _run_id: uuid.UUID,
     ssh_ok_set: set[str],
 ) -> uuid.UUID:
     alias: str = node["alias"]

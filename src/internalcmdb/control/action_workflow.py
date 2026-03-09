@@ -253,7 +253,7 @@ class ActionWorkflow:
         target_ids: frozenset[uuid.UUID],
     ) -> TransitionResult | None:
         """Validate quorum for RC-4 actions; return denial or None."""
-        deny_reasons = self._enforcer._check_quorum(
+        deny_reasons = self._enforcer._check_quorum(  # pylint: disable=protected-access
             EnforcementContext(
                 action_class=action_class,
                 task_type_code=TaskTypeCode(

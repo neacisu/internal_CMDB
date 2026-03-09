@@ -144,18 +144,18 @@ Each decision class requires a minimum approval set before execution:
 | Decision Class | Minimum Approvers | Risk Class (ADR-004) | Notes |
 | --- | --- | --- | --- |
 | ADR creation or amendment | Architecture Board | RC-2 | Executive Sponsor if strategic scope |
-| Schema migration (staging) | Data Registry Owner | RC-3 ||
+| Schema migration (staging) | Data Registry Owner | RC-3 | |
 | Schema migration (production) | Architecture Board + Executive Sponsor | RC-4 | Dual approval required |
-| Taxonomy term addition | Architecture Board | RC-2 ||
-| Taxonomy term deprecation | Architecture Board + Data Registry Owner | RC-3 ||
-| Policy document update | Security & Policy Owner + Executive Sponsor | RC-3 ||
-| Discovery loader modification | Discovery Owner | RC-2 ||
-| New discovery source onboarding | Data Registry Owner + Architecture Board | RC-3 ||
-| Traefik / networking change | SRE Owner + Architecture Board | RC-4 ||
-| Secret rotation | Security & Policy Owner | RC-4 ||
-| Agent policy modification | Security & Policy Owner + Architecture Board | RC-4 ||
-| New role assignment | Executive Sponsor | RC-3 ||
-| Wave-1 baseline sign-off | Executive Sponsor + Architecture Board | RC-4 ||
+| Taxonomy term addition | Architecture Board | RC-2 | |
+| Taxonomy term deprecation | Architecture Board + Data Registry Owner | RC-3 | |
+| Policy document update | Security & Policy Owner + Executive Sponsor | RC-3 | |
+| Discovery loader modification | Discovery Owner | RC-2 | |
+| New discovery source onboarding | Data Registry Owner + Architecture Board | RC-3 | |
+| Traefik / networking change | SRE Owner + Architecture Board | RC-4 | |
+| Secret rotation | Security & Policy Owner | RC-4 | |
+| Agent policy modification | Security & Policy Owner + Architecture Board | RC-4 | |
+| New role assignment | Executive Sponsor | RC-3 | |
+| Wave-1 baseline sign-off | Executive Sponsor + Architecture Board | RC-4 | |
 
 ---
 

@@ -18,6 +18,7 @@ Public surface::
 
 from __future__ import annotations
 
+import uuid as _uuid_mod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -60,7 +61,7 @@ class CallerContext:
     """Identifies the caller and their granted roles."""
 
     caller_id: str
-    roles: frozenset[str] = field(default_factory=frozenset)
+    roles: frozenset[str] = field(default_factory=frozenset)  # pyright: ignore[reportUnknownVariableType]
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +141,6 @@ class DataAccessControl:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-import uuid as _uuid_mod  # noqa: E402
 
 
 def _nil_uuid() -> _uuid_mod.UUID:
