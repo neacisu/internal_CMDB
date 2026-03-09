@@ -12,7 +12,7 @@ tags: [pilot, execution-record, governed-run, evidence, audit, wave-1, m6-2]
 depends_on: [PILOT-001, ADR-003, ADR-004, GOV-007]
 ---
 
-# internalCMDB — First Governed Pilot Execution Record
+## internalCMDB — First Governed Pilot Execution Record
 
 ## 1. Purpose
 
@@ -25,7 +25,7 @@ brokered context, approved actions, verification evidence, and audit completenes
 ## 2. Execution Summary
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Pilot scope | PILOT-001 v1.0 — monitoring-stack read-only audit |
 | Task type | TT-001 (host-infrastructure-audit) |
 | Execution date | 2026-03-08 |
@@ -42,6 +42,7 @@ brokered context, approved actions, verification evidence, and audit completenes
 **Action**: AC-001 (REGISTRY_READ) — query monitoring-stack SharedService and linked hosts.
 
 **Inputs**:
+
 - target_entity_ids: [monitoring-stack UUID]
 - task_type_code: TT-001
 - present_evidence_classes: {REGISTRY_SERVICE, REGISTRY_HOST}
@@ -55,8 +56,9 @@ brokered context, approved actions, verification evidence, and audit completenes
 **Action**: RetrievalBroker.assemble() called for TT-001 targeting monitoring-stack.
 
 **Stages executed**:
+
 | Stage | Result |
-|---|---|
+| --- | --- |
 | Stage 1 (exact lookup) | 2 AssembledItem rows — Host PKs |
 | Stage 2 (metadata filter) | 4 items — artifacts, observed facts, ownership, docs |
 | Stage 3 (lexical) | 3 chunk items — lexical_tsv match on "monitoring" |
@@ -76,6 +78,7 @@ brokered context, approved actions, verification evidence, and audit completenes
 ### Step 4: Agent Run Open
 
 **AuditLedger.open_run()** called with:
+
 - run_code: RUN-plt_arch-TT-001-20260308T120000-AF3B21
 - agent_identity: platform_architecture_lead
 - task_type_code: TT-001
@@ -111,7 +114,7 @@ A second AgentRun was opened with a deliberately invalid request:
 ## 4. Verification Evidence
 
 | Verification Criterion | Status | Evidence Reference |
-|---|---|---|
+| --- | --- | --- |
 | V-1: Registry completeness | PASS | SharedService + 2 Host rows + OwnershipRecord confirmed |
 | V-2: Evidence pack 0 violations | PASS | BrokerResult.violations=[] |
 | V-3: AgentRun completed | PASS | run_code=RUN-plt_arch-TT-001-20260308T120000-AF3B21 |
@@ -124,7 +127,7 @@ A second AgentRun was opened with a deliberately invalid request:
 ## 5. Residual Observations
 
 | Observation | Severity | Disposition |
-|---|---|---|
+| --- | --- | --- |
 | AlertManager on-call list gap persists | LOW | Carried to pt-021 gap register |
 | Grafana datasource credentials not in secrets registry | MEDIUM | Tracked as open gap; blocked on pt-028 |
 | Semantic search not exercised (TT-001 disallows) | INFO | By design; to be exercised in TT-003 pilot |

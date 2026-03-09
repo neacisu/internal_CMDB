@@ -38,7 +38,7 @@ All platform documents must begin with a YAML frontmatter block delimited by `--
 All documents **must** include these fields. Validation fails without them.
 
 | Field | Type | Permitted Values | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `id` | string | Matches identifier grammar (see taxonomy) | Unique within the repository |
 | `title` | string | Free text, ≥ 10 chars | Descriptive, human-readable |
 | `doc_class` | string | See Class Token column in document-taxonomy.md | Must be a known class token |
@@ -55,7 +55,7 @@ Strongly recommended for governance and retrieval quality. Documents without the
 warnings during validation.
 
 | Field | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `approved_by` | string | Role or name of approver |
 | `approved_at` | date | Date approval was granted |
 | `tags` | list[string] | Lowercase, hyphenated tokens for retrieval filtering |
@@ -67,7 +67,7 @@ warnings during validation.
 May be included when applicable. Validator will not warn on absence.
 
 | Field | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `superseded_by` | string | ID of the document that replaces this one |
 | `depends_on` | list[string] | Document IDs that must exist and be approved first |
 | `evidence_artifacts` | list[string] | IDs of supporting evidence artifacts |

@@ -129,7 +129,7 @@ agent execution context.
 ## Implementation Bindings
 
 | Constraint | Binding |
-|---|---|
+| --- | --- |
 | Canonical state storage | `docs.document`, `docs.document_version`, git repo |
 | Observed state storage | `discovery.observed_fact`, `discovery.collection_run` |
 | Desired state storage | `governance.policy_record`, canonical ADR targets |

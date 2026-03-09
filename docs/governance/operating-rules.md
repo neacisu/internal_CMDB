@@ -12,7 +12,7 @@ tags: [operating-rules, definition-of-done, sequencing, agent-governance, wave-1
 depends_on: [ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, GOV-001]
 ---
 
-# internalCMDB — Agent Operating Rules, Definition of Done and Wave-1 Sequencing Gates
+## internalCMDB — Agent Operating Rules, Definition of Done and Wave-1 Sequencing Gates
 
 **Milestone**: m0-2 — Execution Governance Operationalized
 **Program task**: pt-003
@@ -46,6 +46,7 @@ The agent does not fill gaps with guesses. If canonical data is missing, binding
 ### Rule 2 — Context is loaded in structured-first order
 
 For every task, context must be assembled in this order:
+
 1. Relevant canonical documents (approved ADRs, governance docs, policies)
 2. Registry entities and relationships (PostgreSQL structured queries)
 3. Observed state with stated provenance
@@ -65,7 +66,7 @@ Any operation that modifies files, infrastructure configuration, registry state,
 ### Rule 5 — Every run leaves an audit trail
 
 Each run must have:
-- a run identifier
+
 - input scope declaration
 - context pack used (documents + entities referenced)
 - evidence extracted
@@ -85,6 +86,7 @@ If existing assets in the repository partially satisfy a need, the agent must re
 ### Rule 8 — Separate facts from interpretation
 
 Every output must clearly distinguish:
+
 - **Canonical fact**: sourced from an approved document or registry record
 - **Observed fact**: sourced from runtime/discovery with stated provenance
 - **Bounded inference**: derived from facts with assumptions stated
@@ -93,14 +95,17 @@ Every output must clearly distinguish:
 ### Rule 9 — No task closure without verification
 
 Each deliverable must be validated before the task status may be set to `completed`. Acceptable verification evidence:
+
 - automated tests that pass
 - structured query/consistency checks against the registry
 - formal review sign-off by the artifact owner
+
 The verification method must match the artifact type (see Section 2).
 
 ### Rule 10 — Explicit conflict escalation
 
 When canonical state and observed state conflict, the agent does not choose arbitrarily. The conflict must be:
+
 1. marked with type (`canonical-vs-observed`, `ownership-ambiguity`, `policy-conflict`)
 2. classified by severity
 3. escalated per the escalation model in [[doc:GOV-001]]
@@ -126,7 +131,7 @@ The following criteria must all be satisfied before an artifact is considered co
 ### DoD-A: Architecture Decision Record (ADR)
 
 | Criterion | Requirement |
-|-----------|-------------|
+| --- | --- |
 | Frontmatter | All mandatory fields present and valid per metadata-schema |
 | Structure | Context → Decision → Alternatives → Consequences sections present |
 | Decision statement | Single unambiguous sentence naming what is decided |
@@ -140,7 +145,7 @@ The following criteria must all be satisfied before an artifact is considered co
 ### DoD-B: Policy Document (policy_pack / ownership_matrix)
 
 | Criterion | Requirement |
-|-----------|-------------|
+| --- | --- |
 | Frontmatter | All mandatory fields present and valid |
 | Coverage | Each rule is stated in imperative form ("must", "must not", "may") |
 | Owner | `owner` field maps to a canonical role token |
@@ -152,7 +157,7 @@ The following criteria must all be satisfied before an artifact is considered co
 ### DoD-C: Database Schema / Migration
 
 | Criterion | Requirement |
-|-----------|-------------|
+| --- | --- |
 | Migration file | Alembic revision file present with descriptive message |
 | Forward migration | `upgrade()` function complete and idempotent |
 | Backward migration | `downgrade()` function complete |
@@ -165,7 +170,7 @@ The following criteria must all be satisfied before an artifact is considered co
 ### DoD-D: Python Module / Loader / Service
 
 | Criterion | Requirement |
-|-----------|-------------|
+| --- | --- |
 | Module structure | Correct `__init__.py`, proper package hierarchy |
 | Types | All public functions have complete type annotations |
 | Lint | `ruff check` passes with zero errors |
@@ -179,7 +184,7 @@ The following criteria must all be satisfied before an artifact is considered co
 ### DoD-E: Template / Governance Document
 
 | Criterion | Requirement |
-|-----------|-------------|
+| --- | --- |
 | Frontmatter | All mandatory fields present and valid per metadata-schema |
 | Skeleton sections | All required sections are present (even if with placeholder guidance) |
 | Author guidance | Each section has brief guidance on what content is expected |
@@ -190,7 +195,7 @@ The following criteria must all be satisfied before an artifact is considered co
 ### DoD-F: Script / CLI Tool
 
 | Criterion | Requirement |
-|-----------|-------------|
+| --- | --- |
 | Runnable | Script executes without error in the project `.venv` |
 | Help text | `--help` or usage message present |
 | Exit codes | 0 = success, non-zero = failure (documented) |
@@ -201,7 +206,7 @@ The following criteria must all be satisfied before an artifact is considered co
 ### DoD-G: Runbook / Operational Procedure
 
 | Criterion | Requirement |
-|-----------|-------------|
+| --- | --- |
 | Frontmatter | All mandatory fields including `domain`, `owner`, `status: approved` |
 | Trigger | Clear description of when the runbook applies |
 | Prerequisites | List of required access, tools, and context before starting |
@@ -302,7 +307,7 @@ The following dependency rules govern the ordering of epics and work packages in
 
 ### Sequencing Dependency Map (summary)
 
-```
+```text
 Epic-0 (Governance) ──[G-0]──► Epic-1 (Documents)  ──[G-1]──► Authoring & Indexing
                      │
                      ├──[G-0]──► Epic-2 (Registry)   ──[G-2]──► Epic-4 (Retrieval)
@@ -367,7 +372,7 @@ Every task handoff to an agent must include the following minimum set of fields.
 The following rules govern when and how execution object statuses may change in the implementation plan.
 
 | Transition | Condition | Who may approve |
-|------------|-----------|-----------------|
+| --- | --- | --- |
 | `in-progress` → `completed` | All DoD criteria for the artifact type are satisfied AND verification evidence exists | Implementing agent + owner review |
 | `completed` → `in-progress` | A defect requiring rework is discovered after closure | Program Manager must approve regression |
 | `in-progress` → `blocked` | A gate condition cannot be met or a conflict requires escalation | Implementing agent reports; Program Manager acknowledges |
@@ -385,7 +390,7 @@ The following rules govern when and how execution object statuses may change in 
 ## Relation to Other Documents
 
 | Document | Relation |
-|----------|----------|
+| --- | --- |
 | [[doc:ADR-001]] | Defines truth model — canonical/observed/desired separation |
 | [[doc:ADR-002]] | PostgreSQL as system of record for all registry data |
 | [[doc:ADR-003]] | Deterministic-first retrieval ordering (Rule 2, Rule 3) |

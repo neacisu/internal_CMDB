@@ -54,7 +54,7 @@ record. Deny-by-default is the enforced posture for all unsupported or unapprove
 Every write action is classified into one of four risk classes:
 
 | Risk Class | Examples | Approval Requirement |
-|---|---|---|
+| --- | --- | --- |
 | **RC-1 Read-only analysis** | Registry reads, document retrieval, evidence pack assembly | No approval required. Fully automated. |
 | **RC-2 Repository writes** | Git commits, doc authoring, migration authoring | Self-approval by Platform Engineering Lead. Logged. |
 | **RC-3 Bounded runtime changes** | Registry upsert (discovery loaders), schema migration in staging | Data Registry Owner approval. Time-bounded scope. |
@@ -130,7 +130,7 @@ auto-approval is acceptable for RC-2 only.
 ## Implementation Bindings
 
 | Constraint | Binding |
-|---|---|
+| --- | --- |
 | Approval storage | `governance.approval_record` |
 | Action request storage | `agent_control.action_request` |
 | Action broker | epic-5 / impl-epic-8 delivery (pt-017) |

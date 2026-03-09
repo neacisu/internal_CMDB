@@ -26,7 +26,7 @@ Satisfies pt-035 [m11-2].
 Every release promoted to wave-1-production must have a documented rollback path before promotion.
 
 | Component | Rollback Scope | Rollback Reversibility |
-|---|---|---|
+| --- | --- | --- |
 | Application code (Docker image) | Roll back Docker Compose service to previous image tag | Fully reversible: re-tag previous image and restart |
 | Database schema migration | Alembic downgrade to previous revision | Reversible if downgrade script exists; data loss possible if columns dropped |
 | Configuration files | Restore from Git previous commit | Fully reversible |
@@ -88,7 +88,7 @@ docker compose restart internalcmdb-app
 **Drill 1 — Wave-1 Pre-Production Exercise (2026-03-08)**
 
 | Step | Outcome | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Simulated forward migration (add column) | PASS | Column added, data preserved |
 | Applied downgrade script (-1 revision) | PASS | Column removed, no data loss (nullable) |
 | Application restarted against downgraded schema | PASS | No ORM mapping errors |
@@ -102,7 +102,7 @@ docker compose restart internalcmdb-app
 ## 6. Drill Schedule
 
 | Drill Type | Frequency | Responsible |
-|---|---|---|
+| --- | --- | --- |
 | Application rollback (image swap) | Per release cycle before production | platform_architecture_lead |
 | Database migration downgrade | Per schema migration before production | platform_architecture_lead |
 | Full DR (container loss) | Quarterly — see CONT-003 | platform_architecture_lead |

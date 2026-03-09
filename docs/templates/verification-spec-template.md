@@ -5,8 +5,8 @@ doc_class: verification_spec  # REQUIRED — do not change
 domain: platform-foundations  # REQUIRED — change to relevant domain
 version: "1.0"        # REQUIRED — quoted decimal
 status: draft         # REQUIRED
-created: YYYY-MM-DD   # REQUIRED
-updated: YYYY-MM-DD   # REQUIRED
+created: "2026-03-09"   # REQUIRED
+updated: "2026-03-09"   # REQUIRED
 owner: platform_engineering_lead  # REQUIRED — role that approves verification
 binding: []
 tags: []
@@ -84,7 +84,7 @@ or enforces a constraint. -->
 <!-- What evidence must be captured at verification time? -->
 
 | Evidence item | Format | Where stored |
-|---------------|--------|-------------|
+| --- | --- | --- |
 | <!-- test run output --> | <!-- log / json / screenshot --> | <!-- path / audit table --> |
 | <!-- query result --> | <!-- SQL output --> | <!-- path --> |
 
@@ -93,7 +93,7 @@ or enforces a constraint. -->
 <!-- Who must review and approve the verification results? -->
 
 | Role | Sign-off required | Approved |
-|------|------------------|---------|
+| --- | --- | --- |
 | <!-- role token --> | yes | [ ] |
 
 **Approved evidence pack location:** <!-- path or audit record ID -->

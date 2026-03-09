@@ -12,7 +12,7 @@ tags: [backup, restore, recovery, postgresql, wave-1, m8-2]
 depends_on: [CONT-001]
 ---
 
-# internalCMDB — Backup and Restore Procedures
+## internalCMDB — Backup and Restore Procedures
 
 ## 1. Purpose
 
@@ -28,10 +28,12 @@ Satisfies pt-026 [m8-2].
 **Method**: `pg_dump` — logical backup of the `internalCMDB` database.
 
 **Schedule**:
+
 - Full backup: Daily at 02:00 UTC.
 - WAL archiving: Continuous (if pg_archiving enabled) — PLANNED for Wave-3.
 
 **Storage**:
+
 - Local: `/var/backup/cmdb/pg_dump/{YYYY}/{MM}/{DD}/internalcmdb-full.dump`.
 - Remote: Copy to backup target (rsync or object storage) after each run.
 
@@ -94,6 +96,7 @@ echo "Size: $(du -sh "$BACKUP_FILE" | cut -f1)"
 **Trigger**: Database corruption, disk failure, primary node loss.
 
 **Prerequisites**:
+
 - A working PostgreSQL 17 instance (restored node or new node).
 - Access to the most recent backup file.
 - `PGPASSWORD` or `.pgpass` configured for `cmdb_admin`.
@@ -124,12 +127,14 @@ echo "Restore complete."
 ### Post-Restore Validation Steps
 
 1. Verify row counts for critical tables:
-   ```sql
-   SELECT schemaname, tablename, n_live_tup
-   FROM pg_stat_user_tables
-   WHERE schemaname IN ('registry', 'governance', 'agent_control', 'retrieval')
-   ORDER BY schemaname, tablename;
-   ```
+
+    ```sql
+    SELECT schemaname, tablename, n_live_tup
+    FROM pg_stat_user_tables
+    WHERE schemaname IN ('registry', 'governance', 'agent_control', 'retrieval')
+    ORDER BY schemaname, tablename;
+    ```
+
 2. Verify FK integrity (run `scripts/validate_schema.sh` or equivalent).
 3. Run evidence pack validation: AC-002 on a known entity to confirm retrieval works.
 4. Verify prompt template registry: confirm at least one active template exists.
@@ -140,7 +145,7 @@ echo "Restore complete."
 ## 5. Recovery Evidence Record
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Test date | 2026-03-08 |
 | Backup file used | internalcmdb-20260308T020000.dump |
 | Restore target | Restored to fresh PostgreSQL 17 container |
@@ -157,7 +162,7 @@ echo "Restore complete."
 ## 6. Known Limitations
 
 | Limitation | Impact | Mitigation |
-|---|---|---|
+| --- | --- | --- |
 | pg_dump creates point-in-time snapshots only (no continuous WAL) | RPO degraded if failure occurs between backups | WAL archiving planned for Wave-3 |
 | Remote backup sync speed depends on network | Large backups may take >30 min to copy off-host | Schedule backup during low-activity window |
 | No automated restore testing | Drift risk over time | Schedule quarterly restore drills (pt-061) |

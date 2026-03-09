@@ -24,7 +24,7 @@ Satisfies pt-033 [m10-3].
 ## 2. Release Classes
 
 | Release Class | Description | Provenance Requirements |
-|---|---|---|
+| --- | --- | --- |
 | development | Local commits on feature branches | SBOM generation; no formal attestation |
 | staging | Commits merged to staging branch | SBOM + pip-audit PASS required |
 | wave-1-production | Tagged release on main/release branch | SBOM + pip-audit + container scan + change_log entry |
@@ -37,7 +37,7 @@ Satisfies pt-033 [m10-3].
 For each wave-1-production release:
 
 | Evidence Item | Source | Storage |
-|---|---|---|
+| --- | --- | --- |
 | Git commit SHA | `git rev-parse HEAD` | Release tag annotation |
 | SBOM (CycloneDX JSON) | `cyclonedx-bom` output | Attached to release in governance.change_log |
 | pip-audit result | `pip-audit --format json` | Attached to release in governance.change_log |
@@ -67,7 +67,7 @@ statement: "All dependencies scanned. No unmitigated CRITICAL/HIGH CVEs. SBOM co
 ## 5. License Review Obligations
 
 | License Type | Usage | Action Required |
-|---|---|---|
+| --- | --- | --- |
 | MIT / BSD / Apache 2.0 | Production runtime | No action; record in SBOM |
 | LGPL v2.1 | Production runtime | No action if used as library (not modified) |
 | GPL v2.0 | Dev tooling only | Confirm not shipped in production runtime |

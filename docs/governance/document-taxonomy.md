@@ -34,7 +34,7 @@ This taxonomy is the authoritative reference for the metadata schema validator
 Documents that describe or govern physical and virtual infrastructure.
 
 | Class Token | Class Name | Identifier Prefix | Registry Binding Targets |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `infra_record` | Infrastructure Record | `infra-` | `registry.host`, `registry.cluster`, `registry.network_segment`, `registry.storage_asset` |
 | `node_record` | Node / Host Record | `node-` | `registry.host`, `registry.host_hardware_snapshot` |
 | `service_dossier` | Shared Service Dossier | `svc-` | `registry.shared_service`, `registry.service_instance` |
@@ -46,7 +46,7 @@ Documents that describe or govern physical and virtual infrastructure.
 Documents that capture approved decisions, policies and ownership.
 
 | Class Token | Class Name | Identifier Prefix | Registry Binding Targets |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `adr` | Architecture Decision Record | `ADR-` | None (decisions reference entities, not bound to them) |
 | `policy_pack` | Policy Pack | `policy-` | `governance.policy_record` |
 | `ownership_matrix` | Ownership Matrix / RACI | `raci-` | All schemas (cross-cutting) |
@@ -58,7 +58,7 @@ Documents that capture approved decisions, policies and ownership.
 Documents that define a governed application before or during delivery.
 
 | Class Token | Class Name | Identifier Prefix | Registry Binding Targets |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `product_intent` | Product Intent Record | `pi-` | `registry.service_instance`, `registry.shared_service` |
 | `context_boundary` | Context Boundary Record | `cb-` | `registry.cluster`, `registry.network_segment`, `registry.shared_service` |
 | `domain_model` | Canonical Domain Model | `dm-` | `registry.service_instance` |
@@ -75,7 +75,7 @@ Documents that define a governed application before or during delivery.
 Documents that govern agent behavior, retrieval policies and prompt templates.
 
 | Class Token | Class Name | Identifier Prefix | Registry Binding Targets |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `agent_policy` | Agent Policy | `ap-` | `agent_control.action_request`, `governance.policy_record` |
 | `retrieval_policy` | Retrieval Policy | `rp-` | `retrieval.evidence_pack` |
 | `prompt_template` | Prompt Template | `pt-` | `agent_control.prompt_template_registry` |
@@ -86,7 +86,7 @@ Documents that govern agent behavior, retrieval policies and prompt templates.
 Documents produced as artifacts of operational execution.
 
 | Class Token | Class Name | Identifier Prefix | Registry Binding Targets |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `operational_declaration` | Operational Declaration | `od-` | `governance.approval_record` |
 | `reconciliation_report` | Reconciliation Report | `rr-` | `discovery.reconciliation_result` |
 | `data_quality_report` | Data Quality Report | `dqr-` | `discovery.collection_run` |
@@ -135,7 +135,7 @@ binding:
 Permitted `relation` values:
 
 | Relation | Meaning |
-|---|---|
+| --- | --- |
 | `describes` | Document is the canonical description of the entity |
 | `governs` | Document defines policy or rules that apply to the entity |
 | `references` | Document references the entity without being its canonical description |
@@ -145,7 +145,7 @@ Permitted `relation` values:
 ### Binding requirements by class
 
 | Class Token | Binding Required? | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `infra_record` | Required | Must bind to at least one `registry.*` entity |
 | `node_record` | Required | Must bind to `registry.host` |
 | `service_dossier` | Required | Must bind to `registry.shared_service` |
@@ -161,7 +161,7 @@ Permitted `relation` values:
 All documents carry a `status` field with the following permitted values:
 
 | Status | Meaning |
-|---|---|
+| --- | --- |
 | `draft` | Under authoring, not yet reviewed |
 | `in-review` | Submitted for review by approver class |
 | `approved` | Reviewed and approved by required approver(s) |
@@ -176,7 +176,7 @@ All documents carry a `status` field with the following permitted values:
 Within documents, use the following reference link syntax to create traceable links:
 
 | Reference Type | Syntax | Example |
-|---|---|---|
+| --- | --- | --- |
 | Another document | `[[doc:DOC-ID]]` | `[[doc:ADR-001]]` |
 | Registry entity | `[[entity:table:identifier]]` | `[[entity:registry.host:orchestrator]]` |
 | Taxonomy term | `[[term:TERM-TOKEN]]` | `[[term:postgresql]]` |

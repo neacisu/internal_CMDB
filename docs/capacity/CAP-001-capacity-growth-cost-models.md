@@ -11,7 +11,7 @@ owner: platform_architecture_lead
 tags: [capacity, cost, growth-model, wave-1, m13-1]
 ---
 
-# internalCMDB — Capacity Growth and Cost Models
+## internalCMDB — Capacity Growth and Cost Models
 
 ## 1. Purpose
 
@@ -25,7 +25,7 @@ Satisfies pt-040 [m13-1].
 ### Database Tables
 
 | Table | Estimated Row/Month | Row Size (avg) | Monthly Growth |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | observed_fact | 5,000 | 2 KB | ~10 MB |
 | chunk_embedding | 20,000 | 4 KB (content) + 6 KB (vector) | ~200 MB |
 | agent_run | 500 | 1 KB | ~0.5 MB |
@@ -47,7 +47,7 @@ IVFFlat index rebuild recommended at 100k+ vectors (approx. 5 months at current 
 ## 3. Query Load Model
 
 | Query Surface | Expected QPS (Wave-1) | P95 Latency Target |
-|---|---|---|
+| --- | --- | --- |
 | ServiceInstance discovery | 10 | 50ms |
 | ObservedFact ingestion | 5 | 30ms |
 | Chunk retrieval (ANN search) | 8 | 200ms |
@@ -62,7 +62,7 @@ IVFFlat index rebuild recommended at 100k+ vectors (approx. 5 months at current 
 ## 4. Concurrency Expectations
 
 | Component | Max Concurrent Instances | Notes |
-|---|---|---|
+| --- | --- | --- |
 | internalcmdb-app (API workers) | 4 | Uvicorn worker count |
 | vLLM reasoning_32b | 4 concurrent requests | vLLM --max-num-seqs |
 | vLLM fast_9b | 8 concurrent requests | vLLM --max-num-seqs |
@@ -73,7 +73,7 @@ IVFFlat index rebuild recommended at 100k+ vectors (approx. 5 months at current 
 ## 5. Cost Baseline (Wave-1, Self-Hosted Hetzner)
 
 | Resource | Monthly Cost (EUR) | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Hetzner ax101 bare-metal | ~210 | Includes 256 GB RAM, RTX 6000 Ada, 2×1.92TB NVMe |
 | Electricity (GPU inference) | ~30 | Estimated 150W average GPU load |
 | Backup storage | ~5 | Hetzner Storage Box 500 GB |
@@ -86,7 +86,7 @@ IVFFlat index rebuild recommended at 100k+ vectors (approx. 5 months at current 
 ## 6. Scale Triggers
 
 | Metric | Trigger Threshold | Action |
-|---|---|---|
+| --- | --- | --- |
 | DB size > 80% of allocation | > 1.5 TB | Add storage or archive old facts |
 | Connection pool exhaustion | pool wait > 50ms sustained | Increase pool_size or add read replica |
 | Query latency degradation | P95 > 2× target | VACUUM ANALYZE + index review |

@@ -25,7 +25,7 @@ All platform roles are currently held by a single operator. This is explicitly a
 single-engineer posture and must be revisited before any external operator is granted write access.
 
 | Program Role              | Named Owner  | Named At   | Purpose |
-|---------------------------|--------------|------------|---------|
+| --- | --- | --- | --- |
 | Executive Sponsor         | Alex Neacsu  | 2026-03-08 | Resolves priorities, budget, cross-team escalations |
 | Architecture Board        | Alex Neacsu  | 2026-03-08 | Approves canonical architectural decisions and exception paths |
 | Platform Program Manager  | Alex Neacsu  | 2026-03-08 | Sequencing, governance, dependency tracking, status reporting |
@@ -46,7 +46,7 @@ single-engineer posture and must be revisited before any external operator is gr
 ### Schema & Registry Layer
 
 | Entity / Activity                        | Exec Sponsor | Arch Board | Eng Lead | Data Registry Owner | Discovery Owner | Sec & Policy |
-|------------------------------------------|:---:|:---:|:---:|:---:|:---:|:---:|
+| --- | --- | --- | --- | --- | --- | --- |
 | `registry.cluster`                       | A   | C   | R   | R   | I   | I   |
 | `registry.host`                          | A   | C   | R   | R   | C   | I   |
 | `registry.host_hardware_snapshot`        | I   | I   | R   | R   | R   | I   |
@@ -63,7 +63,7 @@ single-engineer posture and must be revisited before any external operator is gr
 ### Discovery Layer
 
 | Entity / Activity                        | Exec Sponsor | Arch Board | Eng Lead | Data Registry Owner | Discovery Owner | Sec & Policy |
-|------------------------------------------|:---:|:---:|:---:|:---:|:---:|:---:|
+| --- | --- | --- | --- | --- | --- | --- |
 | `discovery.discovery_source`            | I   | C   | R   | A   | R   | I   |
 | `discovery.collection_run`              | I   | I   | R   | C   | R   | I   |
 | `discovery.observed_fact`               | I   | C   | R   | C   | R   | I   |
@@ -75,7 +75,7 @@ single-engineer posture and must be revisited before any external operator is gr
 ### Taxonomy Layer
 
 | Entity / Activity                        | Exec Sponsor | Arch Board | Eng Lead | Data Registry Owner | Discovery Owner |
-|------------------------------------------|:---:|:---:|:---:|:---:|:---:|
+| --- | --- | --- | --- | --- | --- |
 | `taxonomy.taxonomy_domain`              | I   | A   | R   | R   | I   |
 | `taxonomy.taxonomy_term`                | I   | A   | R   | R   | C   |
 | Taxonomy seed (22 domains, 251 terms)   | I   | A   | R   | R   | I   |
@@ -83,7 +83,7 @@ single-engineer posture and must be revisited before any external operator is gr
 ### Docs Layer
 
 | Entity / Activity                        | Exec Sponsor | Arch Board | Eng Lead | Data Registry Owner |
-|------------------------------------------|:---:|:---:|:---:|:---:|
+| --- | --- | --- | --- | --- |
 | `docs.document`                         | A   | A   | R   | R   |
 | `docs.document_version`                 | I   | I   | R   | R   |
 | `docs.entity_doc_binding`               | I   | C   | R   | R   |
@@ -91,7 +91,7 @@ single-engineer posture and must be revisited before any external operator is gr
 ### Governance Layer
 
 | Entity / Activity                        | Exec Sponsor | Arch Board | Sec & Policy | Eng Lead |
-|------------------------------------------|:---:|:---:|:---:|:---:|
+| --- | --- | --- | --- | --- |
 | `governance.alembic_version`            | I   | A   | I   | R   |
 | Schema migration approval               | A   | C   | C   | R   |
 | Policy document approval                | A   | A   | R   | C   |
@@ -99,7 +99,7 @@ single-engineer posture and must be revisited before any external operator is gr
 ### Retrieval Layer
 
 | Entity / Activity                        | Arch Board | Eng Lead | Discovery Owner |
-|------------------------------------------|:---:|:---:|:---:|
+| --- | --- | --- | --- |
 | `retrieval.evidence_pack`               | C   | R   | C   |
 | `retrieval.evidence_pack_item`          | I   | R   | C   |
 | `retrieval.retrieval_request`           | C   | R   | I   |
@@ -107,7 +107,7 @@ single-engineer posture and must be revisited before any external operator is gr
 ### Agent Control Layer
 
 | Entity / Activity                        | Arch Board | Eng Lead | Sec & Policy |
-|------------------------------------------|:---:|:---:|:---:|
+| --- | --- | --- | --- |
 | `agent_control.agent_session`           | C   | R   | A   |
 | `agent_control.action_request`          | A   | R   | A   |
 | `agent_control.action_approval`         | A   | R   | R   |
@@ -118,7 +118,7 @@ single-engineer posture and must be revisited before any external operator is gr
 ## Infrastructure Ownership
 
 | Component                                   | Accountable  | Responsible  | Notes |
-|---------------------------------------------|--------------|--------------|-------|
+| --- | --- | --- | --- |
 | PostgreSQL 17 (internalcmdb-postgres)       | Alex Neacsu  | Alex Neacsu  | HC_Volume_105014654, orchestrator |
 | Traefik TCP routing (postgres.orchestrator) | Alex Neacsu  | Alex Neacsu  | SNI on :5432, ALPN postgresql, cert via Cloudflare |
 | Alembic migration runs                      | Alex Neacsu  | Alex Neacsu  | Must have `POSTGRES_SSLMODE=require` |
@@ -142,7 +142,7 @@ single-engineer posture and must be revisited before any external operator is gr
 Each decision class requires a minimum approval set before execution:
 
 | Decision Class | Minimum Approvers | Risk Class (ADR-004) | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | ADR creation or amendment | Architecture Board | RC-2 | Executive Sponsor if strategic scope |
 | Schema migration (staging) | Data Registry Owner | RC-3 | |
 | Schema migration (production) | Architecture Board + Executive Sponsor | RC-4 | Dual approval required |
@@ -182,7 +182,7 @@ Invoked when: Architecture Board escalation is insufficient or a non-negotiable 
 ### Escalation response SLAs
 
 | Escalation Level | Normal Response | Critical Response |
-|---|---|---|
+| --- | --- | --- |
 | L1 Role Owner | 4h (business hours) | 1h |
 | L2 Program Manager | 8h | 2h |
 | L3 Architecture Board | 24h | 4h |

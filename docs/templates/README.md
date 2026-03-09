@@ -28,7 +28,7 @@ This guide explains how to use the templates in this directory to create, valida
 ## Templates Available
 
 | Template file | Document class token | When to use |
-|---------------|---------------------|-------------|
+| --- | --- | --- |
 | `adr-template.md` | `adr` | Architectural or governance decisions |
 | `runbook-template.md` | `runbook` | Operational procedures and recovery steps |
 | `service-dossier-template.md` | `service_dossier` | Canonical record for an infrastructure service |
@@ -56,7 +56,7 @@ Edit the frontmatter block at the top of the file. Required fields are marked wi
 **Mandatory fields (all templates):**
 
 | Field | Type | Example |
-|-------|------|---------|
+| --- | --- | --- |
 | `id` | string | `ADR-006`, `SVC-001`, `POL-003` |
 | `title` | string | Short unambiguous title |
 | `doc_class` | token | See table above |
@@ -110,7 +110,7 @@ For strict mode (checks cross-references and binding targets):
 Set `status: in-review` in the frontmatter and open a pull request. The reviewer for your document is determined by the `owner` role token:
 
 | Owner role token | Reviewer |
-|-----------------|----------|
+| --- | --- |
 | `architecture_board` | Architecture Board chair |
 | `platform_program_manager` | Program Manager |
 | `platform_architecture_lead` | Platform Architecture Lead |
@@ -130,7 +130,7 @@ After review, the designated owner sets `status: approved` and merges the PR. No
 Use the following ID prefix conventions:
 
 | Prefix | Class |
-|--------|-------|
+| --- | --- |
 | `ADR-NNN` | `adr` |
 | `SVC-NNN` | `service_dossier` |
 | `RUN-NNN` | `runbook` |
@@ -159,7 +159,7 @@ Use these link formats inside document bodies:
 ## Common Mistakes
 
 | Mistake | Correct approach |
-|---------|-----------------|
+| --- | --- |
 | Using `status: accepted` | Use `status: approved` |
 | Freeform `owner: "Alex"` | Use canonical role token: `owner: platform_architecture_lead` |
 | Missing `created` or `updated` | Both are mandatory — set to authoring date |

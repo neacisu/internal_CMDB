@@ -12,7 +12,7 @@ tags: [policy-matrix, risk-classes, deny-by-default, action-governance, wave-1]
 depends_on: [ADR-004, GOV-006, GOV-002]
 ---
 
-# internalCMDB — Policy Matrix, Risk Classes and Deny-by-Default Rules (Wave-1)
+## internalCMDB — Policy Matrix, Risk Classes and Deny-by-Default Rules (Wave-1)
 
 **Milestone**: m5-1 — Policy Matrix and Risk Classes Approved
 **Program task**: pt-016
@@ -36,7 +36,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 ## Risk Class Definitions (ADR-004)
 
 | Risk class | Description | Default approval surface |
-|-----------|-------------|--------------------------|
+| --- | --- | --- |
 | RC-1 | Read-only query, analysis, or report generation. No state change. | None required — evidence pack sufficient |
 | RC-2 | Agent produces a draft, plan, or proposal. Human must review and commit. | Human review before any write |
 | RC-3 | Bounded, supervised write within explicit scope. Reversible. | Named approver per scope |
@@ -51,7 +51,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** Query or export data from any registry, discovery, or retrieval schema table (SELECT-only).
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-1 |
 | Evidence required | Valid evidence pack for the task type; no mandatory class violations |
 | Approval required | None |
@@ -65,7 +65,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** Execute the metadata validator against one or more documents.
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-1 |
 | Evidence required | Evidence pack; canonical_doc mandatory class satisfied |
 | Approval required | None |
@@ -79,7 +79,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** INSERT a new entity into any registry schema table.
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-3 |
 | Evidence required | Evidence pack; registry_ownership mandatory; canonical_doc recommended (service dossier or ADR) |
 | Approval required | Named approver: registry owner role for the entity kind |
@@ -93,7 +93,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** UPDATE an existing entity in any registry schema table.
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-3 |
 | Evidence required | Evidence pack; registry_ownership mandatory; observed_fact recommended |
 | Approval required | Named approver; approval scope must name the specific entity ID |
@@ -107,7 +107,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** Execute a discovery collection run against one or more hosts.
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-2 |
 | Evidence required | Evidence pack; registry_host mandatory; registry_ownership recommended |
 | Approval required | Human review of discovery scope before run |
@@ -121,7 +121,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** Create a new governance or infrastructure document under `docs/`.
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-2 |
 | Evidence required | Evidence pack; canonical_doc (template) mandatory; schema_entity mandatory; taxonomy_term mandatory |
 | Approval required | Human review and commit (agent produces draft only) |
@@ -135,7 +135,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** Modify an existing governance or infrastructure document.
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-2 |
 | Evidence required | Evidence pack; existing canonical_doc mandatory; schema_entity mandatory |
 | Approval required | Human review and commit |
@@ -149,7 +149,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** Apply a database schema migration (Alembic revision).
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-4 |
 | Evidence required | Evidence pack; schema_entity mandatory; canonical_doc (ADR or policy) mandatory |
 | Approval required | Quorum: platform_architecture_lead + database_owner |
@@ -163,7 +163,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** Trigger a new AgentRun for a supported task type.
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-2 |
 | Evidence required | Evidence pack assembled and validated for the task type; all mandatory context classes present |
 | Approval required | Human authorisation for RC-2/RC-3/RC-4 sub-actions that the run will invoke |
@@ -177,7 +177,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 **Description:** Bulk INSERT or UPSERT of registry entities from a discovery artifact or external data source.
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Risk class | RC-4 |
 | Evidence required | Evidence pack; registry_ownership mandatory; evidence_artifact mandatory (source artifact) |
 | Approval required | Quorum: registry_owner_role + platform_architecture_lead; pre-import snapshot required |
@@ -191,7 +191,7 @@ This document defines the formal policy matrix for all supported wave-1 action c
 The following conditions unconditionally deny any action, regardless of risk class:
 
 | Rule ID | Condition | Rationale |
-|---------|-----------|-----------|
+| --- | --- | --- |
 | D-001 | Action class not listed in this matrix | No policy entry means no permission |
 | D-002 | Evidence pack has at least one MANDATORY_MISSING violation | Mandatory context class absent — execution is epistemically unsound |
 | D-003 | Evidence pack has at least one DISALLOWED_PRESENT violation | Disallowed context class in pack — context contract violated |
@@ -208,6 +208,7 @@ The following conditions unconditionally deny any action, regardless of risk cla
 Policy enforcement is the responsibility of the `control.policy_matrix` Python module.  No code may bypass the `PolicyEnforcer.check()` method for any governed write path.  Read-only actions (RC-1) are exempt from approval enforcement but must still have a valid evidence pack (D-002 and D-003 still apply).
 
 The `PolicyEnforcer` is invoked:
+
 1. Before evidence pack assembly (task type must be supported)
 2. After evidence pack assembly (D-002, D-003 validation)
 3. Before any write action execution (approval check, scope check)

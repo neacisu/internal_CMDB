@@ -24,7 +24,7 @@ Satisfies pt-032 [m10-2].
 ## 2. Scanning Gates
 
 | Gate | Tool | Trigger | Block Condition |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Python dependency audit | `pip-audit` | Every `make lint` run | CRITICAL or HIGH CVE with no exception |
 | SBOM generation | `cyclonedx-bom` | Every release commit | Failure to generate = hard block |
 | Container image scan | `trivy` (advisory) | Pre-deployment | CRITICAL CVE without documented exception |
@@ -84,7 +84,7 @@ Currently enforced via pre-commit framework in this repository. Rules enforced:
 ## 6. Exception Model
 
 | Exception Type | Approval Required | Max Duration | Required Documentation |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Known CVE; no patch available | security_and_policy_owner | 30 days | CVE ID + justification in change_log |
 | License copyleft in dev-only dep | security_and_policy_owner | Until next review | Confirmation dep not in production runtime |
 | gitleaks false positive | security_and_policy_owner | Permanent (if confirmed FP) | Inline comment + change_log entry |

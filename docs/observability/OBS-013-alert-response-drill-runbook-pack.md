@@ -29,7 +29,7 @@ documents the time-to-resolve (TTR) for each injected fault scenario.
 ## 2. Drill Scenarios
 
 | # | Alert Name | Severity | Runbook | Fault Injection Method |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | D1 | `postgres_replication_lag_high` | P1 | RB-DB-001 | Pause WAL sender artificially via `pg_sleep(10)` in streaming query |
 | D2 | `pgvector_query_p95_threshold` | P2 | RB-DB-002 | Run a table-scan query with `SET enable_indexscan = off` |
 | D3 | `llm_inference_ttftoken_high` | P2 | RB-LLM-001 | Submit 20 simultaneous high-token requests |
@@ -43,7 +43,7 @@ documents the time-to-resolve (TTR) for each injected fault scenario.
 ### Scenario D1 — Postgres Replication Lag
 
 | Step | Target | Actual | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Alert fired | ≤ 2 min after fault injection | 1 min 43 s | ✅ |
 | On-call paged | ≤ 1 min after alert | 52 s | ✅ |
 | Root cause identified | ≤ 5 min | 3 min 10 s | ✅ |
@@ -55,7 +55,7 @@ documents the time-to-resolve (TTR) for each injected fault scenario.
 ### Scenario D2 — pgvector p95 Threshold
 
 | Step | Target | Actual | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Alert fired | ≤ 3 min | 2 min 31 s | ✅ |
 | Query identified in pg_stat_activity | ≤ 3 min | 2 min 08 s | ✅ |
 | Query terminated | — | Simulated | ✅ |
@@ -66,7 +66,7 @@ documents the time-to-resolve (TTR) for each injected fault scenario.
 ### Scenario D3 — LLM TTFT High
 
 | Step | Target | Actual | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Alert fired | ≤ 3 min | 2 min 52 s | ✅ |
 | Queue depth visible in Grafana | Yes | Yes | ✅ |
 | Scale-out decision made | ≤ 5 min | 4 min 01 s | ✅ |
@@ -78,7 +78,7 @@ documents the time-to-resolve (TTR) for each injected fault scenario.
 ### Scenario D4 — Retention Purge Job Overdue
 
 | Step | Target | Actual | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Alert fired | ≤ 24 h after missed window | 23 h 51 min | ✅ |
 | Scheduler re-enabled | ≤ 30 min after page | 12 min | ✅ |
 | Backfill purge ran | Next scheduled window | Simulated | ✅ |
@@ -89,7 +89,7 @@ documents the time-to-resolve (TTR) for each injected fault scenario.
 ### Scenario D5 — Access Denial Rate Spike
 
 | Step | Target | Actual | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Alert fired | ≤ 2 min | 1 min 37 s | ✅ |
 | Denial source identified in change_log | ≤ 5 min | 3 min 14 s | ✅ |
 | IP blocked at HAProxy layer | ≤ 15 min | 8 min 22 s | ✅ |
@@ -102,7 +102,7 @@ documents the time-to-resolve (TTR) for each injected fault scenario.
 ## 4. Summary
 
 | Scenario | TTR | Runbook Executable | Gaps Found |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | D1 — Replication lag | 4 min | ✅ | None |
 | D2 — pgvector p95 | 5 min 20 s | ✅ | None |
 | D3 — LLM TTFT | 6 min 10 s | ✅ | 1 (minor) |
@@ -116,7 +116,7 @@ All 5 runbooks are executable.  One minor gap found in RB-LLM-001.
 ## 5. Action Items
 
 | ID | Description | Owner | Due |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | C2-DR-001 | Update RB-LLM-001 with vLLM v0.5.3 queue metrics path | platform_engineering | 2025-10-14 |
 | C2-DR-002 | Schedule Cycle-3 drill for 2026-01-08 | platform_architecture_lead | 2025-11-01 |
 

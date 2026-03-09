@@ -25,7 +25,7 @@ residual gap register derived from the second governed run.
 ## 2. Second Run Summary
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Pilot scope | PILOT-001 v1.0 — monitoring-stack read-only audit (repeat) |
 | Run date | 2026-03-09 |
 | Executed by | platform_architecture_lead |
@@ -49,7 +49,7 @@ The following aspects of the execution were identical between run 1 and run 2:
 ### 3.2 Observed Delta
 
 | Item | Run 1 | Run 2 | Delta Classification |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Token total | 3840 | 3912 | MINOR — 1 new observed_fact row added between runs |
 | Evidence items | 9 | 10 | MINOR — 1 new OBSERVED_FACT item |
 | Semantic stage | Skipped | Skipped | Identical (TT-001 policy) |
@@ -65,7 +65,7 @@ repeatability failure is present.
 ### 4.1 Open Platform Gaps
 
 | Gap ID | Description | Severity | Blocking | Target Task |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | GAP-001 | AlertManager on-call list not in registry | LOW | No | pt-043 (RACI/service boundaries) |
 | GAP-002 | Grafana datasource credentials not in secrets registry | MEDIUM | No (pilot is read-only) | pt-028 (secrets storage model) |
 | GAP-003 | Semantic search not exercised for any task type in pilot | INFO | No | pt-038 (evaluation harness) |
@@ -78,7 +78,7 @@ repeatability failure is present.
 ### 4.2 Accepted Exceptions (Wave-1)
 
 | Exception ID | Gap | Rationale | Accepted By | Expires |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | EX-001 | GAP-004 (no write pilot) | Wave-1 pilot intentionally bounded to read-only | platform_architecture_lead | m7-3 review |
 | EX-002 | GAP-003 (semantic not exercised) | TT-001 explicitly disallows semantic; different TT required | platform_architecture_lead | m7-3 review |
 
@@ -108,7 +108,7 @@ actions (RC-2 through RC-4) remains untested and must be addressed before Wave-2
 ## 6. Go/No-Go Recommendation for Wave-2
 
 | Criterion | Status | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Platform governance code complete (epic-5) | GO | pt-016, pt-017, pt-018 complete |
 | Pilot bounded and realistic | GO | monitoring-stack fully documented |
 | Two governed runs without hidden manual steps | GO | PILOT-002 + this document |

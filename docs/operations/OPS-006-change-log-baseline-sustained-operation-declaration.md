@@ -11,7 +11,7 @@ owner: executive_sponsor
 tags: [change-log, baseline, sustained-operation, declaration, governance, m16-3]
 ---
 
-# OPS-006 — Change Log Activity Baseline and Sustained Operation Declaration
+## OPS-006 — Change Log Activity Baseline and Sustained Operation Declaration
 
 ## 1. Purpose
 
@@ -32,7 +32,7 @@ operating in a stable, governed, sustained state.
 ### 2.1 Summary Statistics (Q3 2025)
 
 | `change_source_text` | Entry Count | Description |
-|---|---|---|
+| --- | --- | --- |
 | `retention_job` | 91 | Daily purge job records (one per day) |
 | `DataAccessControl` | 0 | Access denial records (no unauthorised access) |
 | `emergency_deletion_request` | 0 | Emergency deletion requests |
@@ -65,7 +65,7 @@ ORDER BY 1;
 ### 2.3 Notable Events
 
 | Date | `change_code` | Description |
-|---|---|---|
+| --- | --- | --- |
 | 2025-07-15 | `cred-rot-collector-20250715` | `svc-internalcmdb-collector` credential rotation |
 | 2025-08-14 | `cred-rot-scheduler-20250814` | `svc-internalcmdb-scheduler` credential rotation |
 | 2025-08-22 | `migration-v1.2.0-20250822` | Schema migration: add `chunk_embedding.model_version` column |
@@ -78,7 +78,7 @@ ORDER BY 1;
 ## 3. Governance Controls Status Summary
 
 | Control Domain | Control | Status |
-|---|---|---|
+| --- | --- | --- |
 | **Data classification** | DATA-001 classes A–D enforced | ✅ Active |
 | **Access control** | `DataAccessControl` enforcing Class B restrictions | ✅ Active — 0 violations |
 | **Redaction** | `RedactionScanner` running on all ingest paths | ✅ Active — 0 rejections |
@@ -101,7 +101,7 @@ ORDER BY 1;
 All Cycle-2 action items are formally recorded and tracked:
 
 | ID | Status | Description | Due | Owner |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | C2-ACT-001 | Open | Prometheus alert for restore duration > 12 min | 2025-10-15 | platform_engineering |
 | C2-ACT-002 | Open | Review backup storage budget Q1 2026 | 2025-11-01 | platform_architecture_lead |
 | C2-ACT-003 | **Closed** | Rebuild HNSW index concurrently | 2025-10-10 | platform_engineering |

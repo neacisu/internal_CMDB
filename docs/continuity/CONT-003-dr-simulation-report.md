@@ -12,8 +12,6 @@ tags: [disaster-recovery, simulation, dr-exercise, remediation, wave-1, m8-3]
 depends_on: [CONT-001, CONT-002]
 ---
 
-# internalCMDB — Disaster Recovery Simulation Report
-
 ## 1. Purpose
 
 Disaster exercise report with findings, risk rating, and corrective action register.
@@ -24,7 +22,7 @@ Satisfies pt-027 [m8-3].
 ## 2. Exercise Summary
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Exercise date | 2026-03-08 |
 | Scenario | Primary PostgreSQL node failure — full DB restore from backup |
 | Executed by | platform_architecture_lead |
@@ -39,6 +37,7 @@ Satisfies pt-027 [m8-3].
 **Scenario**: `DREX-001 — PostgreSQL Primary Node Loss`
 
 Simulation steps:
+
 1. Stop `internalcmdb-postgres` Docker container (simulating node failure).
 2. Verify that application services detect DB unavailability.
 3. Start a fresh PostgreSQL 17 container (clean state).
@@ -52,7 +51,7 @@ Simulation steps:
 ## 4. Execution Log
 
 | Step | Time | Result | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Container stopped | 09:00 | PASS | All connections refused after 30s |
 | Service unavailability detected | 09:00:35 | PASS | Application logs showed ConnectionError |
 | Fresh container started | 09:02 | PASS | PostgreSQL 17 started, empty DB |
@@ -69,7 +68,7 @@ Simulation steps:
 ## 5. Findings
 
 | Finding ID | Description | Severity | Recommendation |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | F-001 | Application services do not retry DB connection automatically on startup | MEDIUM | Add retry logic with exponential backoff to DB session factory |
 | F-002 | No alert fired when DB container stopped (Prometheus not scraped during exercise) | LOW | Configure Prometheus alerting for DB connection pool exhaustion |
 | F-003 | Backup manifest (row counts) must be manually verified — no automated diffing | LOW | Add automated post-restore diff script to RB-DR-001 |
@@ -80,7 +79,7 @@ Simulation steps:
 ## 6. Corrective Action Register
 
 | Action ID | Finding | Action | Owner | Target |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | CA-001 | F-001 | Add SQLAlchemy `pool_pre_ping` and startup retry loop | platform_architecture_lead | Next sprint |
 | CA-002 | F-002 | Configure `pg_up` Prometheus alert bound to DB container | platform_architecture_lead | pt-050 (alerts) |
 | CA-003 | F-003 | Script post-restore count diff vs. backup manifest | platform_architecture_lead | pt-026 update |
@@ -91,7 +90,7 @@ Simulation steps:
 ## 7. Overall Risk Rating
 
 | Dimension | Rating | Basis |
-|---|---|---|
+| --- | --- | --- |
 | Recovery Success | LOW RISK | Restore completed in 12 min vs. 4h RTO |
 | Data Loss | LOW RISK | Backup was 2h old at exercise time; RPO=1h not tested with WAL |
 | Service Continuity | MEDIUM RISK | Manual restart required (CA-004 pending) |

@@ -11,8 +11,6 @@ owner: security_and_policy_owner
 tags: [data-classification, access-control, governance, wave-1, m15-1]
 ---
 
-# internalCMDB — Data Classification Matrix
-
 ## 1. Purpose
 
 Policy document mapping all registry tables to data classes, with examples, restrictions, and named owners.
@@ -23,7 +21,7 @@ Satisfies pt-055 [m15-1].
 ## 2. Data Classes
 
 | Class | Label | Description | Examples |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | A | PUBLIC | Non-sensitive operational data; freely shareable internally | Service names, container counts, public host names |
 | B | INTERNAL | Business-sensitive operational data; restricted to authorized roles | Observed facts with IP addresses, service configurations |
 | C | CONFIDENTIAL | Credential or security-sensitive data; strict access control | Secrets (handled by SEC-001), security posture gaps |
@@ -34,7 +32,7 @@ Satisfies pt-055 [m15-1].
 ## 3. Table-to-Class Mapping
 
 | Table | Class | Owner | Restriction |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | registry.host | A | platform_architecture_lead | No external exposure |
 | registry.service_instance | A | platform_architecture_lead | No external exposure |
 | registry.shared_service | A | platform_architecture_lead | No external exposure |
@@ -58,6 +56,7 @@ No column in any listed table should contain Class C (credential/secret) content
 Violations are caught by the ingest-time redaction scanner (DATA-002).
 
 Specific prohibited column content:
+
 - `observed_fact.content_text`: must not contain passwords, API keys, private keys.
 - `document_chunk.chunk_text`: must not contain credentials.
 - `evidence_pack` JSON fields: must not contain raw credentials.
@@ -67,7 +66,7 @@ Specific prohibited column content:
 ## 5. Access Rules per Class
 
 | Class | Read | Write | Delete |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | A | internalcmdb_app + platform_architecture_lead | internalcmdb_app under approval | platform_architecture_lead only |
 | B | platform_engineering role + platform_architecture_lead | internalcmdb_app under approval | platform_architecture_lead only |
 | C | security_and_policy_owner only | security_and_policy_owner only | executive_sponsor approval |

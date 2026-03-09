@@ -26,7 +26,7 @@ Satisfies pt-029 [m9-2].
 Bootstrap credentials are temporary credentials created during initial provisioning.
 
 | Credential | Status | Retirement Action |
-|---|---|---|
+| --- | --- | --- |
 | Initial PostgreSQL `postgres` superuser password | RETIRED | Replaced by `internalcmdb_app` restricted user |
 | SSH root access via Hetzner Rescue Mode | RETIRED | Disabled after OS install; key-only SSH active |
 | HuggingFace token (if used for model pull) | CONSTRAINED | Rotated; now scoped read-only to target model repo |
@@ -37,7 +37,7 @@ Bootstrap credentials are temporary credentials created during initial provision
 ## 3. Rotation Schedule
 
 | Secret Class | Rotation Frequency | Trigger Conditions |
-|---|---|---|
+| --- | --- | --- |
 | DB_CREDENTIAL | Quarterly | Suspected compromise, role change, quarterly review |
 | API_KEY | Bi-annually | Key leak detected, owner departure, service change |
 | TLS_PRIVATE_KEY | Annually or at expiry | Certificate expiry (SEC-003), compromise |
@@ -87,7 +87,7 @@ echo "$(cat ~/.ssh/id_ed25519_new.pub)" >> ~/.ssh/authorized_keys
 ## 5. Privileged Access Roles
 
 | Role | Permissions | Named Holders |
-|---|---|---|
+| --- | --- | --- |
 | platform_architecture_lead | Read+write DB credentials, restart services, deploy | 1 named individual |
 | security_and_policy_owner | Approve rotation, approve access grants, review secrets | 1 named individual |
 | executive_sponsor | Approve critical changes, sign compliance declarations | 1 named individual |

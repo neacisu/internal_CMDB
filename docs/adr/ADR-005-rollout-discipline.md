@@ -96,7 +96,7 @@ Phase 7 — Approval closure & change log entry
 Every deployable change class must have a documented rollback path before deployment is approved:
 
 | Change Class | Rollback Mechanism |
-|---|---|
+| --- | --- |
 | Schema migration | Alembic downgrade to previous revision; data-loss risk assessed before approval |
 | Docker Compose config | Previous version in git; `docker compose up` with previous file |
 | Python package update | `pip install` pinned previous version; pyproject.toml reverted |
@@ -150,7 +150,7 @@ without enforcement does not prevent undocumented bypasses, especially for high-
 ## Implementation Bindings
 
 | Constraint | Binding |
-|---|---|
+| --- | --- |
 | Change log | `governance.change_log` — required for every Phase 7 closure |
 | Approval records | `governance.approval_record` — required Phase 3 gate |
 | Evidence artifacts | `discovery.evidence_artifact` — Phase 5 post-deploy proof |

@@ -24,7 +24,7 @@ Satisfies pt-044 [m14-2].
 ## 2. Support Tiers
 
 | Tier | Scope | Response Time | Responsible |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | L1 — Self-service | Non-urgent requests; dashboard access; query help | Next business day | on_call_engineer |
 | L2 — Operations | Service degradation; performance alerts; non-critical failures | 4 hours | platform_architecture_lead |
 | L3 — Critical Incident | Service outage; data loss risk; security event | 1 hour | platform_architecture_lead + security_and_policy_owner |
@@ -35,7 +35,7 @@ Satisfies pt-044 [m14-2].
 ## 3. On-Call Rules
 
 | Rule | Detail |
-|---|---|
+| --- | --- |
 | Coverage | Business hours (09:00–18:00 CET, Mon–Fri) in Wave-1 |
 | After-hours | Alerts logged; L3 incidents page on_call_engineer via email |
 | On-call rotation | Single engineer (platform_architecture_lead) in Wave-1 |
@@ -49,7 +49,7 @@ Satisfies pt-044 [m14-2].
 ### Incident Levels
 
 | Level | Criteria | Command | Duration Limit |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | P1 — Critical | Service outage; data unavailable | platform_architecture_lead commands; executive_sponsor informed | 4 hours to resolution or escalation |
 | P2 — High | Significant degradation; SLO breach | platform_architecture_lead commands | 8 hours |
 | P3 — Medium | Non-critical component failure; alert firing | on_call_engineer handles | 24 hours |
@@ -73,7 +73,7 @@ Satisfies pt-044 [m14-2].
 ## 5. Escalation Paths
 
 | Trigger | Escalation Action |
-|---|---|
+| --- | --- |
 | L2 response timeout (4h) | Escalate to L3; page platform_architecture_lead + security_and_policy_owner |
 | L3 not resolved in 4h | Escalate to L4; page executive_sponsor |
 | Data loss confirmed | Immediate L4; executive_sponsor alerted immediately |

@@ -12,7 +12,7 @@ tags: [load-test, stress-test, performance, wave-1, m13-2]
 depends_on: [CAP-001]
 ---
 
-# internalCMDB — Load and Stress Test Results
+## internalCMDB — Load and Stress Test Results
 
 ## 1. Purpose
 
@@ -38,7 +38,7 @@ Ramp: 0 → target_users over 60 seconds.
 **Users**: 15 concurrent simulated agents.
 
 | Metric | P50 | P95 | P99 | Target | Status |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | ServiceInstance discovery | 18ms | 42ms | 78ms | ≤ 50ms | PASS |
 | ObservedFact ingestion | 12ms | 28ms | 55ms | ≤ 30ms | PASS |
 | Error rate | 0% | — | — | 0% | PASS |
@@ -49,7 +49,7 @@ Ramp: 0 → target_users over 60 seconds.
 **Users**: 8 concurrent retrieval workers.
 
 | Metric | P50 | P95 | P99 | Target | Status |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | ANN retrieval latency | 85ms | 175ms | 290ms | ≤ 200ms | PASS |
 | Ranker overhead | 12ms | 25ms | 45ms | ≤ 30ms | PASS |
 | Error rate | 0% | — | — | 0% | PASS |
@@ -60,7 +60,7 @@ Ramp: 0 → target_users over 60 seconds.
 **Users**: 20 concurrent enforcement requests.
 
 | Metric | P50 | P95 | P99 | Target | Status |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | Enforcement context eval | 8ms | 18ms | 35ms | ≤ 20ms | PASS |
 | PolicyMatrix evaluation | 5ms | 12ms | 22ms | ≤ 20ms | PASS |
 | Error rate | 0% | — | — | 0% | PASS |
@@ -70,7 +70,7 @@ Ramp: 0 → target_users over 60 seconds.
 **Target**: Push to failure — 50 concurrent users, 60 QPS mix.
 
 | Metric | Result | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Saturation point | 45 concurrent users | Queue buildup starts above 45 |
 | Max throughput before errors | 52 QPS | Error rate 0% below this |
 | P95 latency at saturation | 380ms (ANN) | Exceeds target; acceptable at 2× load |
@@ -83,7 +83,7 @@ Ramp: 0 → target_users over 60 seconds.
 ## 4. Findings
 
 | Finding | Severity | Status |
-|---|---|---|
+| --- | --- | --- |
 | ANN P95 latency at saturation exceeds target by 90% | LOW | Acceptable; only at 2× expected load |
 | No connection pool exhaustion observed | N/A | Positive finding |
 | No OOM or crash under any scenario | N/A | Positive finding |

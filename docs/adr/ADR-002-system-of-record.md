@@ -46,7 +46,7 @@ record in PostgreSQL backed by provenance and lifecycle fields.**
 ### Technology stack bindings
 
 | Component | Choice | Rationale |
-|---|---|---|
+| --- | --- | --- |
 | Relational core | PostgreSQL 17 | ACID, RLS, FKs, rich types, proven at scale |
 | Flexible metadata | JSONB columns | Schema-flexible extension without EAV anti-pattern |
 | Vector storage | pgvector extension | Co-located with structured data, no separate vector DB needed |
@@ -60,7 +60,7 @@ record in PostgreSQL backed by provenance and lifecycle fields.**
 Seven PostgreSQL schemas separate concerns:
 
 | Schema | Purpose |
-|---|---|
+| --- | --- |
 | `registry` | Infrastructure entities: hosts, clusters, services, networks, storage |
 | `discovery` | Collectors, collection runs, observed facts, evidence artifacts, reconciliation |
 | `taxonomy` | Controlled vocabularies: domains and terms |
@@ -125,7 +125,7 @@ at scale.
 ## Implementation Bindings
 
 | Constraint | Binding |
-|---|---|
+| --- | --- |
 | PostgreSQL version | 17-alpine container, pinned image |
 | Container name | `internalcmdb-postgres` |
 | Database name | `internalCMDB` |

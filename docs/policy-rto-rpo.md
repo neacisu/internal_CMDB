@@ -32,7 +32,7 @@ are _observed_ by the CMDB.
 ## 2. Recovery Objectives
 
 | Metric | Target | Basis |
-|--------|--------|-------|
+| --- | --- | --- |
 | **RTO** (Recovery Time Objective) | **4 hours** | Time to restore a fully functional CMDB from the last backup, including Alembic state, taxonomy seed, and connection routing |
 | **RPO** (Recovery Point Objective) | **24 hours** | Maximum acceptable data loss window; one full day of discovery audit runs |
 | **MTTR** (Mean Time to Recover) | < 2 hours | Operational target; subject to quarterly review |
@@ -48,7 +48,7 @@ decisions.
 ### 3.1 Database Backup
 
 | Aspect | Detail |
-|--------|--------|
+| --- | --- |
 | Method | `pg_dump` (plain SQL or custom format) piped to compressed archive |
 | Frequency | Daily at 02:00 UTC (cron on orchestrator) |
 | Retention | 7 days local, 30 days off-site (Hetzner storage box or S3-compatible) |
@@ -93,7 +93,7 @@ alongside the database.
 ## 5. HA Posture (Wave-1 Accepted Limitations)
 
 | Aspect | Current State | Accepted Risk |
-|--------|---------------|---------------|
+| --- | --- | --- |
 | Database redundancy | Single instance, no replica | Accepted; single-operator platform |
 | Failover | Manual; operator must intervene | RTO ≤ 4h covers this |
 | Volume resilience | HC Volume (RAID at provider level) | Accepted; provider SLA applies |

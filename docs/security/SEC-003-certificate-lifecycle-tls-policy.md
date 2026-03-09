@@ -26,7 +26,7 @@ Satisfies pt-030 [m9-3].
 In Wave-1 (single-node, internal-only deployment), internalCMDB services are exposed only on the Hetzner vSwitch private subnet. TLS scope is:
 
 | Surface | TLS Required | Justification |
-|---|---|---|
+| --- | --- | --- |
 | PostgreSQL (internal Docker network) | NO (Wave-1) | Container-to-container on internal Docker bridge; no external exposure |
 | Application API (vSwitch) | OPTIONAL (Wave-1) | Internal cluster traffic; TLS expected for Wave-2 |
 | Open WebUI (vSwitch port 3000) | NO (Wave-1) | Internal access only |
@@ -41,7 +41,7 @@ In Wave-1 (single-node, internal-only deployment), internalCMDB services are exp
 When TLS is activated (Wave-2 readiness):
 
 | Property | Policy |
-|---|---|
+| --- | --- |
 | Certificate Authority | Let's Encrypt (public) or internal CA (private subnet) |
 | Minimum key length | RSA 2048 or Ed25519 |
 | TLS version | TLS 1.2 minimum; TLS 1.3 preferred |
@@ -90,7 +90,7 @@ docker compose up -d --force-recreate
 ## 5. Expiry Monitoring
 
 | Check | Method | Frequency |
-|---|---|---|
+| --- | --- | --- |
 | Certificate expiry alert | `openssl x509 -noout -dates -in cert.pem` or Prometheus `ssl_expiry_gauge` | Weekly |
 | Alert threshold | 30 days before expiry → WARNING; 7 days → CRITICAL | Continuous |
 | Responsible action | platform_architecture_lead initiates renewal; security_and_policy_owner confirms |  |
@@ -100,7 +100,7 @@ docker compose up -d --force-recreate
 ## 6. TLS Failure Handling
 
 | Failure Scenario | Response Procedure |
-|---|---|
+| --- | --- |
 | Certificate expired | Immediate renewal via §4; service restart; post-incident entry in change_log |
 | Private key compromise suspected | Revoke immediately; reissue; rotate all service tokens that used that key |
 | CA root compromise | Escalate to security_and_policy_owner; reissue from new CA; notify all dependent services |

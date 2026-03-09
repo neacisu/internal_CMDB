@@ -24,7 +24,7 @@ Satisfies pt-046 [m7-4].
 ## 2. Metrics Inventory
 
 | Signal ID | Name | Source | Owner | Purpose |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | SIG-M-001 | `pg_up` | Prometheus postgres_exporter | platform_architecture_lead | DB availability |
 | SIG-M-002 | `pg_stat_activity_count` | Prometheus postgres_exporter | platform_architecture_lead | Connection pool health |
 | SIG-M-003 | `internalcmdb_observed_fact_total` | App Prometheus metrics | platform_architecture_lead | Ingestion volume |
@@ -41,7 +41,7 @@ Satisfies pt-046 [m7-4].
 ## 3. Logs Inventory
 
 | Signal ID | Name | Source | Owner | Purpose |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | SIG-L-001 | Application structured logs | Docker stdout (Loki) | platform_architecture_lead | Debugging, audit trail |
 | SIG-L-002 | PostgreSQL slow query log | pg logs (Loki) | platform_architecture_lead | Query performance |
 | SIG-L-003 | vLLM access logs | Docker stdout (Loki) | platform_architecture_lead | LLM request audit |
@@ -53,7 +53,7 @@ Satisfies pt-046 [m7-4].
 ## 4. Derived Health Queries
 
 | Query ID | Signal Sources | Derived Metric | Alert Condition |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | HQ-001 | SIG-M-001 | DB up/down | `pg_up == 0` |
 | HQ-002 | SIG-M-003 | Ingestion rate (last 1h) | `rate < 1/h` (stale) |
 | HQ-003 | SIG-M-005, SIG-M-004 | Agent run failure rate | `> 10%` |

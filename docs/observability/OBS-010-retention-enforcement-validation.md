@@ -24,7 +24,7 @@ Satisfies pt-052 [m7-6].
 ## 2. Retention Class Summary (from OBS-002)
 
 | Table | Retention Period | Enforcement Method |
-|---|---|---|
+| --- | --- | --- |
 | observed_fact | 90 days (active), 1 year (archived) | PostgreSQL scheduled deletion via pg_cron |
 | chunk_embedding | Same as observed_fact parent | Cascade delete via FK |
 | agent_run | 1 year | pg_cron scheduled deletion |
@@ -79,7 +79,7 @@ WHERE created_at > NOW() - INTERVAL '1 year';
 ## 4. Deletion Suspension Exceptions
 
 | Exception | Applies To | Duration | Approved By |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Active investigation hold | Any table | Duration of investigation | security_and_policy_owner |
 | Legal/regulatory hold | Any table | As specified | executive_sponsor |
 

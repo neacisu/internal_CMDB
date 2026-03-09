@@ -24,7 +24,7 @@ Satisfies pt-053 [m7-6].
 ## 2. Alert → Runbook Linkage
 
 | Alert ID | Alert Name | Runbook | Owner | Escalation |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | ALT-001 | DB Down | OBS-002 RB-001 (collection failure response) | platform_architecture_lead | CP-002 after 30 min |
 | ALT-002 | Ingestion Stale | OBS-002 RB-001 | platform_architecture_lead | CP-001 after 6h |
 | ALT-003 | Retrieval Latency | OBS-002 RB-005 (broker failure) | platform_architecture_lead | CP-001 after 30 min |
@@ -39,7 +39,7 @@ Satisfies pt-053 [m7-6].
 ## 3. Dashboard Panel → Runbook Linkage
 
 | Dashboard | Panel | Runbook |
-|---|---|---|
+| --- | --- | --- |
 | db-registry-health | DB Up/Down | OBS-002 RB-001 |
 | db-registry-health | Ingestion rate | OBS-002 RB-001 |
 | db-retrieval-quality | Retrieval P95 latency | OBS-002 RB-005 |
@@ -53,7 +53,7 @@ Satisfies pt-053 [m7-6].
 ## 4. Runbook Inventory
 
 | Runbook ID | Source Document | Title | Available |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | RB-001 | OBS-002 §4 | Collection failure response | YES |
 | RB-002 | OBS-002 §4 | Policy pack violation response | YES |
 | RB-003 | OBS-002 §4 | Retention job failure | YES |

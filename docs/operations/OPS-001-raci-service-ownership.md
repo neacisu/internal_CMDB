@@ -23,7 +23,7 @@ Satisfies pt-043 [m14-1].
 ## 2. Named Roles
 
 | Role Identifier | Responsibilities |
-|---|---|
+| --- | --- |
 | platform_architecture_lead | System design, deployment, DB operations, release management |
 | security_and_policy_owner | Security review, credential approval, compliance declarations |
 | executive_sponsor | Final approval authority for critical decisions and declarations |
@@ -35,7 +35,7 @@ Satisfies pt-043 [m14-1].
 ## 3. Service Boundaries
 
 | Service | Owner | Backup |
-|---|---|---|
+| --- | --- | --- |
 | internalcmdb-postgres (DB) | platform_architecture_lead | security_and_policy_owner |
 | internalcmdb-app (API) | platform_architecture_lead | security_and_policy_owner |
 | vLLM primary (reasoning_32b) | platform_architecture_lead | — |
@@ -50,7 +50,7 @@ Satisfies pt-043 [m14-1].
 **R** = Responsible (does the work), **A** = Accountable (approves), **C** = Consulted, **I** = Informed
 
 | Capability | platform_architecture_lead | security_and_policy_owner | executive_sponsor |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | DB schema migration | R/A | C | I |
 | Secret rotation | R | A | I |
 | Production deployment | R | A | I |
@@ -69,7 +69,7 @@ Satisfies pt-043 [m14-1].
 Verification that no critical capability lacks a named owner or review authority:
 
 | Critical Capability | Named Owner | Review Authority |
-|---|---|---|
+| --- | --- | --- |
 | DB availability | platform_architecture_lead | security_and_policy_owner |
 | Credential rotation | platform_architecture_lead | security_and_policy_owner |
 | Agent approval enforcement | platform_architecture_lead | security_and_policy_owner |

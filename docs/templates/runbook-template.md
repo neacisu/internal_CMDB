@@ -5,8 +5,8 @@ doc_class: runbook    # REQUIRED — do not change
 domain: infrastructure  # REQUIRED — change to relevant domain
 version: "1.0"        # REQUIRED — quoted decimal
 status: draft         # REQUIRED
-created: YYYY-MM-DD   # REQUIRED
-updated: YYYY-MM-DD   # REQUIRED
+created: "2026-03-09"   # REQUIRED
+updated: "2026-03-09"   # REQUIRED
 owner: sre_observability_owner  # REQUIRED — role token of the runbook owner
 binding: []           # OPTIONAL — binding entries use format:
                       # - entity_type: registry.services
@@ -23,7 +23,7 @@ depends_on: []
 ## Metadata
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Trigger** | <!-- When should this runbook be executed? --> |
 | **Severity / Impact** | <!-- What is the severity level? What is the blast radius? --> |
 | **Estimated duration** | <!-- How long does this procedure normally take? --> |
@@ -98,7 +98,7 @@ and describe the recovery path. -->
 <!-- Document actions taken when this runbook is executed -->
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | Executed by | |
 | Execution date | |
 | Approval reference | |

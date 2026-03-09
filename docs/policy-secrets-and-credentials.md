@@ -30,7 +30,7 @@ the internalCMDB platform and its associated audit tooling.
 ## 2. Credential Inventory
 
 | Secret | Purpose | Storage | Rotation |
-|--------|---------|---------|----------|
+| --- | --- | --- | --- |
 | `POSTGRES_PASSWORD` | internalCMDB DB access | Local `.env` (gitignored) + `~/internalcmdb/.env` on orchestrator | Manual; rotate before any external operator access |
 | SSH keys (cluster) | Audit host access | `~/.ssh/` on local Mac | Managed by `cluster-key-mesh` subproject |
 | Cloudflare DNS API token | Traefik ACME DNS challenge for `*.neanelu.ro`, `*.orchestrator.neanelu.ro` | Traefik docker-compose env var on orchestrator | Rotate on compromise; review every 90 days |
@@ -112,7 +112,7 @@ internet via HTTPS/TLS. The SSH audit loaders connect to cluster hosts via SSH
 ## 6. Credential Rotation Log
 
 | Date       | Secret Rotated | Reason | Operator |
-|------------|----------------|--------|----------|
+| --- | --- | --- | --- |
 | 2026-03-08 | Initial setup  | First deployment | Alex Neacsu |
 
 ---

@@ -5,8 +5,8 @@ doc_class: adr        # REQUIRED — do not change
 domain: platform-foundations  # REQUIRED — change to relevant domain
 version: "1.0"        # REQUIRED — quoted decimal
 status: draft         # REQUIRED — start as draft, progress to in-review → approved
-created: YYYY-MM-DD   # REQUIRED — date you create this file
-updated: YYYY-MM-DD   # REQUIRED — date of last edit
+created: "2026-03-09"   # REQUIRED — date you create this file
+updated: "2026-03-09"   # REQUIRED — date of last edit
 owner: architecture_board  # REQUIRED — role token of the deciding authority
 binding: []           # OPTIONAL — binding entries use format:
                       # - entity_type: registry.hosts  # schema.table

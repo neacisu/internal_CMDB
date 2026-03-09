@@ -5,8 +5,8 @@ doc_class: service_dossier  # REQUIRED — do not change
 domain: infrastructure  # REQUIRED — change to service's domain
 version: "1.0"        # REQUIRED — quoted decimal
 status: draft         # REQUIRED
-created: YYYY-MM-DD   # REQUIRED
-updated: YYYY-MM-DD   # REQUIRED
+created: "2026-03-09"   # REQUIRED
+updated: "2026-03-09"   # REQUIRED
 owner: platform_engineering_lead  # REQUIRED — role token of the service owner
 binding:
   - entity_type: registry.services  # REQUIRED for service dossiers — do not change schema.table
@@ -23,7 +23,7 @@ depends_on: []
 ## Service Identity
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Service name** | <!-- Canonical name matching registry.services.service_name --> |
 | **Service type** | <!-- e.g. database, cache, message-broker, api, proxy, monitoring --> |
 | **Registry entity** | `[[entity:registry.services:<service_name>]]` |
@@ -39,7 +39,7 @@ what depends on it being available? -->
 ## Runtime Environment
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Deployment model** | <!-- container / systemd / bare-metal / managed --> |
 | **Container image** | <!-- repo/image:tag or N/A --> |
 | **Runtime host** | <!-- hostname or cluster --> |
@@ -53,7 +53,7 @@ what depends on it being available? -->
 Reference the secrets policy for how credentials are managed. -->
 
 | Parameter | Location | Description |
-|-----------|----------|-------------|
+| --- | --- | --- |
 | <!-- param --> | <!-- file/env/vault path --> | <!-- what it controls --> |
 
 **Secrets management:** per [[doc:POL-002]] — no credentials stored in this document.
@@ -63,19 +63,19 @@ Reference the secrets policy for how credentials are managed. -->
 ### Upstream dependencies (what this service needs)
 
 | Dependency | Type | Required |
-|------------|------|----------|
+| --- | --- | --- |
 | <!-- service/resource --> | <!-- service/infra/network --> | <!-- yes/no --> |
 
 ### Downstream consumers (what depends on this service)
 
 | Consumer | Dependency type |
-|----------|----------------|
+| --- | --- |
 | <!-- service/component --> | <!-- reads/writes/queries --> |
 
 ## Operational Characteristics
 
 | Metric | Value | Source |
-|--------|-------|--------|
+| --- | --- | --- |
 | **RTO** | <!-- e.g. 4h --> | [[doc:POL-001]] |
 | **RPO** | <!-- e.g. 1h --> | [[doc:POL-001]] |
 | **Backup schedule** | <!-- e.g. daily at 02:00 UTC --> | |
@@ -85,7 +85,7 @@ Reference the secrets policy for how credentials are managed. -->
 ## State and Provenance
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Canonical state source** | <!-- registry.services or git --> |
 | **Observed via** | <!-- discovery loader / manual audit --> |
 | **Last observed** | <!-- YYYY-MM-DD or link to discovery run --> |
@@ -96,11 +96,11 @@ Reference the secrets policy for how credentials are managed. -->
 <!-- List operational runbooks that apply to this service. -->
 
 | Procedure | Runbook |
-|-----------|---------|
+| --- | --- |
 | <!-- procedure name --> | [[doc:RUN-NNN]] |
 
 ## Change History
 
 | Version | Date | Changed by | Summary |
-|---------|------|------------|---------|
+| --- | --- | --- | --- |
 | 1.0 | <!-- YYYY-MM-DD --> | <!-- role token --> | Initial dossier |

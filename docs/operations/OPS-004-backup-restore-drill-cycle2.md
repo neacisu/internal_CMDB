@@ -29,7 +29,7 @@ identifies regressions, improvements, and open actions.
 ## 2. Cycle-1 Baseline (Reference)
 
 | Metric | Cycle-1 (Q3 2025-07-01) |
-|---|---|
+| --- | --- |
 | Backup duration | 4 min 12 s |
 | Backup size (compressed) | 1.2 GiB |
 | Restore duration (logical) | 8 min 45 s |
@@ -44,7 +44,7 @@ identifies regressions, improvements, and open actions.
 ## 3. Cycle-2 Results
 
 | Metric | Cycle-2 (Q4 2025-10-01) | Δ vs Cycle-1 |
-|---|---|---|
+| --- | --- | --- |
 | Backup duration | 4 min 08 s | −4 s (−1.6%) |
 | Backup size (compressed) | 1.4 GiB | +0.2 GiB (+16.7%) |
 | Restore duration (logical) | 9 min 02 s | +17 s (+3.2%) |
@@ -78,7 +78,7 @@ observed data growth rate.  Compress ratio unchanged (3.2:1 on average).
 ## 5. RPO / RTO Compliance
 
 | SLA | Target | Cycle-2 Result | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | RPO | < 5 min | < 5 min | ✅ PASS |
 | RTO | < 15 min | < 14 min 30 s | ✅ PASS |
 
@@ -103,7 +103,7 @@ SELECT COUNT(*) FROM discovery.observed_fact;
 ## 7. Action Items
 
 | ID | Description | Owner | Due |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | C2-ACT-001 | Add Prometheus alert for restore duration > 12 min | platform_engineering | 2025-10-15 |
 | C2-ACT-002 | Review backup storage budget for Q1 2026 (current trajectory: ~2 GiB by Q1) | platform_architecture_lead | 2025-11-01 |
 

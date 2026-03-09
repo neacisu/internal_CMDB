@@ -24,7 +24,7 @@ go-or-hold recommendation for Wave-2. Satisfies pt-024 [m7-3].
 ## 2. Readiness Assessment Summary
 
 | Dimension | Status | Gate |
-|---|---|---|
+| --- | --- | --- |
 | Governance code complete | PASS | epic-5 complete (pt-016..pt-018) |
 | Pilot bounded and repeatable | PASS | PILOT-001..PILOT-003 complete |
 | Observability catalog defined | PASS | OBS-001 complete |
@@ -39,7 +39,7 @@ go-or-hold recommendation for Wave-2. Satisfies pt-024 [m7-3].
 ## 3. Residual Risk Register
 
 | Risk ID | Description | Likelihood | Impact | Status |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | RSK-001 | Write-path action class never tested in governed pilot | MEDIUM | HIGH | OPEN — mitigated by RC-1 pilot gate; RC-3/4 blocked until pt-028 |
 | RSK-002 | Bootstrap credentials still in use (not rotated) | HIGH | HIGH | OPEN — target: pt-029; no automated rotation yet |
 | RSK-003 | No backup/restore procedure tested | MEDIUM | CRITICAL | OPEN — target: pt-026; DB runs with no tested recovery path |
@@ -55,7 +55,7 @@ go-or-hold recommendation for Wave-2. Satisfies pt-024 [m7-3].
 Carrying forward from PILOT-003 gap register plus new gaps discovered during epic-7:
 
 | Gap ID | Description | Severity | Owner | Target Task |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | GAP-001 | AlertManager on-call list | LOW | platform_architecture_lead | pt-043 |
 | GAP-002 | Grafana credentials not in secrets registry | MEDIUM | security_and_policy_owner | pt-028 |
 | GAP-003 | Semantic search not exercised | INFO | platform_architecture_lead | pt-038 |
@@ -72,7 +72,7 @@ Carrying forward from PILOT-003 gap register plus new gaps discovered during epi
 ## 5. Approved Exceptions
 
 | Exception ID | Gap | Accepted Risk | Approved By | Expires |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | EX-001 | GAP-004 (no write pilot) | Wave-1 pilot intentionally RC-1 only | platform_architecture_lead | m8-3 |
 | EX-002 | GAP-003 (semantic not tested) | TT-001 disallows; separate epic | platform_architecture_lead | m8-3 |
 | EX-003 | GAP-009 (dashboards not live) | Infra work queued for epic-7 sprint-10 | platform_architecture_lead | m7-3+1sprint |
@@ -87,7 +87,7 @@ Wave-2 planning activities (scoping, dependency mapping, template authoring) may
 Wave-2 write-path execution is BLOCKED until the following minimum gates are met:
 
 | Gate | Blocking Task |
-|---|---|
+| --- | --- |
 | Bootstrap credentials rotated | pt-029 |
 | Backup/restore procedure tested | pt-026 |
 | Secrets storage model approved | pt-028 |

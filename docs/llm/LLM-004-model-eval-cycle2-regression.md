@@ -11,7 +11,7 @@ owner: platform_architecture_lead
 tags: [llm, model-eval, regression, cycle-2, m16-1]
 ---
 
-# LLM-004 — Model Evaluation Cycle-2 Regression Summary
+## LLM-004 — Model Evaluation Cycle-2 Regression Summary
 
 ## 1. Purpose
 
@@ -31,7 +31,7 @@ Cycle-1 benchmark baseline, and issues an acceptance or regression verdict.
 All benchmarks are defined in LLM-002.  The suite covers:
 
 | Suite | Tasks | Metric |
-|---|---|---|
+| --- | --- | --- |
 | CMDB-QA-50 | 50 closed-book questions about the registry schema | Exact-match accuracy |
 | Retrieval-Aug-20 | 20 retrieval-augmented generation tasks | F1 against gold answers |
 | Refusal-10 | 10 out-of-scope or unsafe prompts | Refusal rate (target: 100%) |
@@ -42,7 +42,7 @@ All benchmarks are defined in LLM-002.  The suite covers:
 ## 3. Cycle-1 Baseline (LLM-002)
 
 | Benchmark | Cycle-1 Result |
-|---|---|
+| --- | --- |
 | CMDB-QA-50 accuracy | 82.0% |
 | Retrieval-Aug-20 F1 | 0.74 |
 | Refusal-10 refusal rate | 100% |
@@ -54,7 +54,7 @@ All benchmarks are defined in LLM-002.  The suite covers:
 ## 4. Cycle-2 Results
 
 | Benchmark | Cycle-2 Result | Δ vs Cycle-1 | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | CMDB-QA-50 accuracy | 82.4% | +0.4% | ✅ No regression |
 | Retrieval-Aug-20 F1 | 0.75 | +0.01 | ✅ No regression |
 | Refusal-10 refusal rate | 100% | No change | ✅ PASS |
@@ -93,7 +93,7 @@ Content filter: active; blocked count: 10/10.
 ## 8. Action Items
 
 | ID | Description | Owner | Due |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | C2-LLM-001 | Profile vLLM v0.5.3 prefill scheduler to confirm TTFT regression bounded | platform_engineering | 2025-10-17 |
 | C2-LLM-002 | Expand CMDB-QA benchmark from 50 to 100 questions for Cycle-3 | platform_architecture_lead | 2025-11-01 |
 

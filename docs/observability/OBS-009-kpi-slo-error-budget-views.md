@@ -24,7 +24,7 @@ Satisfies pt-051 [m7-5].
 ## 2. KPI Definitions (Wave-1)
 
 | KPI | ID | Value | Source Query |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Registry freshness compliance | KPI-REG-01 | % time last ingestion < 2h | HQ-002 |
 | Retrieval P95 latency | KPI-RET-01 | Target ≤ 200ms | HQ-004 |
 | Agent run failure rate | KPI-RUN-01 | Target < 5% | HQ-003 |
@@ -37,7 +37,7 @@ Satisfies pt-051 [m7-5].
 ## 3. SLO Definitions (Wave-1)
 
 | SLO | Target | Error Budget (30d) | Window |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | SLO-001: DB Availability | 99.5% | 3.6 hours downtime allowed | 30 days rolling |
 | SLO-002: Retrieval Latency | P95 ≤ 200ms, 95% of time | 5% of windows may breach | 30 days rolling |
 | SLO-003: Ingestion Freshness | Last ingestion < 2h, 98% of time | 2% stale windows allowed | 30 days rolling |

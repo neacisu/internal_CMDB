@@ -139,7 +139,7 @@ Increases latency and complexity without improving correctness for structured qu
 ## Implementation Bindings
 
 | Constraint | Binding |
-|---|---|
+| --- | --- |
 | Structured retrieval | SQLAlchemy queries on `registry`, `discovery`, `docs` schemas |
 | Lexical search | PostgreSQL `tsvector` + `tsquery` on `retrieval.document_chunk` |
 | Vector storage | `retrieval.chunk_embedding` via pgvector |

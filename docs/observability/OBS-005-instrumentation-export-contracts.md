@@ -28,7 +28,7 @@ Satisfies pt-047 [m7-4].
 The `internalcmdb-app` service exposes metrics on `:8080/metrics`.
 
 | Label | Required | Description |
-|---|---|---|
+| --- | --- | --- |
 | `service` | YES | Always `internalcmdb` |
 | `env` | YES | `wave1-production` |
 | `component` | YES | `registry`, `retrieval`, `control`, `broker` |
@@ -68,7 +68,7 @@ scrape_configs:
 All container logs exported via Promtail / Docker Loki driver.
 
 | Label | Required | Description |
-|---|---|---|
+| --- | --- | --- |
 | `container` | YES | Docker container name |
 | `env` | YES | `wave1-production` |
 | `service` | YES | Service identifier |
@@ -78,7 +78,7 @@ Log format requirement: structured JSON where possible. Unstructured logs must i
 ### Retention
 
 | Log Class | Retention | Deletion Policy |
-|---|---|---|
+| --- | --- | --- |
 | Application logs | 30 days | Auto-expire in Loki |
 | PostgreSQL slow query | 14 days | Auto-expire |
 | vLLM access logs | 30 days | Auto-expire |

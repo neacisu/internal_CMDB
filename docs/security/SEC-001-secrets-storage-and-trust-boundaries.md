@@ -23,7 +23,7 @@ Satisfies pt-028 [m9-1].
 ## 2. Secret Classes
 
 | Secret Class | Examples | Sensitivity |
-|---|---|---|
+| --- | --- | --- |
 | DB_CREDENTIAL | PostgreSQL user + password | HIGH |
 | API_KEY | HuggingFace token, external API keys | HIGH |
 | TLS_PRIVATE_KEY | Private keys for TLS endpoints | CRITICAL |
@@ -36,7 +36,7 @@ Satisfies pt-028 [m9-1].
 ## 3. Storage Boundary Rules
 
 | Secret Class | Approved Storage | Prohibited Locations |
-|---|---|---|
+| --- | --- | --- |
 | DB_CREDENTIAL | Environment variable at container start; `.env` file not committed to VCS | Source code, logs, CMDB registry tables |
 | API_KEY | Environment variable or secrets manager | Source code, config files in VCS |
 | TLS_PRIVATE_KEY | Host filesystem with mode 600; mounted read-only at container start | Container image layers, object storage |
@@ -49,7 +49,7 @@ Satisfies pt-028 [m9-1].
 ## 4. Access Rules per Secret Class
 
 | Secret Class | Read Access | Write / Rotate Access |
-|---|---|---|
+| --- | --- | --- |
 | DB_CREDENTIAL | Application service user only | platform_architecture_lead + DBA role required |
 | API_KEY | Specific application process only | security_and_policy_owner approval required |
 | TLS_PRIVATE_KEY | TLS termination process only | Certificate rotation procedure (SEC-003) |

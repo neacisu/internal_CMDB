@@ -12,7 +12,7 @@ tags: [evaluation, benchmark, model-quality, wave-1, m12-2]
 depends_on: [LLM-001]
 ---
 
-# internalCMDB — Model Evaluation Harness and Benchmark Suite
+## internalCMDB — Model Evaluation Harness and Benchmark Suite
 
 ## 1. Purpose
 
@@ -24,7 +24,7 @@ Satisfies pt-038 [m12-2].
 ## 2. Evaluation Scope
 
 | Model Class | Task Type | Evaluation Metric |
-|---|---|---|
+| --- | --- | --- |
 | reasoning_32b | complex_analysis | Answer accuracy on held-out reasoning set; F1 ≥ 0.80 target |
 | reasoning_32b | multi_step_reasoning | Step completion rate; ≥ 85% correct step sequences |
 | fast_9b | summarization | ROUGE-L ≥ 0.40; response latency ≤ 3s |
@@ -60,7 +60,7 @@ Datasets are held-out representative samples (not training data).
 ### reasoning_32b (Qwen3.5-QwQ-32B-AWQ)
 
 | Task Type | Metric | Result | Target | Status |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | complex_analysis | F1 | 0.84 | ≥ 0.80 | PASS |
 | multi_step_reasoning | Step completion rate | 0.88 | ≥ 0.85 | PASS |
 | Avg. first-token latency | ms | 420ms | ≤ 600ms | PASS |
@@ -68,7 +68,7 @@ Datasets are held-out representative samples (not training data).
 ### fast_9b (Qwen3.5-9B-Instruct-AWQ)
 
 | Task Type | Metric | Result | Target | Status |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | summarization (ROUGE-L) | | 0.43 | ≥ 0.40 | PASS |
 | summarization (latency) | ms | 1.2s | ≤ 3s | PASS |
 | classification (accuracy) | | 0.87 | ≥ 0.85 | PASS |
@@ -81,7 +81,7 @@ Datasets are held-out representative samples (not training data).
 ## 5. Evaluation Cadence
 
 | Trigger | Evaluation Required |
-|---|---|
+| --- | --- |
 | New model candidate registered | Full evaluation run required before `status=active` |
 | After model update / weight change | Full evaluation run with comparison to previous baseline |
 | Quarterly review (sustained operations) | Spot-check evaluation; cycle-2 full run at pt-063 |

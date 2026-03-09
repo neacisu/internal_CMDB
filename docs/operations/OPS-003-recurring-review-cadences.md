@@ -24,7 +24,7 @@ Satisfies pt-045 [m14-3].
 ## 2. Review Calendar
 
 | Cadence | Review Type | Owner | Deliverable |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Weekly | Service health review | platform_architecture_lead | Health summary in governance.change_log |
 | Weekly | Alert triage | platform_architecture_lead | Unacknowledged alerts cleared or triaged |
 | Monthly | Service review meeting | platform_architecture_lead + security_and_policy_owner | Meeting minutes in governance.change_log |

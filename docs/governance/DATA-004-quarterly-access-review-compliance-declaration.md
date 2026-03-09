@@ -11,7 +11,7 @@ owner: executive_sponsor
 tags: [data-governance, access-review, compliance, quarterly, m15-3]
 ---
 
-# DATA-004 — Quarterly Access Review Cycle-1 and Compliance Declaration
+## DATA-004 — Quarterly Access Review Cycle-1 and Compliance Declaration
 
 ## 1. Purpose
 
@@ -32,7 +32,7 @@ All human identities and service accounts that hold or have held any of the
 following roles during the review period:
 
 | Role | Description |
-|---|---|
+| --- | --- |
 | `platform_engineering` | Read/write access to Class B tables; runs retention jobs |
 | `platform_architecture_lead` | Schema ownership; can execute DDL changes |
 | `security_and_policy_owner` | Exception review; credential rotation authority |
@@ -45,7 +45,7 @@ following roles during the review period:
 ### 3.1 Active Role Assignments
 
 | Identity | Role(s) Held | Access Type | Justification |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `svc-internalcmdb-collector` | `platform_engineering` | Service account | Automated fact collection |
 | `svc-internalcmdb-retrieval` | `platform_engineering` | Service account | Retrieval broker reads Class B |
 | `svc-internalcmdb-scheduler` | `platform_engineering` | Service account | Retention job executor |
@@ -56,7 +56,7 @@ following roles during the review period:
 ### 3.2 Access Changes During Review Period
 
 | Date | Identity | Change Type | Approved By |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 2025-04-15 | `svc-internalcmdb-retrieval` | **Added** `platform_engineering` | `sec-owner-01` |
 | 2025-05-01 | `svc-old-collector` | **Revoked** all roles | `sec-owner-01` |
 
@@ -72,7 +72,7 @@ accounts are in active use.  All human identities are employed staff.
 The following controls were verified as operational:
 
 | Control | Module | Verification Method | Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Class B query enforcement | `governance.access_control.DataAccessControl` | Unit test + live request probe | **PASS** |
 | Denial logging to `change_log` | `DataAccessControl._record_denial()` | Injected test probe; confirmed row in `governance.change_log` | **PASS** |
 | Ingest redaction scanning | `governance.redaction_scanner.RedactionScanner` | Pattern-match unit tests on 7 credential patterns | **PASS** |
@@ -87,7 +87,7 @@ All 14 registry tables have been assigned a DATA-001 data class and the
 assignment is enforced at the retrieval broker layer:
 
 | Classification | Tables | Count |
-|---|---|---|
+| --- | --- | --- |
 | Class A (PUBLIC/INTERNAL) | `term`, `resource_kind`, `collection_run`, `policy_record`, `approval_record` | 5 |
 | Class B (CONFIDENTIAL) | `observed_fact`, `chunk_embedding`, `document_chunk`, `evidence_pack`, `evidence_pack_item`, `agent_run`, `action_request`, `prompt_template_registry`, `change_log`, `document_version` | 10 |
 | Class C / D | Not applicable to internalCMDB v1 | 0 |
@@ -112,7 +112,7 @@ The scanner is confirmed active and configured with 7 credential patterns
 ## 7. Retention Compliance Summary
 
 | Table | Expired Rows at Review Date | Action Taken |
-|---|---|---|
+| --- | --- | --- |
 | `observed_fact` | 0 | N/A — system pre-production |
 | `agent_run` | 0 | N/A |
 | `evidence_pack` | 0 | N/A |
@@ -125,7 +125,7 @@ Retention jobs are configured and standing approvals recorded in OPS-003.
 ## 8. Exception Register Summary (Cycle-1)
 
 | Status | Count |
-|---|---|
+| --- | --- |
 | Opened | 0 |
 | Closed within SLA | 0 |
 | Escalated | 0 |

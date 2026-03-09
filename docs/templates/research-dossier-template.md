@@ -5,8 +5,8 @@ doc_class: research_dossier  # REQUIRED — do not change
 domain: platform-foundations  # REQUIRED — change to relevant domain
 version: "1.0"        # REQUIRED — quoted decimal
 status: draft         # REQUIRED
-created: YYYY-MM-DD   # REQUIRED
-updated: YYYY-MM-DD   # REQUIRED
+created: "2026-03-09"   # REQUIRED
+updated: "2026-03-09"   # REQUIRED
 owner: platform_architecture_lead  # REQUIRED — role token
 binding: []
 tags: []
@@ -85,7 +85,7 @@ Each recommendation must reference at least one finding. -->
 <!-- Which decisions, ADRs, or work packages should consume this research? -->
 
 | Decision / Task | How this research applies |
-|----------------|-----------------------------|
+| --- | --- |
 | [[doc:ADR-NNN]] | <!-- what it informs --> |
 
 ## Open Questions
@@ -100,5 +100,5 @@ Each recommendation must reference at least one finding. -->
 <!-- List all evidence files, logs, scripts, or test outputs referenced in this dossier. -->
 
 | Artifact | Location | Description |
-|----------|----------|-------------|
+| --- | --- | --- |
 | <!-- name --> | <!-- path or URL --> | <!-- what it shows --> |

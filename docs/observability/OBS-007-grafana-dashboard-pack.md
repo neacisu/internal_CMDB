@@ -26,7 +26,7 @@ Satisfies pt-049 [m7-5].
 ### db-registry-health (UID: internalcmdb-registry)
 
 | Panel | Query Source | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | DB Up/Down | HQ-001 (`pg_up`) | Top-level DB availability status |
 | Active connections | SIG-M-002 | Connection pool utilization |
 | Ingestion rate (facts/min) | HQ-002 | Registry freshness |
@@ -37,7 +37,7 @@ Satisfies pt-049 [m7-5].
 ### db-retrieval-quality (UID: internalcmdb-retrieval)
 
 | Panel | Query Source | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | Retrieval P50/P95/P99 latency | HQ-004, histogram | Retrieval speed SLO |
 | ANN recall gauge | SIG-M-006 derived | Retrieval quality |
 | Top query task types | SIG-M-006 labels | Usage breakdown |
@@ -46,7 +46,7 @@ Satisfies pt-049 [m7-5].
 ### db-approval-governance (UID: internalcmdb-approvals)
 
 | Panel | Query Source | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | Pending approvals count | SIG-M-007 | Approval queue depth |
 | Pending approval age | HQ-006 | SLA compliance |
 | Denial rate by code | SIG-M-009 labels | Governance enforcement |
@@ -55,7 +55,7 @@ Satisfies pt-049 [m7-5].
 ### db-agent-audit (UID: internalcmdb-audit)
 
 | Panel | Query Source | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | Agent run total | SIG-M-004 | Operational volume |
 | Agent run failure rate | HQ-003 | Reliability |
 | GPU VRAM utilization | SIG-M-008 | Capacity |

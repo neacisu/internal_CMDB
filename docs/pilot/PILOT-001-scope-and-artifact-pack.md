@@ -12,7 +12,7 @@ tags: [pilot, bounded-scope, research-dossier, artifact-pack, wave-1, m6-1]
 depends_on: [ADR-001, ADR-002, ADR-004, ADR-005, GOV-007]
 ---
 
-# internalCMDB — Bounded Pilot Scope Selection and Mandatory Artifact Pack
+## internalCMDB — Bounded Pilot Scope Selection and Mandatory Artifact Pack
 
 ## 1. Purpose
 
@@ -30,7 +30,7 @@ pack + verification specification + evidence map.
 The pilot must satisfy all of the following constraints:
 
 | Constraint | Requirement |
-|---|---|
+| --- | --- |
 | Entity class | At most one SharedService and its directly connected Host set |
 | Action class | AC-001 (REGISTRY_READ) and AC-002 (DOCUMENT_VALIDATION_RUN) only — RC-1, no write path |
 | Evidence pack | TT-001 (host-infrastructure-audit) task type, token budget ≤ 8000 |
@@ -43,6 +43,7 @@ The pilot must satisfy all of the following constraints:
 on the internal infrastructure as identified during the Wave-1 discovery collection runs.
 
 **Rationale**:
+
 - Monitoring stack is observable, bounded, and its dependencies are already recorded in the
   registry from the Bootstrap phase.
 - It is a read-only audit target (AC-001/AC-002 only) so no approval gate is required.
@@ -65,7 +66,7 @@ The following are explicitly **excluded** from this pilot:
 ### 3.1 Infrastructure Observations (from Wave-1 collection)
 
 | Entity | Kind | Discovery Source |
-|---|---|---|
+| --- | --- | --- |
 | monitoring-stack | SharedService | agent_control collection run #1 |
 | host-monitoring-01 | Host | SSH discovery, Wave-1 |
 | host-monitoring-02 | Host | SSH discovery, Wave-1 |
@@ -80,7 +81,7 @@ The following are explicitly **excluded** from this pilot:
 ### 3.3 Open Gaps at Pilot Selection
 
 | Gap | Risk | Mitigation |
-|---|---|---|
+| --- | --- | --- |
 | AlertManager on-call list not yet recorded | LOW | Out of pilot scope; record as gap in pt-021 |
 | Grafana datasource credentials not in secrets registry | MEDIUM | AC-028 (secrets) blocked; pilot uses read-only |
 | Host OS versions not canonical | LOW | Will be verified during pilot evidence assembly |
@@ -90,7 +91,7 @@ The following are explicitly **excluded** from this pilot:
 ## 4. Application Definition Pack
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Application code | `PILOT-monitoring-stack-v1` |
 | Task type | TT-001 (host-infrastructure-audit) |
 | Template code | `tmpl-host-audit-v1` |
@@ -125,7 +126,7 @@ The pilot is considered successfully verified when ALL of the following are true
 ## 6. Evidence Map
 
 | Evidence Item | Source | Required For Verification |
-|---|---|---|
+| --- | --- | --- |
 | monitoring-stack registry row | registry.shared_service | V-1 |
 | host-monitoring-01 row linking | registry.host | V-1 |
 | OwnershipRecord for monitoring-stack | registry.ownership_record | V-1 |
@@ -139,7 +140,7 @@ The pilot is considered successfully verified when ALL of the following are true
 ## 7. Approval Record
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Approved by | platform_architecture_lead |
 | Approval date | 2026-03-08 |
 | Approval scope | Read-only pilot of monitoring-stack per PILOT-001 v1.0 |

@@ -11,7 +11,7 @@ owner: platform_architecture_lead
 tags: [model-registry, routing, vllm, wave-1, m12-1]
 ---
 
-# internalCMDB — Model Serving Stack and Registry Contract
+## internalCMDB — Model Serving Stack and Registry Contract
 
 ## 1. Purpose
 
@@ -23,7 +23,7 @@ Satisfies pt-037 [m12-1].
 ## 2. Supported Model Classes
 
 | Model Class | Task Types | Serving Stack | VRAM Budget |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | reasoning_32b | complex_analysis, multi_step_reasoning | vLLM + Qwen3.5-QwQ-32B-AWQ | 20–24 GB |
 | fast_9b | summarization, classification, extraction | vLLM + Qwen3.5-9B-Instruct-AWQ | 8–10 GB |
 
@@ -36,7 +36,7 @@ Satisfies pt-037 [m12-1].
 Each supported model must have a registered entry with:
 
 | Field | Required | Description |
-|---|---|---|
+| --- | --- | --- |
 | model_id | YES | Unique identifier (e.g., `qwq-32b-awq-v1`) |
 | model_class | YES | Maps to task type routing (see §2) |
 | hf_repo | YES | HuggingFace repository ID |
@@ -54,7 +54,7 @@ Models with `status=candidate` must not receive production traffic.
 ## 4. Routing Rules
 
 | Task Type | Model Class | Priority | Fallback |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | complex_analysis | reasoning_32b (port 8000) | 1 | Return error; no fallback in Wave-1 |
 | multi_step_reasoning | reasoning_32b (port 8000) | 1 | Return error; no fallback in Wave-1 |
 | summarization | fast_9b (port 8001) | 1 | reasoning_32b (port 8000) if fast_9b unavailable |
@@ -68,6 +68,7 @@ Routing decisions must be logged in agent_run records with the model_class selec
 ## 5. Model Retirement Policy
 
 A model may be deprecated only after:
+
 1. A replacement model is registered and has `status=active`.
 2. Evaluation evidence (LLM-002) shows the replacement meets all task type benchmarks.
 3. approval_record from platform_architecture_lead is created.

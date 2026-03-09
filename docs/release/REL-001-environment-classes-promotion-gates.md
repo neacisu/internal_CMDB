@@ -24,7 +24,7 @@ Satisfies pt-034 [m11-1].
 ## 2. Environment Classes
 
 | Environment | Purpose | Access | Data |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | local | Developer workstation; unit tests | Developer only | Fixtures + generated test data |
 | ci | Automated test runs (GitHub Actions / local) | CI runner only | Ephemeral test DB |
 | staging | Pre-production validation; integration tests | platform_architecture_lead | Copy of anonymized production-like schema |
@@ -49,7 +49,7 @@ Satisfies pt-034 [m11-1].
 ### staging → wave-1-production
 
 | Gate | Who Verifies | Evidence |
-|---|---|---|
+| --- | --- | --- |
 | All tests pass in staging environment | platform_architecture_lead | CI log |
 | pip-audit PASS | automated | audit-results.json |
 | Container image scan reviewed | security_and_policy_owner | trivy output |
@@ -63,7 +63,7 @@ Satisfies pt-034 [m11-1].
 ## 4. Approval Matrix
 
 | Decision | Approver(s) | Escalation |
-|---|---|---|
+| --- | --- | --- |
 | Merge to staging | 1 reviewer other than author | platform_architecture_lead |
 | Deploy to wave-1-production | platform_architecture_lead | security_and_policy_owner |
 | Emergency hotfix to production | platform_architecture_lead + security_and_policy_owner together | executive_sponsor |

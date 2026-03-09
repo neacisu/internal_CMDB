@@ -40,7 +40,7 @@ tags: [service-review, minutes, cycle-2, governance, m16-2]
 ### 3.1 Availability
 
 | Service | Target | Q3 2025 Actual | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | PostgreSQL primary | 99.5% | 99.91% | ✅ PASS |
 | pgvector search endpoint | 99.0% | 99.78% | ✅ PASS |
 | LLM inference API | 99.0% | 99.64% | ✅ PASS |
@@ -52,7 +52,7 @@ Captured in `governance.change_log`; post-mortem confirmed root cause was OS pat
 ### 3.2 Error Budget
 
 | Service | 30-day error budget consumed | Remaining |
-|---|---|---|
+| --- | --- | --- |
 | pgvector search | 4.2% | 95.8% |
 | LLM inference | 7.1% | 92.9% |
 
@@ -99,7 +99,7 @@ From DATA-005:
 ## 7. Open Action Items from Cycle-1 (DATA-004)
 
 | ID | Description | Status |
-|---|---|---|
+| --- | --- | --- |
 | C1-ACT-001 | Establish monthly redaction rejection baseline | ✅ Monitoring alert active; baseline = 0 |
 | C1-ACT-002 | Validate retention job logs monthly | ✅ 3 successful monthly validations recorded |
 | C1-ACT-003 | Review collector permissions vs least-privilege | ✅ Confirmed minimal; no change required |
@@ -111,7 +111,7 @@ All Cycle-1 action items are **closed**.
 ## 8. New Action Items (Cycle-2)
 
 | ID | Source | Description | Owner | Due |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | C2-ACT-001 | OPS-004 | Add Prometheus alert for restore duration > 12 min | platform_engineering | 2025-10-15 |
 | C2-ACT-002 | OPS-004 | Review backup storage budget for Q1 2026 | platform_architecture_lead | 2025-11-01 |
 | C2-ACT-003 | CAP-004 | Rebuild HNSW index concurrently | platform_engineering | 2025-10-10 |

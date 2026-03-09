@@ -11,7 +11,7 @@ owner: security_and_policy_owner
 tags: [data-governance, exceptions, escalation, policy, m15-2]
 ---
 
-# DATA-003 — Data Governance Exception Register and Escalation Model
+## DATA-003 — Data Governance Exception Register and Escalation Model
 
 ## 1. Purpose
 
@@ -25,7 +25,7 @@ synthetic exception entry.  All exceptions are persisted in
 An exception is raised when any of the following occurs:
 
 | Category | Example | Severity |
-|---|---|---|
+| --- | --- | --- |
 | **Classification mismatch** | Class A table found to hold Class B data | High |
 | **Access control bypass** | Query executed without `platform_engineering` role check | Critical |
 | **Retention overrun** | Rows exceed defined retention window by > 7 days | Medium |
@@ -38,7 +38,7 @@ An exception is raised when any of the following occurs:
 All exceptions are stored in `governance.change_log` using the following convention:
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | `change_source_text` | `governance_exception` |
 | `change_summary_text` | Free text description of the exception (prefix with `[EXCEPTION]`) |
 | `entity_kind_term_id` | `00000000-0000-0000-0000-000000000000` if no specific entity |
@@ -58,7 +58,7 @@ Example: `exc-20250701-access-control-bypass-k7q`
 - **Day 14–30**: Remediation implemented; closure entry logged with `change_source_text = 'exception_closed'`.
 - **Day 30 (if still open)**: Auto-escalation to **security_and_policy_owner** review within 24 hours.  If unresolved after review, escalates to **executive_sponsor**.
 
-```
+```text
 Day 0 ──► exception_logged
 Day 3 ──► remediation_plan (if missing: first warning)
 Day 14 ──► remediation_implemented (if missing: second warning)
@@ -69,7 +69,7 @@ Day 31+ ──► ESCALATION: executive_sponsor
 ## 5. Exception Severity and SLA
 
 | Severity | Initial Response | Remediation Plan | Closure |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Critical | 2 hours | 24 hours | 7 days |
 | High | 8 hours | 3 days | 21 days |
 | Medium | 24 hours | 7 days | 30 days |
@@ -146,7 +146,7 @@ INSERT INTO governance.change_log (
 ### Trace Summary
 
 | Entry | `change_code` | `change_source_text` | Day |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Discovery | `exc-20250701-retention-overrun-r3t` | `governance_exception` | 0 |
 | Remediation plan | `exc-20250701-retention-overrun-r3t-plan` | `exception_remediation_plan` | 1 |
 | Closure | `exc-20250701-retention-overrun-r3t-closed` | `exception_closed` | 2 |

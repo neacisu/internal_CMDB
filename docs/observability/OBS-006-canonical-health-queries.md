@@ -87,7 +87,7 @@ pg_up{env="wave1-production"}
 ## 3. Derived Status Rules Summary
 
 | Health Area | Query ID | HEALTHY | DEGRADED | CRITICAL |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | DB Availability | HQ-001 | pg_up == 1 | — | pg_up == 0 |
 | Ingestion Freshness | HQ-002 | ingestion < 2h ago | 2–6h | > 6h |
 | Retrieval Latency | HQ-004 | P95 ≤ 200ms | 200–500ms | > 500ms |

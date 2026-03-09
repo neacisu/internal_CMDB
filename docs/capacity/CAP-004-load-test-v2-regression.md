@@ -11,7 +11,7 @@ owner: platform_architecture_lead
 tags: [load-test, regression, performance, cycle-2, m16-1]
 ---
 
-# CAP-004 — Load Test v2 Regression Comparison Report
+## CAP-004 — Load Test v2 Regression Comparison Report
 
 ## 1. Purpose
 
@@ -29,7 +29,7 @@ acceptance decisions for continued operations.
 ## 2. Test Configuration
 
 | Parameter | Cycle-1 (CAP-002) | Cycle-2 (this doc) |
-|---|---|---|
+| --- | --- | --- |
 | Scenario | Ramp 0→50 VU over 2 min; hold 50 VU for 5 min; ramp down | Ramp 0→50 VU over 2 min; hold 50 VU for 5 min; ramp down |
 | Target endpoint | `/api/v1/facts/search` | `/api/v1/facts/search` |
 | Data volume | 120k `observed_fact` rows | 210k `observed_fact` rows |
@@ -42,7 +42,7 @@ acceptance decisions for continued operations.
 ### 3.1 Throughput and Latency
 
 | Metric | Cycle-1 | Cycle-2 | Δ | Status |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Requests/s (steady state) | 312 | 298 | −14 (−4.5%) | ✅ Within tolerance |
 | p50 latency | 42 ms | 47 ms | +5 ms (+11.9%) | ✅ Within tolerance |
 | p95 latency | 118 ms | 131 ms | +13 ms (+11%) | ✅ Within tolerance |
@@ -54,7 +54,7 @@ Tolerance thresholds (from CAP-001 §4): p95 ≤ 200 ms; p99 ≤ 400 ms; error r
 ### 3.2 Resource Utilisation
 
 | Resource | Cycle-1 | Cycle-2 | Δ |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | CPU (PostgreSQL, peak) | 38% | 43% | +5% |
 | Memory (PostgreSQL, peak) | 2.1 GiB | 2.4 GiB | +0.3 GiB |
 | Connections at peak | 48 / 100 max | 49 / 100 max | +1 |
@@ -88,7 +88,7 @@ the next maintenance window.  Expected to bring pgvector p95 back to ≤65 ms.
 ## 5. SLA Compliance
 
 | SLA | Target | Cycle-2 Result | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | p95 latency | ≤ 200 ms | 131 ms | ✅ PASS |
 | p99 latency | ≤ 400 ms | 228 ms | ✅ PASS |
 | Error rate | < 0.1% | 0.03% | ✅ PASS |
@@ -99,7 +99,7 @@ the next maintenance window.  Expected to bring pgvector p95 back to ≤65 ms.
 ## 6. Action Items
 
 | ID | Description | Owner | Due |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | C2-LT-001 | Rebuild HNSW index concurrently next maintenance window | platform_engineering | 2025-10-10 |
 | C2-LT-002 | Lower p95 latency alert threshold from 200 ms to 150 ms as early warning | platform_engineering | 2025-10-15 |
 

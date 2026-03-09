@@ -12,7 +12,7 @@ tags: [fallback, safety, guardrails, latency, wave-1, m12-3]
 depends_on: [LLM-001, LLM-002]
 ---
 
-# internalCMDB — Fallback, Latency, Cost, and Safety Controls
+## internalCMDB — Fallback, Latency, Cost, and Safety Controls
 
 ## 1. Purpose
 
@@ -24,7 +24,7 @@ Satisfies pt-039 [m12-3].
 ## 2. Latency Budgets
 
 | Model Class | Task Type | P50 Target | P95 Target | Hard Timeout |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | reasoning_32b | complex_analysis | 800ms | 2s | 30s |
 | reasoning_32b | multi_step_reasoning | 1s | 4s | 60s |
 | fast_9b | summarization | 500ms | 1.5s | 10s |
@@ -38,7 +38,7 @@ Hard timeout == vLLM request timeout setting. Requests exceeding hard timeout re
 ## 3. Fallback Policy
 
 | Failure Condition | Action | Logged In |
-|---|---|---|
+| --- | --- | --- |
 | vLLM endpoint returns 5xx | Retry once after 500ms; fail with error code LLM-ERR-001 | agent_run.failure_reason |
 | vLLM endpoint unreachable (connection refused) | Fail immediately; no retry; error LLM-ERR-002 | agent_run.failure_reason |
 | Request exceeds hard timeout | Fail with error LLM-ERR-003; log prompt token count | agent_run |
@@ -55,7 +55,7 @@ Hard timeout == vLLM request timeout setting. Requests exceeding hard timeout re
 ### 4.1 Input Guardrails
 
 | Check | Implementation | Block Condition |
-|---|---|---|
+| --- | --- | --- |
 | Prompt length | max_model_len enforced by vLLM (32768 tokens) | Truncation or rejection |
 | Secret pattern detection | Ingest-time redaction scanner (DATA-002) | Reject observed_fact containing credential patterns |
 | Injection pattern check | Heuristic scan in retrieval broker (pt-057) | Flag + deny; log in agent_run |
@@ -63,7 +63,7 @@ Hard timeout == vLLM request timeout setting. Requests exceeding hard timeout re
 ### 4.2 Output Controls
 
 | Check | Implementation | Action |
-|---|---|---|
+| --- | --- | --- |
 | Response length | max_tokens set per task type in prompt template | Enforced by vLLM |
 | Hallucination risk flag | Evidence completeness check before run (GOV-007 enforcement) | Deny run if evidence below minimum |
 | Unsafe content patterns | Post-generation heuristic check (Wave-2 full implementation) | Log warning; no auto-block in Wave-1 |
@@ -73,7 +73,7 @@ Hard timeout == vLLM request timeout setting. Requests exceeding hard timeout re
 ## 5. Degradation Handling
 
 | Condition | Degradation Level | Automatic Actions |
-|---|---|---|
+| --- | --- | --- |
 | fast_9b latency > P95 target | DEGRADED | Alert ALT-006; route to reasoning_32b if possible |
 | reasoning_32b latency > P95 target | DEGRADED | Alert ALT-007; restrict to critical task types only |
 | VRAM utilization > 90% | CRITICAL | Alert ALT-007; reject new requests with 429 |

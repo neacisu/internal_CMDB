@@ -24,7 +24,7 @@ Satisfies pt-050 [m7-5].
 ## 2. Contact Points
 
 | Contact Point | Channel | Recipients |
-|---|---|---|
+| --- | --- | --- |
 | CP-001: critical | Email + PagerDuty (Wave-2) | platform_architecture_lead |
 | CP-002: security | Email | platform_architecture_lead + security_and_policy_owner |
 | CP-003: governance | Email | security_and_policy_owner |
@@ -35,7 +35,7 @@ Satisfies pt-050 [m7-5].
 ## 3. Alert Routing Rules
 
 | Alert | Condition | Contact Point | Escalation |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | ALT-001: DB Down | `pg_up == 0` for 2 min | CP-001 | CP-002 after 30 min no ack |
 | ALT-002: Ingestion Stale | No ingestion > 2h | CP-004 | CP-001 after 6h |
 | ALT-003: Retrieval Latency | P95 > 200ms for 10 min | CP-004 | CP-001 after 30 min |
@@ -94,7 +94,7 @@ receivers:
 ## 5. Synthetic Alert Testing Record
 
 | Alert | Test Date | Method | Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | ALT-001 DB Down | 2026-03-08 | Stop postgres container | CP-001 email received within 2 min |
 | ALT-004 Approval Expiry | 2026-03-08 | Insert pending approval with timestamp -25h | CP-003 email received |
 | ALT-007 GPU VRAM | 2026-03-08 | Reduce max-num-seqs, run parallel requests | CP-001 fired at 91% utilization |

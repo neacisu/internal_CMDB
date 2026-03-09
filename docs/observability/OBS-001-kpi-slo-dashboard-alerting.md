@@ -24,7 +24,7 @@ core Wave-1 platform surfaces. Satisfies pt-022 [m7-1].
 ## 2. Surfaces in Scope
 
 | Surface | Schema / Component | Owner |
-|---|---|---|
+| --- | --- | --- |
 | Registry | `registry.*` (host, shared_service, application, ownership) | platform_architecture_lead |
 | Discovery | `discovery.*` (collection_run, evidence_artifact, reconciliation) | platform_architecture_lead |
 | Retrieval | `retrieval.*` (evidence_pack, document_chunk, chunk_embedding) | platform_architecture_lead |
@@ -38,7 +38,7 @@ core Wave-1 platform surfaces. Satisfies pt-022 [m7-1].
 ### 3.1 Registry Completeness
 
 | KPI | Definition | Target |
-|---|---|---|
+| --- | --- | --- |
 | KPI-REG-001 | % entities with ≥1 OwnershipRecord | ≥95% |
 | KPI-REG-002 | % entities with canonical_document linked | ≥80% |
 | KPI-REG-003 | Active collection_run success rate (24h) | ≥99% |
@@ -46,7 +46,7 @@ core Wave-1 platform surfaces. Satisfies pt-022 [m7-1].
 ### 3.2 Retrieval Quality
 
 | KPI | Definition | Target |
-|---|---|---|
+| --- | --- | --- |
 | KPI-RET-001 | Evidence pack violation rate (violations > 0 / total packs) | <1% |
 | KPI-RET-002 | Mandatory class satisfaction rate | ≥99% |
 | KPI-RET-003 | Broker p95 latency (ms) | <3000ms |
@@ -54,7 +54,7 @@ core Wave-1 platform surfaces. Satisfies pt-022 [m7-1].
 ### 3.3 Approval Governance
 
 | KPI | Definition | Target |
-|---|---|---|
+| --- | --- | --- |
 | KPI-GOV-001 | Denial rate for RC-2+ actions (deny/total) | Tracked; alerting >50% |
 | KPI-GOV-002 | Expired approval record rate | <5% of active records |
 | KPI-GOV-003 | Quorum satisfaction rate for RC-4 | ≥100% (hard gate) |
@@ -62,7 +62,7 @@ core Wave-1 platform surfaces. Satisfies pt-022 [m7-1].
 ### 3.4 Agent Runs
 
 | KPI | Definition | Target |
-|---|---|---|
+| --- | --- | --- |
 | KPI-RUN-001 | Agent run completion rate (completed / total started) | ≥90% |
 | KPI-RUN-002 | Audit evidence completeness (runs with ≥1 evidence item) | ≥99% |
 | KPI-RUN-003 | p95 run duration | <60s (TT-001/002); <120s (TT-003/006) |
@@ -72,7 +72,7 @@ core Wave-1 platform surfaces. Satisfies pt-022 [m7-1].
 ## 4. SLO Definitions
 
 | SLO ID | Surface | Objective | Error Budget Window |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | SLO-001 | Registry read availability | p999 query success ≥99.5% | 30-day rolling |
 | SLO-002 | Collection run success | ≥99% in any 24h window | 7-day rolling |
 | SLO-003 | Retrieval broker latency | p95 <3000ms | 7-day rolling |
@@ -122,7 +122,7 @@ core Wave-1 platform surfaces. Satisfies pt-022 [m7-1].
 ## 6. Alert Rules
 
 | Alert ID | Condition | Severity | Routing |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | ALT-001 | Collection run failure (3 consecutive) | CRITICAL | on_call_primary |
 | ALT-002 | Registry KPI-REG-001 drops below 90% | WARNING | platform_review_channel |
 | ALT-003 | Evidence pack violation rate >1% | WARNING | platform_review_channel |

@@ -12,7 +12,7 @@ tags: [rto, rpo, ha, continuity, disaster-recovery, wave-1, m8-1]
 depends_on: [OBS-001, OBS-003, ADR-001]
 ---
 
-# internalCMDB — RTO/RPO, HA Posture and Continuity Scope
+## internalCMDB — RTO/RPO, HA Posture and Continuity Scope
 
 ## 1. Purpose
 
@@ -26,7 +26,7 @@ HA scope for internalCMDB. Satisfies pt-025 [m8-1].
 ### 2.1 Service Criticality Classification
 
 | Service | Criticality | Justification |
-|---|---|---|
+| --- | --- | --- |
 | PostgreSQL DB (`internalcmdb-postgres`) | CRITICAL | Single source of truth for all registry/retrieval/governance data |
 | Retrieval broker (Python app) | HIGH | Required for evidence assembly; stateless, restartable |
 | Agent control workflow (Python app) | HIGH | Required for governed writes; stateless, restartable |
@@ -38,6 +38,7 @@ HA scope for internalCMDB. Satisfies pt-025 [m8-1].
 
 Wave-1 runs on a single PostgreSQL node (orchestrator). This is **accepted** for Wave-1 with
 the following conditions:
+
 - Regular WAL streaming or pg_dump backup (see CONT-002).
 - No production write-path actions executed on live customer or infrastructure data.
 - HA upgrade (Patroni or pg_auto_failover) is PLANNED for Wave-3.
@@ -47,7 +48,7 @@ the following conditions:
 ## 3. RTO and RPO Targets
 
 | Component | RTO (Recovery Time Objective) | RPO (Recovery Point Objective) | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | PostgreSQL DB | 4 hours | 1 hour | pg_dump + WAL; tested in pt-026 |
 | Python application stack | 30 minutes | N/A (stateless) | re-deploy from git tag |
 | Prompt template registry | 30 minutes | 0 (DB-backed) | recovers with DB |
@@ -88,7 +89,7 @@ the following conditions:
 ## 6. Open Continuity Gaps
 
 | Gap ID | Description | Target |
-|---|---|---|
+| --- | --- | --- |
 | GAP-HA-001 | No streaming replication or automatic failover | Wave-3 (Patroni) |
 | GAP-HA-002 | Backup/restore not yet tested from cold | pt-026 |
 | GAP-HA-003 | DR simulation not yet conducted | pt-027 |

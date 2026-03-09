@@ -49,7 +49,7 @@ Every promoted release must produce a complete evidence chain from approved arti
 ## 3. Evidence Items
 
 | Evidence Item | Required For | Storage |
-|---|---|---|
+| --- | --- | --- |
 | Git commit SHA + tag | All releases | Git tag annotation |
 | CI run URL or log | staging → production | governance.change_log reference |
 | pip-audit output JSON | staging + production | Attached to release record |

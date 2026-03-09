@@ -11,7 +11,7 @@ owner: security_and_policy_owner
 tags: [data-governance, retention, deletion, runbook, m15-2]
 ---
 
-# DATA-002 — Data Retention and Deletion Runbooks
+## DATA-002 — Data Retention and Deletion Runbooks
 
 ## 1. Purpose
 
@@ -23,7 +23,7 @@ are executed by a member of the **platform_engineering** team after explicit
 ## 2. Retention Schedule
 
 | Table | Data Class | Retention Window | Trigger |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `observed_fact` | B | 90 days from `collected_at` | Rolling daily job |
 | `chunk_embedding` | B | 90 days from parent `observed_fact` deletion | Cascade |
 | `document_chunk` | B | 90 days from parent `document_version` archival | Cascade |
@@ -44,7 +44,7 @@ are executed by a member of the **platform_engineering** team after explicit
 
 The PostgreSQL schema uses `ON DELETE CASCADE` on the following paths:
 
-```
+```text
 collection_run → observed_fact → chunk_embedding
 document_version → document_chunk
 evidence_pack → evidence_pack_item

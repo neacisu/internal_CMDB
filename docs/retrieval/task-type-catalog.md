@@ -50,7 +50,7 @@ A bounded, ordered, provenance-tagged collection of context items assembled for 
 ### Context Classes
 
 | Class code | Description |
-|-----------|-------------|
+| --- | --- |
 | `canonical_doc` | Approved governance document (ADR, policy, runbook, dossier) |
 | `registry_host` | Host record from `registry.hosts` |
 | `registry_service` | Service record from `registry.services` |
@@ -76,7 +76,7 @@ A bounded, ordered, provenance-tagged collection of context items assembled for 
 **Token budget:** 8 000 tokens
 
 | Context class | Requirement | Notes |
-|--------------|-------------|-------|
+| --- | --- | --- |
 | `registry_host` | **mandatory** | Target host record(s) must be present |
 | `evidence_artifact` | **mandatory** | At least one discovery run artifact for the host |
 | `canonical_doc` | **recommended** | Applicable runbooks and service dossiers |
@@ -100,7 +100,7 @@ A bounded, ordered, provenance-tagged collection of context items assembled for 
 **Token budget:** 4 000 tokens
 
 | Context class | Requirement | Notes |
-|--------------|-------------|-------|
+| --- | --- | --- |
 | `registry_service` | **mandatory** | Target service record with current state |
 | `canonical_doc` | **mandatory** | Service dossier for the target service |
 | `evidence_artifact` | **mandatory** | Latest health observation with timestamp |
@@ -122,7 +122,7 @@ A bounded, ordered, provenance-tagged collection of context items assembled for 
 **Token budget:** 12 000 tokens
 
 | Context class | Requirement | Notes |
-|--------------|-------------|-------|
+| --- | --- | --- |
 | `registry_host` | **mandatory** | All hosts in reconciliation scope |
 | `registry_service` | **mandatory** | All services in reconciliation scope |
 | `evidence_artifact` | **mandatory** | Discovery artifacts for all in-scope hosts |
@@ -146,7 +146,7 @@ A bounded, ordered, provenance-tagged collection of context items assembled for 
 **Token budget:** 2 000 tokens
 
 | Context class | Requirement | Notes |
-|--------------|-------------|-------|
+| --- | --- | --- |
 | `canonical_doc` | **mandatory** | The document being validated |
 | `schema_entity` | **mandatory** | Metadata schema definition and permitted values |
 | `taxonomy_term` | **mandatory** | Valid class tokens and domain values |
@@ -168,7 +168,7 @@ A bounded, ordered, provenance-tagged collection of context items assembled for 
 **Token budget:** 6 000 tokens
 
 | Context class | Requirement | Notes |
-|--------------|-------------|-------|
+| --- | --- | --- |
 | `canonical_doc` | **mandatory** | Relevant template(s) from `docs/templates/` |
 | `schema_entity` | **mandatory** | Metadata schema and valid field values |
 | `taxonomy_term` | **mandatory** | Permitted class tokens and domains |
@@ -191,7 +191,7 @@ A bounded, ordered, provenance-tagged collection of context items assembled for 
 **Token budget:** 10 000 tokens
 
 | Context class | Requirement | Notes |
-|--------------|-------------|-------|
+| --- | --- | --- |
 | `registry_host` | **mandatory** | Target host record |
 | `registry_service` | **mandatory** | Services affected by the change |
 | `canonical_doc` | **mandatory** | Applicable runbooks, ADRs, and policies |
@@ -214,7 +214,7 @@ A bounded, ordered, provenance-tagged collection of context items assembled for 
 **Token budget:** 6 000 tokens
 
 | Context class | Requirement | Notes |
-|--------------|-------------|-------|
+| --- | --- | --- |
 | `canonical_doc` | **mandatory** | All applicable policy_pack documents |
 | `registry_host` | **mandatory** (if host compliance) | Target entity |
 | `registry_service` | **mandatory** (if service compliance) | Target entity |
@@ -232,7 +232,7 @@ A bounded, ordered, provenance-tagged collection of context items assembled for 
 An evidence pack is created per task run. The following fields are mandatory in every evidence pack record (`retrieval.evidence_pack`):
 
 | Field | Type | Requirement |
-|-------|------|-------------|
+| --- | --- | --- |
 | `pack_code` | string | Unique identifier: `EP-{task_type_code}-{timestamp_iso}` |
 | `task_type_code` | string | Must be one of: TT-001 through TT-007 |
 | `request_scope_jsonb` | JSONB | Must include: `target_entities`, `scope_description`, `created_by` |
@@ -243,7 +243,7 @@ An evidence pack is created per task run. The following fields are mandatory in 
 Each item in `retrieval.evidence_pack_item` must include:
 
 | Field | Type | Requirement |
-|-------|------|-------------|
+| --- | --- | --- |
 | `item_order` | integer | Ascending order reflecting retrieval priority |
 | `entity_kind_term_id` | UUID | Must reference a valid taxonomy term |
 | `inclusion_reason_text` | text | Why this item was included |
@@ -269,7 +269,7 @@ At least one item with `is_mandatory = true` must be present. Evidence packs wit
 This catalog is operationalised through the following schema objects:
 
 | Object | Schema | Role |
-|--------|--------|------|
+| --- | --- | --- |
 | `evidence_pack` | `retrieval` | One record per task run |
 | `evidence_pack_item` | `retrieval` | Ordered collection of context items per pack |
 | `document_chunk` | `retrieval` | Chunks used in `chunk_lexical` and `chunk_semantic` items |

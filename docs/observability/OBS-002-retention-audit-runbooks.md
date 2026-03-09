@@ -26,7 +26,7 @@ Satisfies pt-023 [m7-2].
 ### 2.1 Retention Classes
 
 | Data Class | Table(s) | Retention Period | Action on Expiry |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Agent runs (completed) | `agent_control.agent_run` | 2 years | Archive to cold storage |
 | Agent evidence | `agent_control.agent_evidence` | 2 years (with run) | Archive with parent run |
 | Evidence packs | `retrieval.evidence_pack` | 1 year | Archive; chunks preserved |
@@ -52,7 +52,7 @@ Satisfies pt-023 [m7-2].
 ### 3.1 Review Cadence
 
 | Review Type | Frequency | Owner | Output |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Agent run completeness review | Weekly | platform_architecture_lead | Summary report |
 | Policy denial pattern review | Weekly | security_and_policy_owner | Anomaly report |
 | Approval expiry review | Weekly | security_and_policy_owner | Renewal list |
@@ -151,7 +151,7 @@ Monthly review (additional):
 ## 5. Runbook Index
 
 | Runbook | Trigger Alert | Severity |
-|---|---|---|
+| --- | --- | --- |
 | RB-001 | ALT-001 (collection run failure) | CRITICAL |
 | RB-002 | ALT-003 (pack violation rate) | WARNING |
 | RB-003 | Scheduled (monthly retention) | SCHEDULED |

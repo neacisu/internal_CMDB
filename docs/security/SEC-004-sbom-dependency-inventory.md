@@ -24,7 +24,7 @@ Satisfies pt-031 [m10-1].
 ## 2. Runtime Component Inventory
 
 | Component | Version | Source | Risk Class |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Python | 3.14.x | apt (Ubuntu 24.04) | LOW |
 | PostgreSQL | 17.x | Docker Hub `postgres:17` | MEDIUM |
 | pgvector extension | 0.7.x | apt `postgresql-17-pgvector` | MEDIUM |
@@ -41,7 +41,7 @@ Satisfies pt-031 [m10-1].
 ## 3. Container Image Inventory
 
 | Image | Tag | Registry | Source Verification |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `postgres:17` | pinned SHA | Docker Hub | Official image; SHA pinned in compose |
 | `vllm/vllm-openai` | latest (Wave-1) | Docker Hub | Official vLLM project |
 | `ghcr.io/open-webui/open-webui` | main | GitHub Container Registry | Official Open WebUI project |
@@ -70,7 +70,7 @@ SBOM file: `docs/security/sbom-python-wave1-baseline.json` (generated; not commi
 ## 5. Dependency Classification
 
 | Risk Class | Criteria | Action |
-|---|---|---|
+| --- | --- | --- |
 | CRITICAL | Known CVE with CVSS ≥ 9.0; no patch available | Block deployment; escalate immediately |
 | HIGH | CVE with CVSS 7.0–8.9; or no upstream support | Patch within 7 days; document exception |
 | MEDIUM | CVE with CVSS 4.0–6.9; patched version available | Patch within 30 days |

@@ -11,7 +11,7 @@ owner: executive_sponsor
 tags: [access-review, privileged-access, cycle-2, governance, m16-2]
 ---
 
-# DATA-005 — Privileged Access Review Cycle-2
+## DATA-005 — Privileged Access Review Cycle-2
 
 ## 1. Purpose
 
@@ -32,7 +32,7 @@ All human identities and service accounts holding privileged roles as at
 2025-09-30:
 
 | Role | Priilege Level |
-|---|---|
+| --- | --- |
 | `platform_engineering` | Read/write Class B tables; retention job execution |
 | `platform_architecture_lead` | DDL ownership; schema migration authority |
 | `security_and_policy_owner` | Exception approval; credential rotation authority |
@@ -45,7 +45,7 @@ All human identities and service accounts holding privileged roles as at
 ### 3.1 Active Role Assignments (as at 2025-09-30)
 
 | Identity | Role(s) | Type | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `svc-internalcmdb-collector` | `platform_engineering` | Service account | Active ✅ |
 | `svc-internalcmdb-retrieval` | `platform_engineering` | Service account | Active ✅ |
 | `svc-internalcmdb-scheduler` | `platform_engineering` | Service account | Active ✅ |
@@ -58,7 +58,7 @@ No new service accounts or human identities were added during the review period.
 ### 3.2 Access Changes During Review Period
 
 | Date | Identity | Change | Approved By |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 2025-08-14 | `svc-internalcmdb-scheduler` | Rotated credentials per SEC-002 schedule | `sec-owner-01` |
 | 2025-09-01 | `svc-internalcmdb-collector` | Rotated credentials per SEC-002 schedule | `sec-owner-01` |
 
@@ -72,7 +72,7 @@ are within the 90-day rotation window defined in SEC-002.
 ## 4. Access Control System Verification (Cycle-2)
 
 | Control | Result |
-|---|---|
+| --- | --- |
 | `DataAccessControl` enforcement active | ✅ CONFIRMED — live probe test executed |
 | Denial events logged to `governance.change_log` | ✅ CONFIRMED — 0 denials in review period (no unauthorised access attempts) |
 | Redaction scanner active on ingest path | ✅ CONFIRMED — 0 redaction rejections in review period |
@@ -83,7 +83,7 @@ are within the 90-day rotation window defined in SEC-002.
 ## 5. Exception Register Summary (Cycle-2)
 
 | Status | Count |
-|---|---|
+| --- | --- |
 | Opened | 0 |
 | Closed within SLA | 0 |
 | Escalated | 0 |

@@ -5,8 +5,8 @@ doc_class: product_intent  # REQUIRED — do not change
 domain: application   # REQUIRED — change if needed
 version: "1.0"        # REQUIRED — quoted decimal
 status: draft         # REQUIRED
-created: YYYY-MM-DD   # REQUIRED
-updated: YYYY-MM-DD   # REQUIRED
+created: "2026-03-09"   # REQUIRED
+updated: "2026-03-09"   # REQUIRED
 owner: platform_engineering_lead  # REQUIRED — role token
 binding:
   - entity_type: registry.applications  # REQUIRED for application docs — do not change schema.table
@@ -23,7 +23,7 @@ depends_on: []
 ## Application Identity
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Application name** | <!-- canonical name matching registry.applications --> |
 | **Application type** | <!-- service / CLI / daemon / agent / batch --> |
 | **Registry entity** | `[[entity:registry.applications:<app_name>]]` |
@@ -71,7 +71,7 @@ These feed into verification specs (VER-NNN). -->
 ## Non-Functional Requirements
 
 | Property | Requirement | Source |
-|----------|-------------|--------|
+| --- | --- | --- |
 | Availability | <!-- e.g. 99.5% / 4h RTO --> | [[doc:POL-001]] |
 | Security | <!-- e.g. no direct external access, auth required --> | [[doc:POL-002]] |
 | Auditability | <!-- e.g. all writes logged --> | [[doc:ADR-004]] |
@@ -79,7 +79,7 @@ These feed into verification specs (VER-NNN). -->
 ## Dependencies
 
 | Dependency | Type | Version constraint |
-|------------|------|--------------------|
+| --- | --- | --- |
 | <!-- service or library --> | <!-- runtime / build --> | <!-- e.g. >=3.2 --> |
 
 ## Verification Reference
