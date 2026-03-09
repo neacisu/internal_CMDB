@@ -251,7 +251,7 @@ class ApprovalRecord:
     action_class: ActionClass
     scope_entity_ids: frozenset[uuid.UUID]
     is_expired: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict[str, Any])
 
     @property
     def approver_count(self) -> int:
@@ -284,7 +284,7 @@ class EnforcementContext:
     action_class: ActionClass
     task_type_code: TaskTypeCode
     present_evidence_classes: frozenset[ContextClass]
-    target_entity_ids: list[uuid.UUID] = field(default_factory=list)
+    target_entity_ids: list[uuid.UUID] = field(default_factory=list[uuid.UUID])
     approval_record: ApprovalRecord | None = field(default=None)
     snapshot_exists: bool = field(default=False)
 
@@ -429,6 +429,10 @@ class PolicyEnforcer:
                 f"need >= {_MIN_QUORUM_APPROVERS}."
             )
         return reasons
+
+    def check_quorum(self, ctx: EnforcementContext) -> list[str]:
+        """Return deny reasons for quorum rule D-008 (public API)."""
+        return self._check_quorum(ctx)
 
     def get_risk_class(self, action_class: ActionClass) -> RiskClass:
         """Return the risk class for *action_class* without full enforcement."""

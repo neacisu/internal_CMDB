@@ -96,8 +96,8 @@ class TransitionResult:
 
     success: bool
     new_status: str
-    deny_reasons: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
+    deny_reasons: list[str] = field(default_factory=list[str])
+    warnings: list[str] = field(default_factory=list[str])
     action_request_id: uuid.UUID | None = None
 
 
@@ -253,7 +253,7 @@ class ActionWorkflow:
         target_ids: frozenset[uuid.UUID],
     ) -> TransitionResult | None:
         """Validate quorum for RC-4 actions; return denial or None."""
-        deny_reasons = self._enforcer._check_quorum(  # pylint: disable=protected-access
+        deny_reasons = self._enforcer.check_quorum(
             EnforcementContext(
                 action_class=action_class,
                 task_type_code=TaskTypeCode(
