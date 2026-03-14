@@ -12,11 +12,15 @@ repos:
       - id: ruff-check
         args: ["--fix"]
       - id: ruff-format
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.1
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies: ["pyyaml>=6.0", "types-PyYAML>=6.0", "types-setuptools>=80.9.0.20250822"]
+        name: mypy
+        language: system
+        entry: .venv/bin/mypy
+        args: ["src", "tests", "--config-file", "pyproject.toml"]
+        pass_filenames: false
+        types: [python]
   - repo: local
     hooks:
       - id: gitleaks-pre-push

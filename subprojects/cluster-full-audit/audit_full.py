@@ -414,7 +414,7 @@ def _as_int(value: object) -> int:
         return int(value)
     try:
         return int(str(value or 0))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0
 
 
@@ -425,7 +425,7 @@ def _as_float(value: object) -> float:
         return float(value)
     try:
         return float(str(value or 0))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0.0
 
 
@@ -728,7 +728,7 @@ echo "=== END ==="
 def _kb_to_gb(kb: str) -> float:
     try:
         return round(int(kb) / 1024 / 1024, 2)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return 0.0
 
 
@@ -1183,7 +1183,7 @@ def _print_gpu_section(report: AuditReport) -> None:
         util_gpu = _as_float(gpu["gpu_util"])
         try:
             temp_str = _format_gpu_temp(_as_float(gpu["gpu_temp"]))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             temp_str = gpu["gpu_temp"]
         print(f"\n  GPU[{index}]  {BOLD}{MAG}{gpu['gpu_name']}{RESET}")
         print(

@@ -4,10 +4,63 @@
     "python.testing.pytestArgs": [
         "tests"
     ],
-    "python.analysis.typeCheckingMode": "strict",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
         "source.fixAll.ruff": "explicit",
         "source.organizeImports.ruff": "explicit"
-    }
+    },
+
+    // Per-language overrides — disable format-on-save for TSX/TS/JS
+    // to prevent any formatter from reverting Tailwind v4 canonical syntax
+    "[typescriptreact]": {
+        "editor.formatOnSave": false,
+        "editor.codeActionsOnSave": {}
+    },
+    "[typescript]": {
+        "editor.formatOnSave": false,
+        "editor.codeActionsOnSave": {}
+    },
+    "[javascript]": {
+        "editor.formatOnSave": false,
+        "editor.codeActionsOnSave": {}
+    },
+    "[javascriptreact]": {
+        "editor.formatOnSave": false,
+        "editor.codeActionsOnSave": {}
+    },
+
+    // Tailwind CSS IntelliSense — validate on every file change
+    "tailwindCSS.validate": true,
+    "tailwindCSS.lint.invalidScreen": "error",
+    "tailwindCSS.lint.unknownVariant": "error",
+
+    // File watcher — exclude build artefacts to avoid noise
+    // (also stops uvicorn from reloading on .next/** writes)
+    "files.watcherExclude": {
+        "**/.next/**": true,
+        "**/node_modules/**": true,
+        "**/__pycache__/**": true,
+        "**/.venv/**": true
+    },
+
+    // TypeScript server — use filesystem events for fast refresh
+    "js/ts.tsserver.watchOptions": {
+        "watchFile": "useFsEvents",
+        "watchDirectory": "useFsEvents",
+        "fallbackPolling": "dynamicPriorityPolling"
+    },
+
+    // ESLint — run on every type (instant feedback)
+    "eslint.run": "onType",
+    "eslint.validate": ["typescript", "typescriptreact"],
+
+    // Trust markdownlint remote schema (suppresses untrusted-location warning)
+    // json.schemaDownload.enable works only in User Settings — override with local schema mapping
+    "json.schemaDownload.enable": true,
+    "json.schemas": [
+        {
+            "fileMatch": ["**/.markdownlintrc", "**/.markdownlint.json", "**/.markdownlint.jsonc"],
+            "url": "https://raw.githubusercontent.com/DavidAnson/markdownlint/v0.40.0/schema/markdownlint-config-schema.json"
+        }
+    ]
 }

@@ -1,0 +1,47 @@
+{
+    // Disable format-on-save for all TS/TSX/JS files in the frontend folder
+    // Prevents any formatter from reverting Tailwind v4 canonical CSS variable syntax
+    "editor.formatOnSave": false,
+    "editor.codeActionsOnSave": {},
+
+    // Tailwind CSS IntelliSense — enable validation and instant refresh
+    "tailwindCSS.validate": true,
+    "tailwindCSS.lint.cssConflict": "warning",
+    "tailwindCSS.lint.invalidApply": "error",
+    "tailwindCSS.lint.invalidScreen": "error",
+    "tailwindCSS.lint.invalidVariant": "error",
+    "tailwindCSS.lint.invalidConfigPath": "error",
+    "tailwindCSS.lint.invalidTailwindDirective": "error",
+    "tailwindCSS.lint.recommendedVariantOrder": "warning",
+
+    // Watch all relevant file patterns for Tailwind class scanning
+    "tailwindCSS.includeLanguages": {
+        "typescriptreact": "html",
+        "typescript": "html"
+    },
+    "tailwindCSS.files.exclude": [
+        "**/.next/**",
+        "**/node_modules/**",
+        "**/.git/**"
+    ],
+
+    // TypeScript — fast file-system event based watching (new API)
+    "js/ts.tsserver.watchOptions": {
+        "watchFile": "useFsEvents",
+        "watchDirectory": "useFsEvents",
+        "fallbackPolling": "dynamicPriorityPolling"
+    },
+
+    // Show all TypeScript/TSX diagnostics immediately on file change (new API)
+    "js/ts.validate.enabled": true,
+
+    // Never use a formatter for TSX/TS (no Prettier installed anyway)
+    "[typescriptreact]": {
+        "editor.defaultFormatter": null,
+        "editor.formatOnSave": false
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": null,
+        "editor.formatOnSave": false
+    }
+}

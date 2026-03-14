@@ -412,7 +412,7 @@ def _insert_hardware_snapshot(
 def _int_or_none(value: Any) -> int | None:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -443,7 +443,7 @@ def _upsert_gpu_devices(
         def _dec(v: Any) -> float | None:
             try:
                 return float(v)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return None
 
         params: dict[str, Any] = {

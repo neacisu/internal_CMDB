@@ -1,0 +1,38 @@
+# internalCMDB — redis-shared TCP exposure via Traefik SNI routing
+#
+# Approach: TCP router on the existing `websecure` entrypoint (:443).
+# Traefik inspects the TLS ClientHello SNI header — routes `redis.orchestrator.neanelu.ro`
+# to the redis-shared container as plain TCP, while all existing HTTPS routers
+# continue unaffected (different SNI values).
+#
+# No Traefik restart required — this file is hot-reloaded from /etc/traefik/dynamic/.
+#
+# Redis container binding:  10.0.0.2:6379  (host network, docker-proxy)
+# Traefik network mode:     host  → can reach 10.0.0.2 directly
+#
+# Client URL:  rediss://redis.infraq.app:443/0
+# (rediss:// = TLS; Traefik terminates TLS, forwards plain TCP to redis)
+#
+# DNS: add an A record  redis.infraq.app  →  <orchestrator public IP>  in Cloudflare
+#      (proxied=false / DNS-only, so TLS ClientHello SNI reaches Traefik intact)
+#
+# Deployment (run from local machine):
+#   scp deploy/orchestrator/redis.yml orchestrator:/opt/traefik/dynamic/redis.yml
+#   # Traefik reloads automatically — no restart, no connection disruption.
+
+tcp:
+  routers:
+    redis-shared:
+      rule: HostSNI(`redis.infraq.app`)
+      entryPoints:
+        - websecure
+      service: redis-shared-svc
+      tls:
+        certResolver: cloudflare
+
+  services:
+    redis-shared-svc:
+      loadBalancer:
+        servers:
+          - address: "10.0.0.2:6379"
+        terminationDelay: 100

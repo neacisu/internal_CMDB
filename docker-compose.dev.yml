@@ -1,0 +1,28 @@
+# internalCMDB — local development stack
+# Usage: docker compose -f docker-compose.dev.yml up -d
+#
+# Services:
+#   redis   — job queue back-end for ARQ worker tasks
+#
+# The PostgreSQL instance runs on the remote orchestrator host (see .env).
+# This compose file only brings up local dev‑only services.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: internalcmdb-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_dev_data:
+    driver: local

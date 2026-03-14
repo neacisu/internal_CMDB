@@ -232,6 +232,16 @@ class ActionWorkflow:
                 new_status=req.status_text,
                 deny_reasons=["D-004: approval record is expired"],
             )
+        action_class = ActionClass(req.action_class_text)
+        if approval_record.action_class != action_class:
+            return TransitionResult(
+                success=False,
+                new_status=req.status_text,
+                deny_reasons=[
+                    f"D-005: approval class '{approval_record.action_class.value}' "
+                    f"does not match request class '{action_class.value}'"
+                ],
+            )
         target_ids = _extract_target_ids(req)
         if not target_ids.issubset(approval_record.scope_entity_ids):
             return TransitionResult(
@@ -239,7 +249,6 @@ class ActionWorkflow:
                 new_status=req.status_text,
                 deny_reasons=["D-005: approval scope does not cover all target entities"],
             )
-        action_class = ActionClass(req.action_class_text)
         risk_class = self._enforcer.get_risk_class(action_class)
         if risk_class == RiskClass.RC4_BULK_STRUCTURAL:
             return self._check_quorum_for_approve(req, approval_record, action_class, target_ids)

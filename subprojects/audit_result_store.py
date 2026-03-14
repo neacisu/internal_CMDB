@@ -45,7 +45,7 @@ def _local_interface_ips() -> frozenset[str]:
             found = re.findall(r"\binet (\d+\.\d+\.\d+\.\d+)", out)
             if found:
                 return frozenset(found)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
+        except FileNotFoundError, subprocess.TimeoutExpired:
             continue
     return frozenset()
 
@@ -131,7 +131,7 @@ def _read_archive_stamp(current_path: Path) -> str:
         if isinstance(generated_at, str):
             normalized = generated_at.replace("Z", "+00:00")
             return datetime.fromisoformat(normalized).astimezone(UTC).strftime(TIMESTAMP_FORMAT)
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    except OSError, ValueError, TypeError, json.JSONDecodeError:
         pass
 
     return datetime.fromtimestamp(current_path.stat().st_mtime, UTC).strftime(TIMESTAMP_FORMAT)

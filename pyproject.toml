@@ -14,10 +14,16 @@ authors = [
 license = { text = "Proprietary" }
 dependencies = [
   "alembic>=1.14",
+  "arq>=0.26",
+  "fastapi>=0.115",
+  "httpx>=0.28",
   "psycopg[binary]>=3.2",
+  "pydantic-settings>=2.7",
   "python-dotenv>=1.0",
   "pyyaml>=6.0",
+  "redis>=5.2",
   "sqlalchemy>=2.0",
+  "uvicorn[standard]>=0.34",
 ]
 
 [project.optional-dependencies]
@@ -39,13 +45,13 @@ packages = ["src/proiecteit", "src/internalcmdb"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra --strict-markers --strict-config --cov=src/proiecteit --cov-report=term-missing --cov-report=xml --cov-fail-under=90"
+addopts = "-ra --strict-markers --strict-config --cov=src/proiecteit --cov=src/internalcmdb --cov-report=term-missing --cov-report=xml --cov-fail-under=90"
 testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.coverage.run]
 branch = true
-source = ["src/proiecteit"]
+source = ["src/proiecteit", "src/internalcmdb"]
 
 [tool.coverage.report]
 show_missing = true
@@ -58,6 +64,9 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "PT", "SIM", "PL", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["PLR2004", "PLR0913"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -84,6 +93,21 @@ disable_error_code = ["misc"]
 module = "pgvector.*"
 ignore_missing_imports = true
 
+# FastAPI route decorators and pydantic-settings BaseSettings subclasses are
+# untyped in the pre-commit mypy isolated environment (missing deps).
+# Suppress [misc] and [unused-ignore] — they show 0 errors when run via the
+# project venv with all dependencies installed.
+[[tool.mypy.overrides]]
+module = ["internalcmdb.api.*", "internalcmdb.workers.*"]
+disable_error_code = ["misc", "unused-ignore"]
+
+# pytest.fixture / pytest.mark.parametrize decorators are untyped in the
+# pre-commit mypy isolated environment; same for type:ignore comments only
+# needed with the full dep stack.
+[[tool.mypy.overrides]]
+module = ["tests.*", "scripts.*"]
+disable_error_code = ["misc", "unused-ignore"]
+
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "build", "dist"]
 severity = "medium"
@@ -105,6 +129,8 @@ ignore-paths = [
     "subprojects/",
     "src/internalcmdb/migrations/",
 ]
+# Teach Pylint where the project packages live so test-file imports resolve.
+source-roots = ["src", "tests"]
 
 [tool.pylint.TYPECHECK]
 # Alembic wraps context and op in dynamic proxy objects whose members are not
@@ -113,6 +139,10 @@ generated-members = [
     "alembic.context.*",
     "alembic.op.*",
 ]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportPrivateUsage = "none"
 
 [tool.pylint."MESSAGES CONTROL"]
 disable = [

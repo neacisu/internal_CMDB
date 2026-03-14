@@ -347,6 +347,7 @@ class SharedService(Base):
     lifecycle_term_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
     )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     description: Mapped[str | None] = mapped_column(Text)
     canonical_document_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(
