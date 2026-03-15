@@ -13,7 +13,7 @@ from internalcmdb.collectors.diff_engine import (
 class TestComputeJsonDiff:
     def test_identical_dicts(self) -> None:
         old = {"a": 1, "b": 2}
-        assert compute_json_diff(old, old.copy()) == []
+        assert not compute_json_diff(old, old.copy())
 
     def test_added_key(self) -> None:
         old = {"a": 1}

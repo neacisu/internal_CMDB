@@ -108,9 +108,9 @@ class AgentDaemon:
     _enabled_collectors: list[str] = field(default_factory=_str_list)
     _running: bool = False
 
-    MAX_BUFFER_SIZE: int = 1000
-    FLUSH_INTERVAL: float = 5.0
-    FLUSH_BATCH_SIZE: int = 10
+    max_buffer_size: int = 1000
+    flush_interval: float = 5.0
+    flush_batch_size: int = 10
 
     async def start(self) -> None:
         """Enroll with the API and start the collection loop."""
@@ -200,15 +200,15 @@ class AgentDaemon:
             collected_at=datetime.now(UTC).isoformat(),
         )
 
-        if len(self._buffer) < self.MAX_BUFFER_SIZE:
+        if len(self._buffer) < self.max_buffer_size:
             self._buffer.append(snapshot)
         else:
-            logger.warning("Buffer full (%d items), dropping snapshot", self.MAX_BUFFER_SIZE)
+            logger.warning("Buffer full (%d items), dropping snapshot", self.max_buffer_size)
 
     async def _flush_loop(self) -> None:
         """Periodically flush buffered snapshots to the API."""
         while self._running:
-            await asyncio.sleep(self.FLUSH_INTERVAL)
+            await asyncio.sleep(self.flush_interval)
             await self._flush()
 
     async def _flush(self) -> None:
@@ -216,8 +216,8 @@ class AgentDaemon:
         if not self._buffer or not self.agent_id:
             return
 
-        batch = self._buffer[: self.FLUSH_BATCH_SIZE]
-        self._buffer = self._buffer[self.FLUSH_BATCH_SIZE :]
+        batch = self._buffer[: self.flush_batch_size]
+        self._buffer = self._buffer[self.flush_batch_size :]
 
         url = f"{self.api_url}/ingest"
         payload = {

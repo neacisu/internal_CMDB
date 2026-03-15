@@ -19,7 +19,7 @@ class TestEnrollRequest:
     def test_minimal(self) -> None:
         req = EnrollRequest(host_code="hz.113", agent_version="1.0.0")
         assert req.host_code == "hz.113"
-        assert req.capabilities == []
+        assert not req.capabilities
 
 
 class TestIngestRequest:
@@ -68,4 +68,4 @@ class TestAgentConfigUpdate:
 class TestReportGenerateRequest:
     def test_minimal(self) -> None:
         req = ReportGenerateRequest(report_kind="fleet_posture")
-        assert req.scope == {}
+        assert not req.scope

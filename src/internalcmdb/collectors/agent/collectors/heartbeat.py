@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 from typing import Any
 
@@ -17,8 +18,6 @@ def _read_uptime() -> float:
     except FileNotFoundError:
         # macOS fallback — cache boot epoch in a mutable container (avoids global)
         if not _boot_time_ref:
-            import subprocess  # noqa: PLC0415
-
             out = subprocess.run(
                 ["sysctl", "-n", "kern.boottime"],
                 capture_output=True,
