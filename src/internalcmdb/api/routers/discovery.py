@@ -20,9 +20,8 @@ router = APIRouter(prefix="/discovery", tags=["discovery"])
 
 @router.get("/sources", response_model=list[DiscoverySourceOut])
 def list_sources(db: Annotated[Session, Depends(get_db)]) -> list[DiscoverySource]:
-    return (
-        db.scalars(select(DiscoverySource).order_by(DiscoverySource.source_code)).all()  # type: ignore[return-value]
-    )
+    stmt = select(DiscoverySource).order_by(DiscoverySource.source_code)
+    return db.scalars(stmt).all()  # type: ignore[return-value]
 
 
 @router.get("/runs", response_model=Page[CollectionRunOut])
