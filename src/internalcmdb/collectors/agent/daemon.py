@@ -68,6 +68,26 @@ class PendingSnapshot:
     collected_at: str
 
 
+def _snapshot_buffer() -> list[PendingSnapshot]:
+    return []
+
+
+def _str_str_dict() -> dict[str, str]:
+    return {}
+
+
+def _str_float_dict() -> dict[str, float]:
+    return {}
+
+
+def _str_int_dict() -> dict[str, int]:
+    return {}
+
+
+def _str_list() -> list[str]:
+    return []
+
+
 @dataclass
 class AgentDaemon:
     """Main agent daemon — collects and pushes telemetry."""
@@ -81,11 +101,11 @@ class AgentDaemon:
     log_level: str = "INFO"
 
     # Runtime state
-    _buffer: list[PendingSnapshot] = field(default_factory=list)
-    _last_hashes: dict[str, str] = field(default_factory=dict)
-    _last_run: dict[str, float] = field(default_factory=dict)
-    _schedule: dict[str, int] = field(default_factory=dict)
-    _enabled_collectors: list[str] = field(default_factory=list)
+    _buffer: list[PendingSnapshot] = field(default_factory=_snapshot_buffer)
+    _last_hashes: dict[str, str] = field(default_factory=_str_str_dict)
+    _last_run: dict[str, float] = field(default_factory=_str_float_dict)
+    _schedule: dict[str, int] = field(default_factory=_str_int_dict)
+    _enabled_collectors: list[str] = field(default_factory=_str_list)
     _running: bool = False
 
     MAX_BUFFER_SIZE: int = 1000

@@ -31,7 +31,7 @@ def collect() -> dict[str, Any]:
             return {"gpus": [], "error": result.stderr.strip()}
 
         reader = csv.reader(io.StringIO(result.stdout.strip()))
-        gpus = []
+        gpus: list[dict[str, Any]] = []
         for row in reader:
             if len(row) < 10:  # noqa: PLR2004
                 continue

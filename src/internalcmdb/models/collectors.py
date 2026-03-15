@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, ClassVar
+from typing import Any
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
@@ -16,7 +16,7 @@ class CollectorAgent(Base):
     """Lightweight agent deployed on each infrastructure host."""
 
     __tablename__ = "collector_agent"
-    __table_args__: ClassVar[tuple[Any, ...]] = (
+    __table_args__ = (
         Index("ix_collector_agent_host_code", "host_code"),
         Index("ix_collector_agent_status", "status"),
         {"schema": "discovery"},
@@ -41,7 +41,7 @@ class CollectorSnapshot(Base):
     """Versioned telemetry snapshot pushed by an agent."""
 
     __tablename__ = "collector_snapshot"
-    __table_args__: ClassVar[tuple[Any, ...]] = (
+    __table_args__ = (
         UniqueConstraint("agent_id", "snapshot_version", name="uq_agent_snapshot_version"),
         Index(
             "ix_snapshot_agent_kind_collected",
@@ -75,7 +75,7 @@ class SnapshotDiff(Base):
     """RFC 6902 JSON Patch diff between consecutive snapshots."""
 
     __tablename__ = "snapshot_diff"
-    __table_args__: ClassVar[tuple[Any, ...]] = (
+    __table_args__ = (
         Index("ix_snapshot_diff_snapshot", "snapshot_id"),
         {"schema": "discovery"},
     )

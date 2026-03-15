@@ -19,8 +19,8 @@ def compute_json_diff(old: dict[str, Any], new: dict[str, Any]) -> list[dict[str
 
 
 def _diff_recursive(
-    old: object,
-    new: object,
+    old: Any,
+    new: Any,
     path: str,
     ops: list[dict[str, Any]],
 ) -> None:
@@ -45,11 +45,7 @@ def _diff_recursive(
 _SUMMARY_LIMIT = 3
 
 
-def generate_summary(
-    diff_ops: list[dict[str, Any]],
-    old: dict[str, Any] | None = None,
-    new: dict[str, Any] | None = None,
-) -> str:
+def generate_summary(diff_ops: list[dict[str, Any]]) -> str:
     """Generate a human-readable summary from diff operations."""
     if not diff_ops:
         return "No changes"
@@ -83,7 +79,7 @@ def compute_diff_with_summary(
 ) -> tuple[list[dict[str, Any]], str]:
     """Compute diff and summary in one call."""
     ops = compute_json_diff(old, new)
-    summary = generate_summary(ops, old, new)
+    summary = generate_summary(ops)
     return ops, summary
 
 

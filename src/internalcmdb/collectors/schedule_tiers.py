@@ -5,13 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+def _default_collectors() -> list[str]:
+    return []
+
+
 @dataclass(frozen=True)
 class ScheduleTier:
     """A named collection interval with its default collector set."""
 
     code: str
     interval_seconds: int
-    collectors: list[str] = field(default_factory=list)
+    collectors: list[str] = field(default_factory=_default_collectors)
 
 
 TIERS: dict[str, ScheduleTier] = {

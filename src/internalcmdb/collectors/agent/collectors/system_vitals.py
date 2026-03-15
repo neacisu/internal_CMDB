@@ -9,7 +9,7 @@ from typing import Any
 def _read_cpu_times() -> dict[str, float]:
     """Read /proc/stat for aggregate CPU times."""
     try:
-        with open("/proc/stat") as f:
+        with open("/proc/stat", encoding="utf-8") as f:
             parts = f.readline().split()
         names = ["user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal"]
         return {n: float(parts[i + 1]) for i, n in enumerate(names) if i + 1 < len(parts)}
@@ -30,7 +30,7 @@ def _read_memory() -> dict[str, int]:
     }
     result: dict[str, int] = {}
     try:
-        with open("/proc/meminfo") as f:
+        with open("/proc/meminfo", encoding="utf-8") as f:
             for line in f:
                 parts = line.split()
                 name = parts[0].rstrip(":")

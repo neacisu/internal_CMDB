@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
@@ -56,11 +56,6 @@ def _generate_agent_token(agent_id: uuid.UUID, secret: str) -> str:
         str(agent_id).encode(),
         hashlib.sha256,
     ).hexdigest()
-
-
-def _verify_agent_token(agent_id: uuid.UUID, token: str, secret: str) -> bool:
-    expected = _generate_agent_token(agent_id, secret)
-    return hmac.compare_digest(expected, token)
 
 
 def _next_snapshot_version(db: Session, agent_id: uuid.UUID) -> int:
@@ -332,7 +327,7 @@ def heartbeat(
 def fleet_health(db: Annotated[Session, Depends(get_db)]) -> FleetHealthSummary:
     """Aggregate health across all active agents."""
     rows = db.execute(
-        select(CollectorAgent.status, func.count())
+        select(CollectorAgent.status, func.count(CollectorAgent.agent_id))
         .where(CollectorAgent.is_active.is_(True))
         .group_by(CollectorAgent.status)
     ).all()
@@ -576,7 +571,10 @@ def live_workers(
         # Get host_code from agent
         agent = db.get(CollectorAgent, snap.agent_id)
         hc = agent.host_code if agent else "unknown"
-        containers = snap.payload_jsonb.get("containers", []) if snap.payload_jsonb else []
+        containers: list[dict[str, Any]] = cast(
+            list[dict[str, Any]],
+            snap.payload_jsonb.get("containers", []) if snap.payload_jsonb else [],
+        )
 
         for container in containers:
             results.append(

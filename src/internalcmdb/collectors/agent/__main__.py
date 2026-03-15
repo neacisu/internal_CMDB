@@ -36,10 +36,10 @@ def _load_config() -> dict[str, object]:
 def main() -> None:
     """Start the agent daemon."""
     config = _load_config()
-    agent_conf: dict[str, object] = {}
+    agent_conf: dict[str, str] = {}
     raw = config.get("agent", {})
     if isinstance(raw, dict):
-        agent_conf = raw
+        agent_conf = {str(k): str(v) for k, v in raw.items()}
 
     api_url = os.environ.get(
         "AGENT_API_URL",
@@ -63,7 +63,7 @@ def main() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    def _shutdown(signum: int, _frame: object) -> None:
+    def _shutdown(_signum: int, _frame: object) -> None:
         _task = loop.create_task(daemon.stop())  # noqa: RUF006
 
     signal.signal(signal.SIGTERM, _shutdown)

@@ -26,7 +26,7 @@ def collect() -> dict[str, Any]:
                 timeout=5,
             )
 
-        disks = []
+        disks: list[dict[str, Any]] = []
         lines = result.stdout.strip().splitlines()
         for line in lines[1:]:
             parts = line.split()

@@ -26,7 +26,7 @@ def collect() -> dict[str, Any]:
                 timeout=10,
             )
 
-        processes = []
+        processes: list[dict[str, Any]] = []
         lines = result.stdout.strip().splitlines()
         for line in lines[1:]:  # skip header
             parts = line.split(None, 10)

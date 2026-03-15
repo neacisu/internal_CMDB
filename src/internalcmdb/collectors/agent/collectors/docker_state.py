@@ -25,7 +25,7 @@ def collect() -> dict[str, Any]:
         if result.returncode != 0:
             return {"containers": [], "error": result.stderr.strip()}
 
-        containers = []
+        containers: list[dict[str, Any]] = []
         for line in result.stdout.strip().splitlines():
             if line.strip():
                 containers.append(json.loads(line))
