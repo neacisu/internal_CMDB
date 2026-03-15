@@ -11,6 +11,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.functions import count as sql_count
 
 from internalcmdb.collectors.schedule_tiers import DEFAULT_AGENT_CONFIG
 from internalcmdb.models.collectors import (
@@ -327,7 +328,7 @@ def heartbeat(
 def fleet_health(db: Annotated[Session, Depends(get_db)]) -> FleetHealthSummary:
     """Aggregate health across all active agents."""
     rows = db.execute(
-        select(CollectorAgent.status, func.count(CollectorAgent.agent_id))  # type: ignore[operator]
+        select(CollectorAgent.status, sql_count(CollectorAgent.agent_id))
         .where(CollectorAgent.is_active.is_(True))
         .group_by(CollectorAgent.status)
     ).all()
