@@ -51,6 +51,14 @@ export interface DiskSummaryItem {
 
 export interface TrendSeries { series: string; points: { ts: string; value: number }[] }
 
+export interface FleetHealthSummary {
+  online: number;
+  degraded: number;
+  offline: number;
+  retired: number;
+  total: number;
+}
+
 export interface Host {
   host_id: string; cluster_id: string | null; host_code: string; hostname: string;
   ssh_alias: string | null; fqdn: string | null; os_version_text: string | null;
@@ -167,6 +175,7 @@ export const getDashboardSummary = () => apiFetch<DashboardSummary>("/dashboard/
 export const getGpuSummary = () => apiFetch<GpuSummaryItem[]>("/dashboard/gpu-summary");
 export const getDiskSummary = () => apiFetch<DiskSummaryItem[]>("/dashboard/disk-summary");
 export const getDashboardTrends = () => apiFetch<TrendSeries[]>("/dashboard/trends");
+export const getFleetHealth = () => apiFetch<FleetHealthSummary>("/collectors/health");
 
 // Registry
 export const getClusters = () => apiFetch<Cluster[]>("/registry/clusters");

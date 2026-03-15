@@ -1,5 +1,7 @@
+import { useRef } from "react";
 import { type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { fmtTime } from "@/lib/hooks";
 
 interface KpiCardProps {
   title: string;
@@ -8,6 +10,9 @@ interface KpiCardProps {
   icon?: LucideIcon;
   color?: string;
   trend?: "up" | "down" | "neutral";
+  lastRefreshed?: Date | null;
+  /** epoch ms of last data update — used to trigger the value flash animation */
+  dataUpdatedAt?: number;
   className?: string;
 }
 
@@ -17,8 +22,15 @@ export function KpiCard({
   sub,
   icon: Icon,
   color = "var(--g3)",
+  lastRefreshed,
+  dataUpdatedAt,
   className,
 }: KpiCardProps) {
+  // Track previous dataUpdatedAt so we can re-key value to trigger flash
+  const prevRef = useRef<number | undefined>(undefined);
+  const isNew = dataUpdatedAt !== undefined && dataUpdatedAt !== prevRef.current && prevRef.current !== undefined;
+  prevRef.current = dataUpdatedAt;
+
   return (
     <div className={cn("kpi", className)}>
       {Icon && (
@@ -30,8 +42,18 @@ export function KpiCard({
         </div>
       )}
       <div className="kpi-l">{title}</div>
-      <div className="kpi-v">{value}</div>
+      <div
+        key={dataUpdatedAt}
+        className={cn("kpi-v", isNew && "kpi-v-flash")}
+      >
+        {value}
+      </div>
       {sub && <div className="kpi-sub">{sub}</div>}
+      {lastRefreshed !== undefined && (
+        <div className="kpi-ts">
+          ↻ {fmtTime(lastRefreshed)}
+        </div>
+      )}
     </div>
   );
 }

@@ -274,3 +274,133 @@ body {
 .df-page-sub {
   font-size: 14.4px; color: var(--tx3); margin-top: 4px;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   LIVE MONITORING SYSTEM
+   Real-time indicators · countdown bar · refresh timestamps
+═══════════════════════════════════════════════════════════════ */
+
+/* Keyframes */
+@keyframes liveDotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 oklch(0.68 0.22 152 / 60%); }
+  50% { transform: scale(0.9); opacity: 0.8; box-shadow: 0 0 0 3px oklch(0.68 0.22 152 / 0%); }
+}
+@keyframes liveRingPulse {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes valueFlash {
+  0% { color: oklch(0.82 0.22 152); text-shadow: 0 0 18px oklch(0.68 0.22 152 / 55%); }
+  60% { color: oklch(0.82 0.22 152); }
+  100% { color: var(--tx1); text-shadow: none; }
+}
+@keyframes panelRefreshPop {
+  0% { background: oklch(0.55 0.22 152 / 8%); }
+  100% { background: transparent; }
+}
+@keyframes scanline {
+  0% { top: -2px; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 0.6; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* ─── LIVE badge ─────────────────────────────────────────── */
+.live-badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px 4px 9px; border-radius: 20px;
+  background: oklch(0.68 0.22 152 / 10%);
+  border: 1px solid oklch(0.68 0.22 152 / 28%);
+  font-family: var(--fM); font-size: 11.4px; font-weight: 700;
+  color: var(--g2); letter-spacing: 0.1em;
+  user-select: none;
+}
+.live-dot-wrap {
+  position: relative; width: 8px; height: 8px; flex-shrink: 0;
+}
+.live-dot-core {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--g2);
+  animation: liveDotPulse 2s ease-in-out infinite;
+}
+.live-dot-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 1.5px solid var(--g2);
+  animation: liveRingPulse 2s ease-out infinite;
+}
+
+/* ─── Countdown bar ──────────────────────────────────────── */
+.countdown-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 10px; border-radius: 7px;
+  background: var(--sl3); border: 1px solid var(--sl4);
+  font-family: var(--fM); font-size: 11.4px; color: var(--tx2);
+  min-width: 100px;
+}
+.countdown-track {
+  flex: 1; height: 3px; border-radius: 2px;
+  background: oklch(0.22 0.012 255); overflow: hidden; min-width: 48px;
+}
+.countdown-fill {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--g4) 0%, var(--g2) 100%);
+  transform-origin: left;
+  transition: transform 1.05s linear;
+}
+
+/* ─── KPI card timestamp footer ──────────────────────────── */
+.kpi-ts {
+  display: flex; align-items: center; gap: 4px;
+  font-family: var(--fM); font-size: 10.8px; color: var(--tx4);
+  margin-top: 8px; padding-top: 7px;
+  border-top: 1px solid oklch(0.22 0.012 255 / 55%);
+  letter-spacing: 0.04em;
+}
+.kpi-v-flash { animation: valueFlash 1.5s ease forwards; }
+
+/* ─── Panel refresh footer ───────────────────────────────── */
+.panel-refresh-footer {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 0 2px; margin-top: 12px;
+  border-top: 1px solid oklch(0.22 0.012 255 / 40%);
+  font-family: var(--fM); font-size: 11.4px; color: var(--tx4);
+}
+.panel-refresh-footer .countdown-track { min-width: 60px; max-width: 80px; }
+
+/* ─── Fleet agent status cards ──────────────────────────── */
+.agent-status-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 14px 12px; border-radius: 10px; gap: 4px;
+  border: 1px solid; min-width: 90px;
+}
+.agent-status-card.online {
+  background: oklch(0.68 0.22 152 / 8%);
+  border-color: oklch(0.68 0.22 152 / 25%);
+}
+.agent-status-card.degraded {
+  background: oklch(0.78 0.18 74 / 8%);
+  border-color: oklch(0.78 0.18 74 / 25%);
+}
+.agent-status-card.offline {
+  background: oklch(0.62 0.22 27 / 8%);
+  border-color: oklch(0.62 0.22 27 / 25%);
+}
+.agent-status-card.retired {
+  background: var(--sl3); border-color: var(--sl4);
+}
+.agent-status-v {
+  font-family: var(--fD); font-size: 28px; font-weight: 800;
+  line-height: 1; letter-spacing: -0.04em;
+}
+.agent-status-l {
+  font-family: var(--fM); font-size: 10.8px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.online .agent-status-v { color: var(--g1); }
+.online .agent-status-l { color: var(--g3); }
+.degraded .agent-status-v { color: oklch(0.85 0.16 74); }
+.degraded .agent-status-l { color: oklch(0.78 0.18 74); }
+.offline .agent-status-v { color: oklch(0.72 0.20 27); }
+.offline .agent-status-l { color: var(--er); }
+.retired .agent-status-v { color: var(--tx3); }
+.retired .agent-status-l { color: var(--tx4); }

@@ -13,18 +13,25 @@ import {
 import { getDashboardTrends, type TrendSeries } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
+import { RefreshCw } from "lucide-react";
+import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+
+const TRENDS_INTERVAL = 120_000;
 
 export function TrendCharts() {
-  const { data, isLoading } = useQuery<TrendSeries[]>({
+  const { data, isLoading, dataUpdatedAt } = useQuery<TrendSeries[]>({
     queryKey: ["dashboard", "trends"],
     queryFn: getDashboardTrends,
+    refetchInterval: TRENDS_INTERVAL,
   });
+  const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, TRENDS_INTERVAL);
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (!data?.length) return null;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {data.map((series) => (
         <div key={series.series} className="rounded-[10px] border border-[oklch(0.22_0.012_255/70%)] bg-(--sl2) p-4">
           <p className="text-[12px] font-semibold text-(--tx3) mb-3 uppercase tracking-[0.08em]" style={{ fontFamily: "var(--fM)" }}>
@@ -74,6 +81,16 @@ export function TrendCharts() {
           </ResponsiveContainer>
         </div>
       ))}
+      </div>
+      <div className="panel-refresh-footer">
+        <RefreshCw size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+        <span>Last: {fmtTime(lastRefreshed)}</span>
+        <span style={{ color: "var(--tx4)" }}>·</span>
+        <span>Next: {secsLeft}s</span>
+        <div className="countdown-track">
+          <div className="countdown-fill" style={{ transform: `scaleX(${progress})` }} />
+        </div>
+      </div>
     </div>
   );
 }

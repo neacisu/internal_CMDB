@@ -5,14 +5,19 @@ import { getHosts, type Host, type Page } from "@/lib/api";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Cpu, Container } from "lucide-react";
+import { Cpu, Container, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+
+const HOSTS_INTERVAL = 60_000;
 
 export function HostGrid() {
-  const { data, isLoading } = useQuery<Page<Host>>({
+  const { data, isLoading, dataUpdatedAt } = useQuery<Page<Host>>({
     queryKey: ["hosts", "all"],
     queryFn: () => getHosts("page_size=48"),
+    refetchInterval: HOSTS_INTERVAL,
   });
+  const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, HOSTS_INTERVAL);
 
   if (isLoading)
     return (
@@ -27,7 +32,8 @@ export function HostGrid() {
     return <p className="text-sm text-muted-foreground">No hosts found</p>;
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+    <div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
       {data.items.map((host) => (
         <Link
           key={host.host_id}
@@ -57,6 +63,16 @@ export function HostGrid() {
           </div>
         </Link>
       ))}
+      </div>
+      <div className="panel-refresh-footer">
+        <RefreshCw size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+        <span>Last: {fmtTime(lastRefreshed)}</span>
+        <span style={{ color: "var(--tx4)" }}>·</span>
+        <span>Next: {secsLeft}s</span>
+        <div className="countdown-track">
+          <div className="countdown-fill" style={{ transform: `scaleX(${progress})` }} />
+        </div>
+      </div>
     </div>
   );
 }

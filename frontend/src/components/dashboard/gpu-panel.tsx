@@ -5,6 +5,10 @@ import { getGpuSummary, type GpuSummaryItem } from "@/lib/api";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RefreshCw } from "lucide-react";
+import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+
+const GPU_INTERVAL = 30_000;
 
 function utilBadge(pct: number | null) {
   if (pct === null) return <Badge variant="secondary">N/A</Badge>;
@@ -14,10 +18,12 @@ function utilBadge(pct: number | null) {
 }
 
 export function GpuPanel() {
-  const { data, isLoading } = useQuery<GpuSummaryItem[]>({
+  const { data, isLoading, dataUpdatedAt } = useQuery<GpuSummaryItem[]>({
     queryKey: ["dashboard", "gpu-summary"],
     queryFn: getGpuSummary,
+    refetchInterval: GPU_INTERVAL,
   });
+  const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, GPU_INTERVAL);
 
   if (isLoading)
     return (
@@ -67,6 +73,15 @@ export function GpuPanel() {
           ))}
         </TableBody>
       </Table>
+      <div className="panel-refresh-footer">
+        <RefreshCw size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+        <span>Last: {fmtTime(lastRefreshed)}</span>
+        <span style={{ color: "var(--tx4)" }}>·</span>
+        <span>Next: {secsLeft}s</span>
+        <div className="countdown-track">
+          <div className="countdown-fill" style={{ transform: `scaleX(${progress})` }} />
+        </div>
+      </div>
     </div>
   );
 }
