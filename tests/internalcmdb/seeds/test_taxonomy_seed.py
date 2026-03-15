@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from internalcmdb.seeds.taxonomy_seed import (  # pylint: disable=import-error
+from internalcmdb.seeds.taxonomy_seed import (
     _CATALOGUE,
     seed,
 )

@@ -111,7 +111,7 @@ class TestValidDocuments:
     def test_no_errors_on_valid_doc(self, tmp_docs: Path) -> None:
         p = _write_md(_VALID_FM, tmp_docs)
         result = validate_file(p)
-        assert result.errors == []
+        assert not result.errors
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +430,7 @@ class TestStrictMode:
 class TestValidateDirectory:
     def test_empty_directory_returns_empty_list(self, tmp_docs: Path) -> None:
         results = validate_directory(tmp_docs)
-        assert results == []
+        assert not results
 
     def test_single_md_file_returns_one_result(self, tmp_docs: Path) -> None:
         _write_md(_VALID_FM, tmp_docs)
@@ -454,7 +454,7 @@ class TestValidateDirectory:
     def test_non_md_files_not_included(self, tmp_docs: Path) -> None:
         (tmp_docs / "notes.txt").write_text("plain text")
         results = validate_directory(tmp_docs)
-        assert results == []
+        assert not results
 
     def test_invalid_file_returns_errors(self, tmp_docs: Path) -> None:
         _write_md("# No frontmatter", tmp_docs, "bad.md")

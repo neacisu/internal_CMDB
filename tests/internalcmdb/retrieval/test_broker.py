@@ -1,4 +1,6 @@
 """Tests for internalcmdb.retrieval.broker — dataclasses, pure helpers, and mocked assemble."""
+# Whitebox unit tests deliberately call private stage methods on RetrievalBroker.
+# pylint: disable=protected-access
 
 from __future__ import annotations
 
@@ -6,7 +8,6 @@ import uuid
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-# pylint: disable=protected-access,import-error,no-name-in-module
 from internalcmdb.retrieval.broker import (
     _UNKNOWN_KIND_TERM_ID,
     AssembledItem,
@@ -134,7 +135,7 @@ class TestBrokerResult:
             token_total=0,
         )
         assert result.pack is None
-        assert result.violations == []
+        assert not result.violations
 
     def test_with_violation(self) -> None:
         v = ContractViolation(
@@ -302,14 +303,14 @@ class TestStage1ExactLookup:
         contract = get_contract(req.task_type_code)
         items = broker._stage1_exact_lookup(req, contract)
 
-        assert items == []
+        assert not items
 
     def test_empty_target_ids_returns_empty(self) -> None:
         broker, _ = _make_broker_and_session()
         req = _infra_request(target_entity_ids=[])
         contract = get_contract(req.task_type_code)
         items = broker._stage1_exact_lookup(req, contract)
-        assert items == []
+        assert not items
 
     def test_mandatory_flag_set_correctly(self) -> None:
         broker, session = _make_broker_and_session()
@@ -336,7 +337,7 @@ class TestStage2MetadataFilter:
         contract = get_contract(req.task_type_code)
         # Pass current_tokens equal to budget → no room left
         items = broker._stage2_metadata_filter(req, contract, contract.token_budget)
-        assert items == []
+        assert not items
 
     def test_collects_artifacts_when_available(self) -> None:
         broker, _ = _make_broker_and_session()
@@ -426,7 +427,7 @@ class TestStage3Lexical:
         req = _infra_request(lexical_query=None)
         contract = get_contract(req.task_type_code)
         items = broker._stage3_lexical(req, contract, 0)
-        assert items == []
+        assert not items
 
     def test_empty_lexical_query_returns_empty(self) -> None:
         broker, _ = _make_broker_and_session()
@@ -434,14 +435,14 @@ class TestStage3Lexical:
         contract = get_contract(req.task_type_code)
         # CHUNK_LEXICAL is allowed in INFRASTRUCTURE_AUDIT (recommended), but empty query → skip
         items = broker._stage3_lexical(req, contract, 0)
-        assert items == []
+        assert not items
 
     def test_no_query_at_all_skips_lexical(self) -> None:
         broker, _ = _make_broker_and_session()
         req = _infra_request(lexical_query="")  # empty string
         contract = get_contract(req.task_type_code)
         items = broker._stage3_lexical(req, contract, 0)
-        assert items == []
+        assert not items
 
     def test_lexical_query_returns_chunk_items(self) -> None:
         broker, session = _make_broker_and_session()
@@ -468,7 +469,7 @@ class TestStage3Lexical:
         session.execute.return_value.all.return_value = [(chunk, embedding)]
 
         items = broker._stage3_lexical(req, contract, 0)
-        assert items == []
+        assert not items
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +483,7 @@ class TestStage4Semantic:
         req = _infra_request(semantic_query_vec=None)
         contract = get_contract(req.task_type_code)
         items = broker._stage4_semantic(req, contract, 0)
-        assert items == []
+        assert not items
 
     def test_exception_in_query_returns_empty(self) -> None:
         broker, session = _make_broker_and_session()
@@ -491,7 +492,7 @@ class TestStage4Semantic:
         # Make session.execute raise to simulate pgvector absent
         session.execute.side_effect = Exception("pgvector not installed")
         items = broker._stage4_semantic(req, contract, 0)
-        assert items == []
+        assert not items
 
     def test_semantic_returns_chunk_items(self) -> None:
         broker, session = _make_broker_and_session()
@@ -618,7 +619,7 @@ class TestCollectWarnings:
         contract = get_contract(TaskTypeCode.INFRASTRUCTURE_AUDIT)
         present = contract.recommended_classes | contract.mandatory_classes
         warnings = RetrievalBroker._collect_warnings(contract, present)
-        assert warnings == []
+        assert not warnings
 
     def test_partial_recommended_produces_partial_warnings(self) -> None:
         contract = get_contract(TaskTypeCode.INFRASTRUCTURE_AUDIT)
@@ -663,5 +664,5 @@ class TestAssembleSuccessPath:
         ):
             result = broker.assemble(_infra_request())
 
-        assert result.violations == []
-        assert result.pack is not None or result.violations != []
+        assert not result.violations
+        assert result.pack is not None or result.violations

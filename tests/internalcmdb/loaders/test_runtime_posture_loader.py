@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from internalcmdb.loaders.runtime_posture_loader import (  # pylint: disable=import-error
+from internalcmdb.loaders.runtime_posture_loader import (
     _CONTAINER_NAME_TO_SERVICE_KIND,
     _container_is_running,
     _ensure_discovery_source,
@@ -445,7 +445,9 @@ class TestUpsertSharedService:
     def test_existing_service_returned(self) -> None:
         svc_id = uuid.uuid4()
         ctx = _make_ctx()
-        ctx.conn.execute.return_value.fetchone.return_value = (svc_id,)  # type: ignore[attr-defined]
+        ctx.conn.execute.return_value.fetchone.return_value = (  # type: ignore[attr-defined]
+            svc_id,
+        )
         assert _upsert_shared_service(ctx, "redis") == svc_id
         svc_id = uuid.uuid4()
         ctx = _make_ctx()
@@ -478,7 +480,9 @@ class TestUpsertServiceInstance:
     def test_existing_instance_updated(self) -> None:
         inst_id = uuid.uuid4()
         ctx = _service_ctx()
-        ctx.conn.execute.return_value.fetchone.return_value = (inst_id,)  # type: ignore[attr-defined]
+        ctx.conn.execute.return_value.fetchone.return_value = (  # type: ignore[attr-defined]
+            inst_id,
+        )
         _upsert_service_instance(
             ctx,
             uuid.uuid4(),

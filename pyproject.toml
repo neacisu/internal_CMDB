@@ -138,7 +138,24 @@ source-roots = ["src", "tests"]
 generated-members = [
     "alembic.context.*",
     "alembic.op.*",
+    # unittest.mock attributes injected dynamically at runtime on any object;
+    # never appear in production code so adding them here carries no false-negative risk.
+    "return_value",
+    "side_effect",
+    "call_count",
+    "call_args",
+    "call_args_list",
+    "assert_called_once",
+    "assert_called_with",
+    "assert_called_once_with",
+    "assert_any_call",
+    "assert_not_called",
+    "reset_mock",
 ]
+# unittest.mock.MagicMock injects attributes (return_value, call_count,
+# side_effect, assert_called_once, …) dynamically at runtime; pylint cannot
+# infer them statically and raises false-positive E1101 on every mock call-chain.
+ignored-classes = ["MagicMock"]
 
 [tool.pyright]
 typeCheckingMode = "strict"
@@ -154,4 +171,8 @@ disable = [
     # Infrastructure loaders deliberately catch broad exceptions at the boundary
     # so that a failed individual record never aborts a batch load.
     "broad-exception-caught",      # W0718
+    # SQLAlchemy mapped classes (models) carry their interface in column
+    # definitions and relationships, not in public methods.  Single-method
+    # pytest test classes are also intentionally minimal.
+    "too-few-public-methods",      # R0903
 ]
