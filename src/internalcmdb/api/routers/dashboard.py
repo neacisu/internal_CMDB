@@ -167,7 +167,7 @@ def get_disk_summary(db: Annotated[Session, Depends(get_db)]) -> list[DiskSummar
         .join(Host, Host.host_id == StorageAsset.host_id)
         .order_by(Host.hostname, StorageAsset.device_name)
     ).all()
-    result = []
+    result: list[DiskSummaryItem] = []
     for r in rows:
         result.append(
             DiskSummaryItem(

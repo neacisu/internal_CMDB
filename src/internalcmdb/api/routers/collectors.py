@@ -327,7 +327,7 @@ def heartbeat(
 def fleet_health(db: Annotated[Session, Depends(get_db)]) -> FleetHealthSummary:
     """Aggregate health across all active agents."""
     rows = db.execute(
-        select(CollectorAgent.status, func.count(CollectorAgent.agent_id))
+        select(CollectorAgent.status, func.count(CollectorAgent.agent_id))  # type: ignore[operator]
         .where(CollectorAgent.is_active.is_(True))
         .group_by(CollectorAgent.status)
     ).all()

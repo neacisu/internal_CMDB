@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from internalcmdb.collectors.agent.collectors import heartbeat
 
 
@@ -22,5 +24,6 @@ class TestHeartbeatCollector:
 
     def test_load_avg_is_list(self) -> None:
         result = heartbeat.collect()
-        assert isinstance(result["load_avg"], list)
-        assert len(result["load_avg"]) == 3
+        load_avg: list[Any] = result["load_avg"]
+        assert isinstance(load_avg, list)
+        assert len(load_avg) == 3

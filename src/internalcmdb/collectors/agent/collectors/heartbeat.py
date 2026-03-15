@@ -6,7 +6,7 @@ import os
 import time
 from typing import Any
 
-_boot_time: float | None = None
+_boot_time_ref: list[float] = []  # populated on first macOS fallback call
 
 
 def _read_uptime() -> float:
@@ -15,9 +15,8 @@ def _read_uptime() -> float:
         with open("/proc/uptime", encoding="utf-8") as f:
             return float(f.read().split()[0])
     except FileNotFoundError:
-        # macOS fallback
-        global _boot_time  # noqa: PLW0603
-        if _boot_time is None:
+        # macOS fallback — cache boot epoch in a mutable container (avoids global)
+        if not _boot_time_ref:
             import subprocess  # noqa: PLC0415
 
             out = subprocess.run(
@@ -27,13 +26,13 @@ def _read_uptime() -> float:
                 check=False,
             ).stdout
             # Format: { sec = 1710000000, usec = 0 } ...
+            boot_sec: float | None = None
             for part in out.split(","):
                 if "sec" in part:
-                    _boot_time = float(part.split("=")[1].strip().rstrip("}"))
+                    boot_sec = float(part.split("=")[1].strip().rstrip("}"))
                     break
-            if _boot_time is None:
-                _boot_time = time.time()
-        return time.time() - _boot_time
+            _boot_time_ref.append(boot_sec if boot_sec is not None else time.time())
+        return time.time() - _boot_time_ref[0]
 
 
 def _read_loadavg() -> list[float]:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, cast
 
 
 def compute_json_diff(old: dict[str, Any], new: dict[str, Any]) -> list[dict[str, Any]]:
@@ -26,15 +26,17 @@ def _diff_recursive(
 ) -> None:
     """Recursively compare two values and emit diff operations."""
     if isinstance(old, dict) and isinstance(new, dict):
-        all_keys = set(old.keys()) | set(new.keys())
+        old_d = cast(dict[str, Any], old)
+        new_d = cast(dict[str, Any], new)
+        all_keys = set(old_d.keys()) | set(new_d.keys())
         for key in sorted(all_keys):
             child_path = f"{path}/{key}" if path else f"/{key}"
-            if key not in old:
-                ops.append({"op": "add", "path": child_path, "value": new[key]})
-            elif key not in new:
+            if key not in old_d:
+                ops.append({"op": "add", "path": child_path, "value": new_d[key]})
+            elif key not in new_d:
                 ops.append({"op": "remove", "path": child_path})
             else:
-                _diff_recursive(old[key], new[key], child_path, ops)
+                _diff_recursive(old_d[key], new_d[key], child_path, ops)
     elif isinstance(old, list) and isinstance(new, list):
         if old != new:
             ops.append({"op": "replace", "path": path, "value": new})
@@ -54,7 +56,7 @@ def generate_summary(diff_ops: list[dict[str, Any]]) -> str:
     removes = [op for op in diff_ops if op["op"] == "remove"]
     replaces = [op for op in diff_ops if op["op"] == "replace"]
 
-    parts = []
+    parts: list[str] = []
     if adds:
         paths = [op["path"].rsplit("/", 1)[-1] for op in adds[:_SUMMARY_LIMIT]]
         suffix = f" (+{len(adds) - _SUMMARY_LIMIT} more)" if len(adds) > _SUMMARY_LIMIT else ""
