@@ -123,5 +123,22 @@ SCRIPTS: dict[str, ScriptDef] = {
             script_path="src/internalcmdb/governance/metadata_validator.py",
             default_args=["docs/"],
         ),
+        ScriptDef(
+            task_name="staleness_check",
+            display_name="Agent Staleness Check",
+            description=(
+                "Checks all collector agents for heartbeat staleness"
+                " and updates status to degraded/offline."
+            ),
+            category="maintenance",
+            script_path="src/internalcmdb/collectors/staleness.py",
+        ),
+        ScriptDef(
+            task_name="deploy_agent",
+            display_name="Deploy Collector Agent",
+            description=("Deploys the collector agent daemon to a remote host via SSH + systemd."),
+            category="maintenance",
+            script_path="scripts/deploy_agent.sh",
+        ),
     ]
 }

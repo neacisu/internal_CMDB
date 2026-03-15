@@ -67,6 +67,9 @@ _CATALOGUE: list[tuple[str, str, str, list[tuple[str, str]]]] = [
             ("policy_record", "Policy Record"),
             ("approval_record", "Approval Record"),
             ("change_log", "Change Log"),
+            ("collector_agent", "Collector Agent"),
+            ("collector_snapshot", "Collector Snapshot"),
+            ("snapshot_diff", "Snapshot Diff"),
         ],
     ),
     (
@@ -304,6 +307,7 @@ _CATALOGUE: list[tuple[str, str, str, list[tuple[str, str]]]] = [
             ("compose_manifest_inspection", "Compose Manifest Inspection"),
             ("canonical_document_parse", "Canonical Document Parse"),
             ("manual_binding", "Manual Binding"),
+            ("collector_agent_push", "Collector Agent Push"),
         ],
     ),
     (
@@ -324,6 +328,8 @@ _CATALOGUE: list[tuple[str, str, str, list[tuple[str, str]]]] = [
             ("tls_probe_result", "TLS Probe Result"),
             ("sshd_config_snapshot", "SSHD Config Snapshot"),
             ("secret_material_finding", "Secret Material Finding"),
+            ("generated_report", "Generated Report"),
+            ("collector_snapshot_artifact", "Collector Snapshot Artifact"),
         ],
     ),
     (
@@ -379,6 +385,7 @@ _CATALOGUE: list[tuple[str, str, str, list[tuple[str, str]]]] = [
             ("failed", "Failed"),
             ("cancelled", "Cancelled"),
             ("timed_out", "Timed Out"),
+            ("snapshot_received", "Snapshot Received"),
         ],
     ),
     (

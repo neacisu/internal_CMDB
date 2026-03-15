@@ -14,6 +14,9 @@ from .agent_control import (  # noqa: F401
 )
 from .base import Base
 
+# 8. Collectors (depends on discovery + registry)
+from .collectors import CollectorAgent, CollectorSnapshot, SnapshotDiff  # noqa: F401
+
 # 3. Discovery (referenced by registry, governance)
 from .discovery import (  # noqa: F401
     CollectionRun,

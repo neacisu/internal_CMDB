@@ -10,6 +10,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.functions import count
 
+from internalcmdb.models.collectors import CollectorAgent, CollectorSnapshot
 from internalcmdb.models.discovery import CollectionRun
 from internalcmdb.models.registry import (
     Cluster,
@@ -205,4 +206,95 @@ def get_trends(db: Annotated[Session, Depends(get_db)]) -> list[TrendSeries]:
     return [
         TrendSeries(series="host_count", points=host_points),
         TrendSeries(series="fact_count", points=fact_points),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Fleet health extensions
+# ---------------------------------------------------------------------------
+
+
+@router.get("/fleet-health")
+def fleet_health_dashboard(
+    db: Annotated[Session, Depends(get_db)],
+) -> list[dict[str, object]]:
+    """All agents with status, last heartbeat, staleness info."""
+    agents = db.scalars(
+        select(CollectorAgent)
+        .where(CollectorAgent.is_active.is_(True))
+        .order_by(CollectorAgent.host_code)
+    ).all()
+    result: list[dict[str, object]] = []
+    for agent in agents:
+        result.append(
+            {
+                "agent_id": str(agent.agent_id),
+                "host_code": agent.host_code,
+                "status": agent.status,
+                "agent_version": agent.agent_version,
+                "last_heartbeat_at": agent.last_heartbeat_at,
+                "enrolled_at": agent.enrolled_at,
+            }
+        )
+    return result
+
+
+@router.get("/fleet-health/summary")
+def fleet_health_summary(
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int]:
+    """Fleet health summary counts."""
+    rows = db.execute(
+        select(CollectorAgent.status, count(CollectorAgent.agent_id))
+        .where(CollectorAgent.is_active.is_(True))
+        .group_by(CollectorAgent.status)
+    ).all()
+    counts = {r[0]: r[1] for r in rows}
+    total = sum(counts.values())
+    return {
+        "online": counts.get("online", 0),
+        "degraded": counts.get("degraded", 0),
+        "offline": counts.get("offline", 0),
+        "total": total,
+    }
+
+
+@router.get("/fleet-health/{host_code}/timeline")
+def fleet_health_timeline(
+    host_code: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[dict[str, object]]:
+    """Heartbeat timeline for a specific host (for sparkline charts)."""
+    agent = db.execute(
+        select(CollectorAgent)
+        .where(
+            CollectorAgent.host_code == host_code,
+            CollectorAgent.is_active.is_(True),
+        )
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if agent is None:
+        return []
+
+    snapshots = db.scalars(
+        select(CollectorSnapshot)
+        .where(
+            CollectorSnapshot.agent_id == agent.agent_id,
+            CollectorSnapshot.snapshot_kind == "heartbeat",
+        )
+        .order_by(CollectorSnapshot.collected_at.desc())
+        .limit(100)
+    ).all()
+
+    return [
+        {
+            "collected_at": snap.collected_at,
+            "load_avg": snap.payload_jsonb.get("load_avg", []) if snap.payload_jsonb else [],
+            "memory_pct": snap.payload_jsonb.get("memory_pct") if snap.payload_jsonb else None,
+            "uptime_seconds": (
+                snap.payload_jsonb.get("uptime_seconds") if snap.payload_jsonb else None
+            ),
+        }
+        for snap in snapshots
     ]

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .routers import (
     agent,
+    collectors,
     dashboard,
     discovery,
     documents,
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
     fapp.include_router(governance.router, prefix=prefix)
     fapp.include_router(retrieval.router, prefix=prefix)
     fapp.include_router(agent.router, prefix=prefix)
+    fapp.include_router(collectors.router, prefix=prefix)
     fapp.include_router(dashboard.router, prefix=prefix)
     fapp.include_router(workers.router, prefix=prefix)
     fapp.include_router(results.router, prefix=prefix)

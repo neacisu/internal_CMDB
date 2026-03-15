@@ -1,0 +1,39 @@
+[Unit]
+Description=internalCMDB Collector Agent
+Documentation=https://github.com/internal/cmdb
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/internalcmdb/agent
+ExecStart=/usr/bin/python3 -m internalcmdb.collectors.agent
+Restart=always
+RestartSec=5
+WatchdogSec=30
+
+# Resource limits
+MemoryMax=64M
+MemoryHigh=48M
+CPUQuota=5%
+
+# Environment
+Environment=PYTHONPATH=/opt/internalcmdb/agent
+Environment=AGENT_CONFIG=/etc/internalcmdb/agent.toml
+Environment=AGENT_LOG_LEVEL=INFO
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/internalcmdb
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=internalcmdb-agent
+
+[Install]
+WantedBy=multi-user.target
