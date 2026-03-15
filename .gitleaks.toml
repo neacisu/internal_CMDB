@@ -1,0 +1,19 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exclude large binaries, archives, and non-source paths"
+paths = [
+    '''Research/''',
+    '''\.zip$''',
+    '''\.tar\.gz$''',
+    '''\.tar$''',
+    '''\.gz$''',
+    '''\.egg-info/''',
+    '''\.venv/''',
+    '''node_modules/''',
+    '''pnpm-lock\.yaml$''',
+    '''coverage\.xml$''',
+    '''__pycache__/''',
+    '''\.pyc$''',
+]

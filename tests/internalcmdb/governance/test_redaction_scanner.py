@@ -95,12 +95,14 @@ class TestPasswordPattern:
 
 class TestApiKeyPattern:
     def test_api_key_equals_triggers(self, scanner: RedactionScanner) -> None:
-        result = scanner.scan_fact_payload({"auth": "api_key=abcdef1234567890abcdef"})
+        fake_key = "api_key=abcdef1234567890abcdef"  # gitleaks:allow
+        result = scanner.scan_fact_payload({"auth": fake_key})
         assert result.safe is False
         assert "api_key_assignment" in result.matched_patterns
 
     def test_apikey_colon_triggers(self, scanner: RedactionScanner) -> None:
-        result = scanner.scan_fact_payload({"cfg": "apikey: LIVE_12345678901234567890"})
+        fake_key = "apikey: LIVE_12345678901234567890"  # gitleaks:allow
+        result = scanner.scan_fact_payload({"cfg": fake_key})
         assert result.safe is False
         assert "api_key_assignment" in result.matched_patterns
 
@@ -201,7 +203,7 @@ class TestSecretPattern:
         assert "secret_assignment" in result.matched_patterns
 
     def test_secret_key_equals_triggers(self, scanner: RedactionScanner) -> None:
-        result = scanner.scan_fact_payload({"env": "secret=abcdef1234567890"})
+        result = scanner.scan_fact_payload({"env": "secret=abcdef1234567890"})  # gitleaks:allow
         assert result.safe is False
 
 

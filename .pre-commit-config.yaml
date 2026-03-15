@@ -25,7 +25,7 @@ repos:
     hooks:
       - id: gitleaks-pre-push
         name: gitleaks pre-push
-        entry: bash -c 'command -v gitleaks >/dev/null 2>&1 || { echo "gitleaks is required in PATH for pre-push secret scanning."; exit 1; }; gitleaks dir . --no-banner --redact'
+        entry: bash -c 'command -v gitleaks >/dev/null 2>&1 || { echo "gitleaks is required in PATH for pre-push secret scanning."; exit 1; }; for d in src tests scripts subprojects; do [ -d "$d" ] && gitleaks dir "$d" --no-banner --redact --config .gitleaks.toml || exit 1; done'
         language: system
         pass_filenames: false
         stages: [pre-push]
