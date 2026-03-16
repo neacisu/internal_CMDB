@@ -14,6 +14,8 @@ services:
     container_name: internalcmdb-api
     restart: unless-stopped
     network_mode: host
+    mem_limit: 1g
+    memswap_limit: 1g
     env_file: /opt/stacks/internalcmdb/.env
     environment:
       - LOG_LEVEL=INFO
@@ -39,6 +41,8 @@ services:
     container_name: internalcmdb-worker
     restart: unless-stopped
     network_mode: host
+    mem_limit: 512m
+    memswap_limit: 512m
     env_file: /opt/stacks/internalcmdb/.env
     command: ["python3", "-m", "internalcmdb.workers.run"]
     depends_on:
@@ -55,6 +59,8 @@ services:
     container_name: internalcmdb-frontend
     restart: unless-stopped
     network_mode: host
+    mem_limit: 512m
+    memswap_limit: 512m
     environment:
       - NODE_ENV=production
       - PORT=3333
