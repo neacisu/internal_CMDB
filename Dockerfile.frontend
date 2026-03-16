@@ -17,6 +17,7 @@ COPY frontend/ .
 # Allow runtime API URL configuration
 ARG BACKEND_URL=http://127.0.0.1:4444
 ENV BACKEND_URL=${BACKEND_URL}
+ENV NEXT_BUILD_STANDALONE=1
 RUN pnpm run build
 
 FROM node:${NODE_VERSION}-alpine3.21 AS runtime
