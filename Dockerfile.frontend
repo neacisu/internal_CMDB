@@ -3,13 +3,13 @@
 
 ARG NODE_VERSION=25.8.1
 
-FROM node:${NODE_VERSION}-alpine3.21 AS deps
+FROM node:${NODE_VERSION}-alpine AS deps
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
-FROM node:${NODE_VERSION}-alpine3.21 AS builder
+FROM node:${NODE_VERSION}-alpine AS builder
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY --from=deps /app/node_modules ./node_modules
@@ -20,7 +20,7 @@ ENV BACKEND_URL=${BACKEND_URL}
 ENV NEXT_BUILD_STANDALONE=1
 RUN pnpm run build
 
-FROM node:${NODE_VERSION}-alpine3.21 AS runtime
+FROM node:${NODE_VERSION}-alpine AS runtime
 LABEL maintainer="Alex Neacsu <office@asmin.ro>"
 LABEL org.opencontainers.image.title="internalCMDB Frontend"
 WORKDIR /app
