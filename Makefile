@@ -2,7 +2,8 @@ PYTHON ?= python
 
 .PHONY: help init install lint format type test test-cov security audit check build clean run \
         api ui worker migrate-worker dev-up dev-down \
-        start stop restart status logs
+        start stop restart status logs \
+        deploy deploy-api deploy-frontend deploy-logs
 
 help:
 	@echo "Targets:"
@@ -32,6 +33,11 @@ help:
 	@echo "  restart       - Restart entire stack"
 	@echo "  status        - Show status of all services"
 	@echo "  logs          - Tail logs from all services"
+	@echo ""
+	@echo "  deploy        - Push branch + rebuild all images + restart stack on orchestrator"
+	@echo "  deploy-api    - Rebuild only API+worker image + restart (faster)"
+	@echo "  deploy-frontend - Rebuild only frontend image + restart"
+	@echo "  deploy-logs   - Tail live logs from all containers on orchestrator"
 
 init:
 	$(PYTHON) -m venv .venv
@@ -107,3 +113,32 @@ logs:
 
 clean:
 	rm -rf .venv .mypy_cache .ruff_cache .pytest_cache build dist *.egg-info coverage.xml .coverage
+
+# ── Orchestrator deploy ────────────────────────────────────────────────────────
+DEPLOY_DIR   = /opt/stacks/internalcmdb
+COMPOSE_FILE = $(DEPLOY_DIR)/deploy/orchestrator/docker-compose.internalcmdb.yml
+
+deploy:
+	git push origin work/internal-cmdb-bootstrap
+	ssh orchestrator 'cd $(DEPLOY_DIR) && git pull origin work/internal-cmdb-bootstrap'
+	ssh orchestrator 'cd $(DEPLOY_DIR) && DOCKER_BUILDKIT=1 docker build -f Dockerfile.api -t ghcr.io/alexneacsu/internalcmdb-api:latest .'
+	ssh orchestrator 'cd $(DEPLOY_DIR) && DOCKER_BUILDKIT=1 docker build -f Dockerfile.frontend -t ghcr.io/alexneacsu/internalcmdb-frontend:latest .'
+	ssh orchestrator 'docker compose -f $(COMPOSE_FILE) up -d'
+	@echo "Deploy complete → https://infraq.app"
+
+deploy-api:
+	git push origin work/internal-cmdb-bootstrap
+	ssh orchestrator 'cd $(DEPLOY_DIR) && git pull origin work/internal-cmdb-bootstrap'
+	ssh orchestrator 'cd $(DEPLOY_DIR) && DOCKER_BUILDKIT=1 docker build -f Dockerfile.api -t ghcr.io/alexneacsu/internalcmdb-api:latest .'
+	ssh orchestrator 'docker compose -f $(COMPOSE_FILE) up -d --no-deps internalcmdb-api internalcmdb-worker'
+	@echo "API+worker restarted → https://infraq.app/health"
+
+deploy-frontend:
+	git push origin work/internal-cmdb-bootstrap
+	ssh orchestrator 'cd $(DEPLOY_DIR) && git pull origin work/internal-cmdb-bootstrap'
+	ssh orchestrator 'cd $(DEPLOY_DIR) && DOCKER_BUILDKIT=1 docker build -f Dockerfile.frontend -t ghcr.io/alexneacsu/internalcmdb-frontend:latest .'
+	ssh orchestrator 'docker compose -f $(COMPOSE_FILE) up -d --no-deps internalcmdb-frontend'
+	@echo "Frontend restarted → https://infraq.app"
+
+deploy-logs:
+	ssh orchestrator 'docker compose -f $(COMPOSE_FILE) logs -f'
