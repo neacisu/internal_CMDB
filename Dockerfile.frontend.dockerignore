@@ -1,0 +1,60 @@
+## Build context for Dockerfile.frontend
+## This file is used instead of .dockerignore when building Dockerfile.frontend
+## (Docker BuildKit per-Dockerfile ignore files, supported since Docker 20.10)
+##
+## We need: frontend/  — so we do NOT exclude it here.
+## We exclude everything the frontend image doesn't need.
+
+# Version control
+.git/
+.gitignore
+
+# Python artifacts & source (not needed for frontend image)
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+src/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Dev tooling
+.stack/
+*.log
+
+# Secrets
+.env
+.env.*
+
+# Docs / design (large, not needed)
+docs/
+Research/
+
+# Subprojects
+subprojects/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Deploy artefacts
+deploy/
+
+# Scripts
+scripts/
