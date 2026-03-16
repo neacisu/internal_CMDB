@@ -27,7 +27,7 @@ help:
 	@echo "  dev-up        - Start local dev support services (Redis)"
 	@echo "  dev-down      - Stop local dev support services"
 	@echo ""
-	@echo "  start         - Start entire stack (Redis + API + worker + UI)"
+	@echo "  start         - Start entire stack (shared Redis check + API + worker + collector agent + UI)"
 	@echo "  stop          - Stop entire stack"
 	@echo "  restart       - Restart entire stack"
 	@echo "  status        - Show status of all services"

@@ -57,6 +57,9 @@ export interface FleetHealthSummary {
   offline: number;
   retired: number;
   total: number;
+  registered_agents: number;
+  expected_hosts: number;
+  unassigned_agents: number;
 }
 
 export interface Host {

@@ -1,7 +1,7 @@
 # internalCMDB — redis-shared TCP exposure via Traefik SNI routing
 #
 # Approach: TCP router on the existing `websecure` entrypoint (:443).
-# Traefik inspects the TLS ClientHello SNI header — routes `redis.orchestrator.neanelu.ro`
+# Traefik inspects the TLS ClientHello SNI header — routes `redis.infraq.app`
 # to the redis-shared container as plain TCP, while all existing HTTPS routers
 # continue unaffected (different SNI values).
 #

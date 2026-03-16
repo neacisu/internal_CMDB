@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from typing import Any, cast
 
 try:
     import tomllib
@@ -40,11 +39,11 @@ def main() -> None:
     agent_conf: dict[str, str] = {}
     raw = config.get("agent", {})
     if isinstance(raw, dict):
-        agent_conf = {str(k): str(v) for k, v in cast(dict[Any, Any], raw).items()}  # type: ignore[redundant-cast]
+        agent_conf = {str(k): str(v) for k, v in raw.items()}
 
     api_url = os.environ.get(
         "AGENT_API_URL",
-        str(agent_conf.get("api_url", "http://localhost:8100/api/v1/collectors")),
+        str(agent_conf.get("api_url", "http://localhost:4444/api/v1/collectors")),
     )
     host_code = os.environ.get(
         "AGENT_HOST_CODE",

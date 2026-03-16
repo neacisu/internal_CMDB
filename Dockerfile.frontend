@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+# ── internalCMDB Frontend — production image ──────────────────────────────────
+
+ARG NODE_VERSION=25.8.1
+
+FROM node:${NODE_VERSION}-alpine3.21 AS deps
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
+FROM node:${NODE_VERSION}-alpine3.21 AS builder
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY --from=deps /app/node_modules ./node_modules
+COPY frontend/ .
+# Allow runtime API URL configuration
+ARG BACKEND_URL=http://127.0.0.1:4444
+ENV BACKEND_URL=${BACKEND_URL}
+RUN pnpm run build
+
+FROM node:${NODE_VERSION}-alpine3.21 AS runtime
+LABEL maintainer="Alex Neacsu <office@asmin.ro>"
+LABEL org.opencontainers.image.title="internalCMDB Frontend"
+WORKDIR /app
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+
+USER node
+
+ENV NODE_ENV=production
+ENV PORT=3333
+ENV HOSTNAME=0.0.0.0
+EXPOSE 3333
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD ["node", "-e", "fetch('http://127.0.0.1:3333/').then((r)=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+CMD ["node", "server.js"]

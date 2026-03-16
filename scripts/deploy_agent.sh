@@ -7,7 +7,7 @@
 #
 # Examples:
 #   ./scripts/deploy_agent.sh hz.113
-#   ./scripts/deploy_agent.sh all https://cmdb.internal:8100/api/v1/collectors
+#   ./scripts/deploy_agent.sh all https://cmdb.internal:4444/api/v1/collectors
 
 set -euo pipefail
 
@@ -17,7 +17,7 @@ AGENT_SRC="$REPO_ROOT/src/internalcmdb"
 SYSTEMD_UNIT="$REPO_ROOT/deploy/agent/internalcmdb-agent.service"
 REMOTE_AGENT_DIR="/opt/internalcmdb/agent"
 REMOTE_CONFIG_DIR="/etc/internalcmdb"
-DEFAULT_API_URL="http://localhost:8100/api/v1/collectors"
+DEFAULT_API_URL="http://localhost:4444/api/v1/collectors"
 
 # All known hosts
 HOSTS=(

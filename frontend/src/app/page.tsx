@@ -167,7 +167,8 @@ export default function DashboardPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--fM)", fontSize: 11, color: "var(--tx4)" }}>
               {fleet && (
                 <span>
-                  {fleet.total} agent{fleet.total !== 1 ? "s" : ""} registered
+                  {fleet.registered_agents} / {fleet.expected_hosts || fleet.total} hosts covered
+                  {fleet.unassigned_agents > 0 ? ` • ${fleet.unassigned_agents} unassigned agent${fleet.unassigned_agents !== 1 ? "s" : ""}` : ""}
                 </span>
               )}
               <div className="countdown-pill" style={{ minWidth: "unset", padding: "3px 8px" }}>

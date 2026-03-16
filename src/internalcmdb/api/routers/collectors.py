@@ -11,8 +11,12 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.functions import count as sql_count
 
+from internalcmdb.collectors.fleet_health import (
+    build_fleet_state,
+    derive_agent_status,
+    resolve_host,
+)
 from internalcmdb.collectors.schedule_tiers import DEFAULT_AGENT_CONFIG
 from internalcmdb.models.collectors import (
     CollectorAgent,
@@ -20,7 +24,6 @@ from internalcmdb.models.collectors import (
     SnapshotDiff,
 )
 from internalcmdb.models.discovery import EvidenceArtifact
-from internalcmdb.models.registry import Host
 
 from ..config import get_settings
 from ..deps import get_db
@@ -80,33 +83,66 @@ def enroll_agent(
     db: Annotated[Session, Depends(get_db)],
 ) -> EnrollResponse:
     """Agent self-registers and receives an ID, schedule config, and auth token."""
-    # Resolve host_id from host_code if possible
-    host = db.execute(select(Host.host_id).where(Host.hostname == body.host_code)).first()
-    host_id = host[0] if host else None
+    host = resolve_host(db, body.host_code)
+    host_id = host.host_id if host else None
+    effective_host_code = host.host_code if host else body.host_code
+    agent_config = {
+        **DEFAULT_AGENT_CONFIG,
+        "capabilities": body.capabilities,
+    }
 
-    agent_id = uuid.uuid4()
-    agent = CollectorAgent(
-        agent_id=agent_id,
-        host_id=host_id,
-        host_code=body.host_code,
-        agent_version=body.agent_version,
-        agent_config_jsonb={
-            **DEFAULT_AGENT_CONFIG,
-            "capabilities": body.capabilities,
-        },
-        status="online",
-    )
-    db.add(agent)
+    existing_agents = db.scalars(
+        select(CollectorAgent)
+        .where(CollectorAgent.is_active.is_(True))
+        .order_by(CollectorAgent.enrolled_at.desc())
+    ).all()
+
+    matching_agents: list[CollectorAgent] = []
+    normalized_request_host = body.host_code.strip().lower()
+    for existing in existing_agents:
+        existing_host = existing.host_code.strip().lower()
+        if host_id is not None and existing.host_id == host_id:
+            matching_agents.append(existing)
+            continue
+        if existing_host == normalized_request_host:
+            matching_agents.append(existing)
+            continue
+        if effective_host_code.strip().lower() == existing_host:
+            matching_agents.append(existing)
+
+    agent: CollectorAgent
+    if matching_agents:
+        agent = matching_agents[0]
+        agent.host_id = host_id
+        agent.host_code = effective_host_code
+        agent.agent_version = body.agent_version
+        agent.agent_config_jsonb = agent_config
+        agent.is_active = True
+        agent.status = "online"
+        for duplicate in matching_agents[1:]:
+            duplicate.is_active = False
+            duplicate.status = "retired"
+    else:
+        agent = CollectorAgent(
+            agent_id=uuid.uuid4(),
+            host_id=host_id,
+            host_code=effective_host_code,
+            agent_version=body.agent_version,
+            agent_config_jsonb=agent_config,
+            status="online",
+        )
+        db.add(agent)
+
     db.commit()
 
     settings = get_settings()
-    token = _generate_agent_token(agent_id, settings.postgres_password)
+    token = _generate_agent_token(agent.agent_id, settings.postgres_password)
 
     tiers: dict[str, int] = DEFAULT_AGENT_CONFIG["tiers"]  # type: ignore[assignment]
     collectors: list[str] = DEFAULT_AGENT_CONFIG["enabled_collectors"]  # type: ignore[assignment]
 
     return EnrollResponse(
-        agent_id=agent_id,
+        agent_id=agent.agent_id,
         schedule_tiers=tiers,
         enabled_collectors=collectors,
         api_token=token,
@@ -125,7 +161,10 @@ def list_agents(
     if status:
         stmt = stmt.where(CollectorAgent.status == status)
     stmt = stmt.order_by(CollectorAgent.host_code)
-    return db.scalars(stmt).all()  # type: ignore[return-value]
+    agents = db.scalars(stmt).all()
+    for agent in agents:
+        agent.status = derive_agent_status(agent)
+    return agents  # type: ignore[return-value]
 
 
 @router.get("/agents/{agent_id}", response_model=AgentOut)
@@ -326,20 +365,24 @@ def heartbeat(
 
 @router.get("/health", response_model=FleetHealthSummary)
 def fleet_health(db: Annotated[Session, Depends(get_db)]) -> FleetHealthSummary:
-    """Aggregate health across all active agents."""
-    rows = db.execute(
-        select(CollectorAgent.status, sql_count(CollectorAgent.agent_id))
-        .where(CollectorAgent.is_active.is_(True))
-        .group_by(CollectorAgent.status)
-    ).all()
-    counts: dict[str, int] = {r[0]: r[1] for r in rows}
-    total = sum(counts.values())
+    """Aggregate live health across all known hosts in the registry."""
+    fleet_state = build_fleet_state(db)
+    counts = {"online": 0, "degraded": 0, "offline": 0, "retired": 0}
+
+    for host in fleet_state.hosts:
+        agent = fleet_state.agents_by_host_id.get(host.host_id)
+        status_name = derive_agent_status(agent) if agent else "offline"
+        counts[status_name] = counts.get(status_name, 0) + 1
+
     return FleetHealthSummary(
         online=counts.get("online", 0),
         degraded=counts.get("degraded", 0),
         offline=counts.get("offline", 0),
         retired=counts.get("retired", 0),
-        total=total,
+        total=len(fleet_state.hosts),
+        registered_agents=len(fleet_state.agents_by_host_id),
+        expected_hosts=len(fleet_state.hosts),
+        unassigned_agents=len(fleet_state.unassigned_agents),
     )
 
 
@@ -349,16 +392,23 @@ def host_health(
     db: Annotated[Session, Depends(get_db)],
 ) -> HostHealth:
     """Per-host live health from the latest heartbeat snapshot."""
-    agent = db.execute(
-        select(CollectorAgent)
-        .where(
-            CollectorAgent.host_code == host_code,
-            CollectorAgent.is_active.is_(True),
-        )
-        .limit(1)
-    ).scalar_one_or_none()
+    host = resolve_host(db, host_code)
+    if host is None:
+        raise HTTPException(status_code=404, detail="Host not found")
+
+    fleet_state = build_fleet_state(db)
+    agent = fleet_state.agents_by_host_id.get(host.host_id)
     if agent is None:
-        raise HTTPException(status_code=404, detail="No agent for host")
+        return HostHealth(
+            agent_id=None,
+            host_code=host.host_code,
+            status="offline",
+            agent_version=None,
+            last_heartbeat_at=None,
+            uptime_seconds=None,
+            load_avg=[],
+            memory_pct=None,
+        )
 
     # Fetch latest heartbeat snapshot
     latest_hb = db.execute(
@@ -375,8 +425,8 @@ def host_health(
 
     return HostHealth(
         agent_id=agent.agent_id,
-        host_code=agent.host_code,
-        status=agent.status,
+        host_code=host.host_code,
+        status=derive_agent_status(agent),
         agent_version=agent.agent_version,
         last_heartbeat_at=agent.last_heartbeat_at,
         uptime_seconds=payload.get("uptime_seconds") if payload else None,

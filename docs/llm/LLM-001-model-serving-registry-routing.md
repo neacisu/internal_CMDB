@@ -3,10 +3,10 @@ id: LLM-001
 title: internalCMDB — Model Serving Stack, Registry Contract, and Routing Rules (Wave-1)
 doc_class: policy_pack
 domain: llm-runtime
-version: "1.1"
+version: "1.2"
 status: approved
 created: 2026-03-08
-updated: 2026-03-14
+updated: 2026-03-16
 owner: platform_architecture_lead
 tags: [model-registry, routing, vllm, ollama, embedding, wave-1, m12-1]
 ---
@@ -58,12 +58,12 @@ Models with `status=candidate` must not receive production traffic.
 
 | Task Type | Model Class | Port | Fallback |
 | --- | --- | --- | --- |
-| complex_analysis | reasoning_32b | 10.0.1.13:8000 | Return error; no fallback in Wave-1 |
-| multi_step_reasoning | reasoning_32b | 10.0.1.13:8000 | Return error; no fallback in Wave-1 |
-| summarization | fast_14b | 10.0.1.13:8001 | reasoning_32b if fast_14b unavailable |
-| classification | fast_14b | 10.0.1.13:8001 | reasoning_32b if fast_14b unavailable |
-| extraction | fast_14b | 10.0.1.13:8001 | reasoning_32b if fast_14b unavailable |
-| embedding | embedding_8b | 10.0.1.62:11434 | HAProxy VIP 10.0.1.10:49003 |
+| complex_analysis | reasoning_32b | 10.0.1.13:8001 | Return error; no fallback in Wave-1 |
+| multi_step_reasoning | reasoning_32b | 10.0.1.13:8001 | Return error; no fallback in Wave-1 |
+| summarization | fast_14b | 10.0.1.13:8002 | reasoning_32b if fast_14b unavailable |
+| classification | fast_14b | 10.0.1.13:8002 | reasoning_32b if fast_14b unavailable |
+| extraction | fast_14b | 10.0.1.13:8002 | reasoning_32b if fast_14b unavailable |
+| embedding | embedding_8b | 10.0.1.62:8003 | HAProxy VIP 10.0.1.10:49003 |
 
 Routing decisions must be logged in agent_run records with the model_class selected.
 
@@ -94,5 +94,6 @@ A model may be deprecated only after:
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| 1.2 | 2026-03-16 | Corrected runtime port mappings to match production reality: reasoning_32b host bind is 10.0.1.13:8001, fast_14b host bind is 10.0.1.13:8002, and embedding_8b host bind is 10.0.1.62:8003 behind HAProxy VIP 10.0.1.10:49003. |
 | 1.1 | 2026-03-14 | Fixed model references to match production: reasoning_32b → Qwen/QwQ-32B-AWQ (65% VRAM, max_len 24576); renamed fast_9b → fast_14b (Qwen/Qwen2.5-14B-Instruct-AWQ, 28% VRAM, max_len 12288); added embedding_8b model class (Ollama + Qwen3-Embedding-8B-Q5_K_M on hz.62); added host column to model classes table; updated VRAM ceiling percentages. |
 | 1.0 | 2026-03-08 | Initial release — Wave-1 model registry contract, routing rules, retirement policy. |

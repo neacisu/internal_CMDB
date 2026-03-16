@@ -1,0 +1,72 @@
+# syntax=docker/dockerfile:1
+# ── internalCMDB API — production image ──────────────────────────────────────
+# Multi-stage build: builder installs deps into a venv, runtime copies it.
+
+ARG PYTHON_VERSION=3.14
+
+# ── Stage 1: builder ─────────────────────────────────────────────────────────
+FROM python:${PYTHON_VERSION}-slim AS builder
+
+WORKDIR /build
+
+# Install build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only what pip needs to resolve deps
+COPY pyproject.toml ./
+RUN pip install --upgrade pip && \
+    pip install --prefix=/install --no-cache-dir \
+        "fastapi>=0.115" \
+        "uvicorn[standard]>=0.34" \
+        "sqlalchemy>=2.0" \
+        "psycopg[binary]>=3.2" \
+        "alembic>=1.14" \
+        "pydantic-settings>=2.7" \
+        "python-dotenv>=1.0" \
+        "httpx>=0.28" \
+        "arq>=0.26" \
+        "deepdiff>=7.0" \
+        "pyyaml>=6.0" \
+        "redis>=5.2"
+
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM python:${PYTHON_VERSION}-slim AS runtime
+
+LABEL maintainer="Alex Neacsu <office@asmin.ro>"
+LABEL org.opencontainers.image.title="internalCMDB API"
+LABEL org.opencontainers.image.description="Enterprise infrastructure registry, discovery and governance API"
+
+# Install runtime system deps only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy application source
+COPY src/ src/
+
+# Non-root user
+RUN useradd -r -u 1001 -s /sbin/nologin cmdb && chown -R cmdb:cmdb /app
+USER cmdb
+
+ENV PYTHONPATH=/app/src
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 4444
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:4444/health', timeout=5)"
+
+CMD ["uvicorn", "internalcmdb.api.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "4444", \
+     "--workers", "2", \
+     "--proxy-headers", \
+     "--forwarded-allow-ips", "*"]

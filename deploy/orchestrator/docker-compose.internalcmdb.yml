@@ -1,0 +1,73 @@
+# internalCMDB — orchestrator production stack
+#
+# Deploy:
+#   docker compose -f deploy/orchestrator/docker-compose.internalcmdb.yml \
+#     --env-file /opt/stacks/internalcmdb/.env up -d
+#
+# Both the API and worker use network_mode: host so Traefik (also on host
+# network) can reach them at 127.0.0.1:4444 and the frontend can proxy
+# API requests to localhost:4444 without any Docker-network plumbing.
+
+services:
+  internalcmdb-api:
+    image: ghcr.io/alexneacsu/internalcmdb-api:latest
+    container_name: internalcmdb-api
+    restart: unless-stopped
+    network_mode: host
+    env_file: /opt/stacks/internalcmdb/.env
+    environment:
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=https://infraq.app,http://localhost:3333
+    volumes:
+      # Mount docs read-only so the /documents API can serve markdown files
+      - /opt/stacks/internalcmdb/docs:/app/docs:ro
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:4444/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  internalcmdb-worker:
+    image: ghcr.io/alexneacsu/internalcmdb-api:latest
+    container_name: internalcmdb-worker
+    restart: unless-stopped
+    network_mode: host
+    env_file: /opt/stacks/internalcmdb/.env
+    command: ["python3", "-m", "internalcmdb.workers.run"]
+    depends_on:
+      internalcmdb-api:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  internalcmdb-frontend:
+    image: ghcr.io/alexneacsu/internalcmdb-frontend:latest
+    container_name: internalcmdb-frontend
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - NODE_ENV=production
+      - PORT=3333
+      - HOSTNAME=0.0.0.0
+      - BACKEND_URL=http://127.0.0.1:4444
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3333/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -10,7 +10,8 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.functions import count
 
-from internalcmdb.models.collectors import CollectorAgent, CollectorSnapshot
+from internalcmdb.collectors.fleet_health import build_fleet_state, derive_agent_status
+from internalcmdb.models.collectors import CollectorSnapshot
 from internalcmdb.models.discovery import CollectionRun
 from internalcmdb.models.registry import (
     Cluster,
@@ -219,21 +220,20 @@ def fleet_health_dashboard(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict[str, object]]:
     """All agents with status, last heartbeat, staleness info."""
-    agents = db.scalars(
-        select(CollectorAgent)
-        .where(CollectorAgent.is_active.is_(True))
-        .order_by(CollectorAgent.host_code)
-    ).all()
+    fleet_state = build_fleet_state(db)
     result: list[dict[str, object]] = []
-    for agent in agents:
+    for host in fleet_state.hosts:
+        agent = fleet_state.agents_by_host_id.get(host.host_id)
         result.append(
             {
-                "agent_id": str(agent.agent_id),
-                "host_code": agent.host_code,
-                "status": agent.status,
-                "agent_version": agent.agent_version,
-                "last_heartbeat_at": agent.last_heartbeat_at,
-                "enrolled_at": agent.enrolled_at,
+                "agent_id": str(agent.agent_id) if agent else None,
+                "host_code": host.host_code,
+                "hostname": host.hostname,
+                "status": derive_agent_status(agent) if agent else "offline",
+                "agent_version": agent.agent_version if agent else None,
+                "last_heartbeat_at": agent.last_heartbeat_at if agent else None,
+                "enrolled_at": agent.enrolled_at if agent else None,
+                "has_agent": agent is not None,
             }
         )
     return result
@@ -244,18 +244,18 @@ def fleet_health_summary(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
     """Fleet health summary counts."""
-    rows = db.execute(
-        select(CollectorAgent.status, count(CollectorAgent.agent_id))
-        .where(CollectorAgent.is_active.is_(True))
-        .group_by(CollectorAgent.status)
-    ).all()
-    counts = {r[0]: r[1] for r in rows}
-    total = sum(counts.values())
+    fleet_state = build_fleet_state(db)
+    counts = {"online": 0, "degraded": 0, "offline": 0}
+    for host in fleet_state.hosts:
+        agent = fleet_state.agents_by_host_id.get(host.host_id)
+        status_name = derive_agent_status(agent) if agent else "offline"
+        counts[status_name] = counts.get(status_name, 0) + 1
+
     return {
         "online": counts.get("online", 0),
         "degraded": counts.get("degraded", 0),
         "offline": counts.get("offline", 0),
-        "total": total,
+        "total": len(fleet_state.hosts),
     }
 
 
@@ -265,14 +265,15 @@ def fleet_health_timeline(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict[str, object]]:
     """Heartbeat timeline for a specific host (for sparkline charts)."""
-    agent = db.execute(
-        select(CollectorAgent)
-        .where(
-            CollectorAgent.host_code == host_code,
-            CollectorAgent.is_active.is_(True),
-        )
-        .limit(1)
-    ).scalar_one_or_none()
+    fleet_state = build_fleet_state(db)
+    agent = next(
+        (
+            fleet_state.agents_by_host_id[host.host_id]
+            for host in fleet_state.hosts
+            if host.host_code == host_code and host.host_id in fleet_state.agents_by_host_id
+        ),
+        None,
+    )
 
     if agent is None:
         return []

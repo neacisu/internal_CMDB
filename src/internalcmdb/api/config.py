@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     # Application
     log_level: str = "INFO"
+    cors_origins: str = "http://localhost:3333,http://localhost:3000,http://127.0.0.1:3333"
 
     @property
     def database_url(self) -> str:

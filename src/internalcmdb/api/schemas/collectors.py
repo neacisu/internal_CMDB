@@ -129,13 +129,16 @@ class FleetHealthSummary(BaseModel):
     offline: int = 0
     retired: int = 0
     total: int = 0
+    registered_agents: int = 0
+    expected_hosts: int = 0
+    unassigned_agents: int = 0
 
 
 class HostHealth(BaseModel):
-    agent_id: uuid.UUID
+    agent_id: uuid.UUID | None = None
     host_code: str
     status: str
-    agent_version: str
+    agent_version: str | None = None
     last_heartbeat_at: str | None = None
     uptime_seconds: float | None = None
     load_avg: list[float] = []

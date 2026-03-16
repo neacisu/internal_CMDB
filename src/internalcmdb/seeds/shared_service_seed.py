@@ -462,7 +462,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "vllm",
         "shared-platform",
         "active",
-        "vLLM serving the Qwen QwQ-32B-AWQ reasoning model on port 8000. "
+        "vLLM serving the Qwen QwQ-32B-AWQ reasoning model on host port 8001. "
         "VRAM utilization: 65% of RTX 6000 Ada (≈31 GB). Max context: 24 576 tokens. "
         "Quantization: AWQ. Tensor parallel: 1. Enforce eager mode enabled. "
         "Task types: complex_analysis, multi_step_reasoning. "
@@ -470,7 +470,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         {
             "category": "ai_ml",
             "host_hint": "49.13.97.113 (hz.113)",
-            "port_hint": 8000,
+            "port_hint": 8001,
             "bind_address": "10.0.1.13",
             "container_name": "vllm-qwq-32b",
             "image": "vllm/vllm-openai:latest",
@@ -505,7 +505,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "vllm",
         "shared-platform",
         "active",
-        "vLLM serving the Qwen2.5-14B-Instruct-AWQ fast response model on port 8001. "
+        "vLLM serving the Qwen2.5-14B-Instruct-AWQ fast response model on host port 8002. "
         "VRAM utilization: 28% of RTX 6000 Ada (≈13 GB). Max context: 12 288 tokens. "
         "Quantization: AWQ. Tensor parallel: 1. "
         "Task types: summarization, classification, extraction. "
@@ -513,7 +513,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         {
             "category": "ai_ml",
             "host_hint": "49.13.97.113 (hz.113)",
-            "port_hint": 8001,
+            "port_hint": 8002,
             "bind_address": "10.0.1.13",
             "container_name": "vllm-qwen-14b",
             "image": "vllm/vllm-openai:latest",
@@ -550,13 +550,13 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "active",
         "Ollama serving Qwen3-Embedding-8B (Q5_K_M quantization, 5.1 GB VRAM, dim=4096). "
         "Host: hz.62 (10.0.1.62). GPU: NVIDIA GTX 1080 8 GB (CUDA 6.1 / Pascal). "
-        "Endpoint: 10.0.1.62:11434 → HAProxy VIP 10.0.1.10:49003. "
+        "Endpoint: 10.0.1.62:8003 → HAProxy VIP 10.0.1.10:49003. "
         "OpenAI-compatible: POST /v1/embeddings. "
         "Health-checked every 30 s via ollama list.",
         {
             "category": "ai_ml",
             "host_hint": "95.216.66.62 (hz.62)",
-            "port_hint": 11434,
+            "port_hint": 8003,
             "bind_address": "10.0.1.62",
             "container_name": "ollama-embed",
             "image": "ollama/ollama:latest",

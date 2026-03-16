@@ -1,0 +1,59 @@
+## Docker build context ignores
+# Version control
+.git/
+.gitignore
+
+# Python runtime artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Dev tooling
+.stack/
+*.log
+
+# Frontend (for API/worker builds)
+frontend/
+
+# Secrets
+.env
+.env.*
+
+# Docs (large, not needed in image)
+docs/
+Research/
+
+# Subprojects audit data
+subprojects/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Deploy artefacts
+deploy/
+
+# Scripts
+scripts/

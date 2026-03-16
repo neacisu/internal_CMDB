@@ -38,7 +38,7 @@ http:
           - main: "llm.neanelu.ro"
 
     # Qwen3-Embedding-8B Q5_K_M via Ollama pe hz.62
-    # Proxiat prin HAProxy VIP 10.0.1.10:49003 -> 10.0.1.62:11434
+    # Proxiat prin HAProxy VIP 10.0.1.10:49003 -> 10.0.1.62:8003
     # API: POST /v1/embeddings  (OpenAI-compatible)
     llm-embeddings:
       rule: "Host(`embeddings.neanelu.ro`)"
@@ -53,7 +53,7 @@ http:
           - main: "embeddings.neanelu.ro"
 
   services:
-    # Open WebUI pe hz.113, proxiat prin HAProxy VIP 10.0.1.10:49003
+    # Open WebUI pe hz.113, proxiat prin HAProxy VIP 10.0.1.10:49000
     # -> 10.0.1.13:3000 (container open-webui).
     # flushInterval: -1 pentru SSE/WebSocket streaming instant fara buffering.
     llm-webui-svc:

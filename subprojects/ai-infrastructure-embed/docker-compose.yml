@@ -1,6 +1,6 @@
 # hz.62 — Qwen3-Embedding-8B Q5_K_M via Ollama (import din Qwen official GGUF)
 # GPU: NVIDIA GTX 1080 8 GB (CUDA compute 6.1 / Pascal – suportat din Ollama 0.1+)
-# Endpoint: 10.0.1.62:11434  →  HAProxy VIP 10.0.1.10:49003
+# Endpoint: 10.0.1.62:8003  →  HAProxy VIP 10.0.1.10:49003
 #           OpenAI-compatible: POST /v1/embeddings
 # Model ref in API: "qwen3-embedding-8b-q5km"  (5.1 GB VRAM, dim=4096, Q5_K_M)
 #
@@ -23,7 +23,7 @@ services:
     restart: unless-stopped
     ipc: host
     ports:
-      - "10.0.1.62:11434:11434"
+      - "10.0.1.62:8003:11434"
     volumes:
       - /ai-infrastructure-embed/models:/root/.ollama
     environment:

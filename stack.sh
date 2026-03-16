@@ -2,7 +2,7 @@
 # stack.sh — start / stop / restart the entire internalCMDB application stack
 #
 # Usage:
-#   ./stack.sh start    — starts Redis, FastAPI, ARQ worker, Next.js UI
+#   ./stack.sh start    — starts FastAPI, ARQ worker, collector agent, Next.js UI
 #   ./stack.sh stop     — stops all services
 #   ./stack.sh restart  — stop then start
 #   ./stack.sh status   — show running state of each service
@@ -20,8 +20,10 @@ COMPOSE_FILE="$ROOT/docker-compose.dev.yml"
 REDIS_PORT="6379"
 
 API_HOST="0.0.0.0"
-API_PORT="8100"
+API_PORT="4444"
 UI_PORT="3333"
+AGENT_API_URL="${AGENT_API_URL:-http://127.0.0.1:${API_PORT}/api/v1/collectors}"
+AGENT_HOST_CODE="${AGENT_HOST_CODE:-$(hostname -s 2>/dev/null || hostname 2>/dev/null || printf 'dev-local')}"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
@@ -61,30 +63,68 @@ stop_pid() {
 # ── Redis: cluster instance at redis.infraq.app:443 (TLS) ─────────────────────
 verify_redis() {
   local url
+  local py
+  local safe_url
   url=$(grep -E '^REDIS_URL=' "$(dirname "$0")/.env" 2>/dev/null | cut -d= -f2-)
   url="${url:-$REDIS_URL}"
-  if python3 -c "
-import redis, sys
+
+  if [[ -z "${url:-}" ]]; then
+    error "REDIS_URL is not set (.env or environment)"
+    exit 1
+  fi
+
+  py="$VENV/bin/python"
+  if [[ ! -x "$py" ]]; then
+    error "Python virtual environment missing at $VENV — run 'make init' first"
+    exit 1
+  fi
+
+  safe_url=$(printf '%s' "$url" | sed -E 's#(rediss?://)[^@]+@#\1***@#')
+
+  if REDIS_CHECK_URL="$url" "$py" -c "
+import os
+import redis
+import sys
+
 try:
-    r = redis.from_url('${url}', socket_connect_timeout=5)
+    r = redis.from_url(os.environ['REDIS_CHECK_URL'], socket_connect_timeout=5)
     r.ping()
 except Exception as e:
     print(e, file=sys.stderr)
     sys.exit(1)
 " 2>/tmp/redis_check.err; then
-    success "Redis OK (${url%%@*}@...)"
+  success "Redis OK (${safe_url})"
   else
     error "Cannot reach Redis: $(cat /tmp/redis_check.err)"
     exit 1
   fi
 }
 
+redis_is_reachable() {
+  local url
+  local py
+
+  url=$(grep -E '^REDIS_URL=' "$(dirname "$0")/.env" 2>/dev/null | cut -d= -f2-)
+  url="${url:-$REDIS_URL}"
+  py="$VENV/bin/python"
+
+  [[ -n "${url:-}" && -x "$py" ]] || return 1
+
+  REDIS_CHECK_URL="$url" "$py" -c "
+import os
+import redis
+import sys
+
+try:
+    redis.from_url(os.environ['REDIS_CHECK_URL'], socket_connect_timeout=5).ping()
+except Exception:
+    sys.exit(1)
+" >/dev/null 2>&1
+}
+
 # ── Start ──────────────────────────────────────────────────────────────────────
 cmd_start() {
   info "=== Starting internalCMDB stack ==="
-
-  # 1. Redis — cluster instance (redis.infraq.app:443)
-  verify_redis
 
   # Activate venv
   if [[ ! -f "$VENV/bin/activate" ]]; then
@@ -93,6 +133,9 @@ cmd_start() {
   fi
   # shellcheck source=/dev/null
   source "$VENV/bin/activate"
+
+  # 1. Redis — cluster instance (redis.infraq.app:443)
+  verify_redis
 
   # 2. FastAPI
   local api_pid="$PID_DIR/api.pid"
@@ -132,7 +175,26 @@ cmd_start() {
     fi
   fi
 
-  # 4. Next.js UI
+  # 4. Collector agent
+  local agent_pid="$PID_DIR/agent.pid"
+  if pid_is_running "$agent_pid"; then
+    warn "Collector agent already running (PID $(cat "$agent_pid"))"
+  else
+    info "Starting collector agent for host '${AGENT_HOST_CODE}'..."
+    PYTHONPATH="$ROOT/src" AGENT_API_URL="$AGENT_API_URL" AGENT_HOST_CODE="$AGENT_HOST_CODE" \
+      python3 -m internalcmdb.collectors.agent \
+      > "$LOG_DIR/agent.log" 2>&1 &
+    echo $! > "$agent_pid"
+    sleep 2
+    if pid_is_running "$agent_pid"; then
+      success "Collector agent started (PID $(cat "$agent_pid"))"
+    else
+      error "Collector agent failed to start — check $LOG_DIR/agent.log"
+      exit 1
+    fi
+  fi
+
+  # 5. Next.js UI
   if [[ ! -d "$FRONTEND/node_modules" ]]; then
     info "Installing frontend dependencies..."
     (cd "$FRONTEND" && pnpm install --frozen-lockfile)
@@ -164,12 +226,38 @@ cmd_start() {
   echo "  Logs    → $LOG_DIR/"
 }
 
+# ── Port cleanup ──────────────────────────────────────────────────────────────
+kill_ports() {
+  for port in "$API_PORT" "$UI_PORT"; do
+    local pids
+    pids=$(lsof -ti TCP:"$port" 2>/dev/null || true)
+    if [[ -n "$pids" ]]; then
+      info "Killing stale process(es) on :${port} (PID ${pids})..."
+      echo "$pids" | tr ' ' '\n' | while read -r pid; do
+        kill -TERM "$pid" 2>/dev/null || true
+      done
+      sleep 1
+      # Force-kill anything still alive
+      pids=$(lsof -ti TCP:"$port" 2>/dev/null || true)
+      if [[ -n "$pids" ]]; then
+        echo "$pids" | tr ' ' '\n' | while read -r pid; do
+          kill -KILL "$pid" 2>/dev/null || true
+        done
+      fi
+      success "Port :${port} cleared"
+    fi
+  done
+}
+
 # ── Stop ───────────────────────────────────────────────────────────────────────
 cmd_stop() {
   info "=== Stopping internalCMDB stack ==="
   stop_pid "ui"
+  stop_pid "agent"
   stop_pid "worker"
   stop_pid "api"
+  # Kill anything still holding our ports (stale processes not tracked by pidfiles)
+  kill_ports
   # Clean up Next.js Turbopack lock so next start doesn't fail
   rm -f "$FRONTEND/.next/dev/lock"
   success "=== Stack stopped ==="
@@ -179,13 +267,15 @@ cmd_stop() {
 cmd_restart() {
   cmd_stop
   echo ""
+  # Extra port sweep before starting — catches processes started outside make
+  kill_ports
   cmd_start
 }
 
 # ── Status ─────────────────────────────────────────────────────────────────────
 cmd_status() {
   echo "=== internalCMDB stack status ==="
-  for svc in api worker ui; do
+  for svc in api worker agent ui; do
     local pidfile="$PID_DIR/${svc}.pid"
     if pid_is_running "$pidfile"; then
       printf "  %-10s  ● running  (PID %s)\n" "$svc" "$(cat "$pidfile")"
@@ -194,12 +284,10 @@ cmd_status() {
     fi
   done
   printf "  %-10s  " "redis"
-  if redis_is_running; then
-    local mode=""
-    [[ -f "$PID_DIR/redis.mode" ]] && mode=" ($(cat "$PID_DIR/redis.mode"))"
-    echo "● running on :$REDIS_PORT${mode}"
+  if redis_is_reachable; then
+    echo "● reachable via shared endpoint"
   else
-    echo "○ stopped"
+    echo "○ unreachable"
   fi
 }
 
@@ -210,7 +298,7 @@ cmd_logs() {
     exit 0
   fi
   info "Tailing logs — Ctrl-C to stop"
-  tail -f "$LOG_DIR"/api.log "$LOG_DIR"/worker.log "$LOG_DIR"/ui.log 2>/dev/null
+  tail -f "$LOG_DIR"/api.log "$LOG_DIR"/worker.log "$LOG_DIR"/agent.log "$LOG_DIR"/ui.log 2>/dev/null
 }
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
