@@ -1,0 +1,18 @@
+# internalCMDB Agent Configuration
+# Copy to /etc/internalcmdb/agent.toml and adjust values.
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "orchestrator"
+log_level = "INFO"
+verify_ssl = true
+
+# Path to a custom CA certificate bundle for self-signed Traefik certs.
+# Leave empty to use the system default CA store.
+# ca_bundle = "/etc/ssl/certs/internal-ca.pem"
+
+# Enrollment token (optional — used for initial registration)
+# enrollment_token = ""
+
+# Override enabled collectors (empty = server-decided)
+# enabled_collectors = ["heartbeat", "system_vitals", "docker_state"]

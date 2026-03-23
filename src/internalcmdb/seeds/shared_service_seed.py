@@ -45,6 +45,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 # category values used in metadata: "database" | "cache" | "proxy" |
 #   "observability" | "security" | "ai_ml" | "application"
 
+_HOST_ORCHESTRATOR = "77.42.76.185 (orchestrator)"
+_HOST_HZ_113 = "49.13.97.113 (hz.113)"
+
 _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
     # ── Database ──────────────────────────────────────────────────────────────
     (
@@ -59,7 +62,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Health-checked every 10 s via pg_isready.",
         {
             "category": "database",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 5433,
             "bind_address": "127.0.0.1",
             "container_name": "internalcmdb-postgres",
@@ -92,7 +95,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Planned for Wave-2 to reduce connection overhead under load.",
         {
             "category": "database",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 5432,
             "exposure": "loopback_only",
         },
@@ -110,7 +113,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Used by InternalCMDB worker queue (ARQ) and application caching.",
         {
             "category": "cache",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 6379,
             "bind_address": "10.0.0.2",
             "container_name": "redis-shared",
@@ -137,7 +140,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Cert resolver: Cloudflare DNS challenge (Let's Encrypt).",
         {
             "category": "proxy",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 443,
             "container_name": "traefik",
             "image": "traefik:v3",
@@ -168,7 +171,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Retention policy governed by OBS-002. Storage: local TSDB.",
         {
             "category": "observability",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 9090,
             "bind_address": "127.0.0.1",
             "container_name": "prometheus",
@@ -185,7 +188,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
                 "cadvisor-orchestrator:8080",
                 "postgres-exporter-internalcmdb:9187",
                 "pve-exporter-main:9221",
-                "internalcmdb-api:8000/metrics",
+                "internalcmdb-api:4444/metrics",
             ],
         },
     ),
@@ -200,7 +203,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Auth via OAuth2 Proxy → Zitadel OIDC. Dashboard pack: OBS-007.",
         {
             "category": "observability",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 3000,
             "bind_address": "127.0.0.1",
             "container_name": "grafana",
@@ -226,7 +229,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Retention policy in OBS-002. Query interface via Grafana.",
         {
             "category": "observability",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 3100,
             "bind_address": "127.0.0.1",
             "container_name": "loki",
@@ -256,7 +259,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Storage: local filesystem.",
         {
             "category": "observability",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 3200,
             "bind_address": "127.0.0.1",
             "container_name": "tempo",
@@ -278,7 +281,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "(metrics via remote_write). Ports: 4317 (gRPC), 4318 (HTTP).",
         {
             "category": "observability",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 4317,
             "bind_address": "127.0.0.1",
             "container_name": "otel-collector",
@@ -299,7 +302,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "CPU, memory, disk, and network metrics. Signal: SIG-M-010.",
         {
             "category": "observability",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 9100,
             "bind_address": "127.0.0.1",
             "container_name": "node-exporter",
@@ -321,7 +324,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Read-only bind to Docker socket.",
         {
             "category": "observability",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 8080,
             "bind_address": "127.0.0.1",
             "container_name": "cadvisor",
@@ -347,7 +350,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "and connection pool metrics. Connects to internalcmdb-postgres:5432.",
         {
             "category": "observability",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 9187,
             "bind_address": "127.0.0.1",
             "container_name": "postgres-exporter",
@@ -370,7 +373,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Connects to Proxmox API via token auth.",
         {
             "category": "observability",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 9221,
             "bind_address": "127.0.0.1",
             "container_name": "pve-exporter",
@@ -392,7 +395,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Unsealed via Shamir keys. Policy: policy-secrets-and-credentials.md.",
         {
             "category": "security",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 8200,
             "bind_address": "127.0.0.1",
             "container_name": "openbao",
@@ -420,7 +423,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Self-hosted with CockroachDB-embedded storage.",
         {
             "category": "security",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 8080,
             "container_name": "zitadel",
             "image": "ghcr.io/zitadel/zitadel:latest",
@@ -443,7 +446,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Upstream: Grafana on port 3000.",
         {
             "category": "security",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 4180,
             "bind_address": "127.0.0.1",
             "container_name": "oauth2-proxy",
@@ -462,14 +465,14 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "vllm",
         "shared-platform",
         "active",
-        "vLLM serving the Qwen QwQ-32B-AWQ reasoning model on host port 8001. "
+        "vLLM serving the Qwen/QwQ-32B-AWQ reasoning model on host port 8001. "
         "VRAM utilization: 65% of RTX 6000 Ada (≈31 GB). Max context: 24 576 tokens. "
         "Quantization: AWQ. Tensor parallel: 1. Enforce eager mode enabled. "
         "Task types: complex_analysis, multi_step_reasoning. "
         "GPU node: 10.0.1.13 (Hetzner bare-metal, Intel Xeon Gold 5412U, RTX 6000 Ada 48 GB).",
         {
             "category": "ai_ml",
-            "host_hint": "49.13.97.113 (hz.113)",
+            "host_hint": _HOST_HZ_113,
             "port_hint": 8001,
             "bind_address": "10.0.1.13",
             "container_name": "vllm-qwq-32b",
@@ -505,14 +508,14 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "vllm",
         "shared-platform",
         "active",
-        "vLLM serving the Qwen2.5-14B-Instruct-AWQ fast response model on host port 8002. "
+        "vLLM serving the Qwen/Qwen2.5-14B-Instruct-AWQ fast response model on host port 8002. "
         "VRAM utilization: 28% of RTX 6000 Ada (≈13 GB). Max context: 12 288 tokens. "
         "Quantization: AWQ. Tensor parallel: 1. "
         "Task types: summarization, classification, extraction. "
         "Falls back to reasoning-32b if unavailable.",
         {
             "category": "ai_ml",
-            "host_hint": "49.13.97.113 (hz.113)",
+            "host_hint": _HOST_HZ_113,
             "port_hint": 8002,
             "bind_address": "10.0.1.13",
             "container_name": "vllm-qwen-14b",
@@ -611,7 +614,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Auth via Zitadel OIDC. Internal port: 8080.",
         {
             "category": "ai_ml",
-            "host_hint": "49.13.97.113 (hz.113)",
+            "host_hint": _HOST_HZ_113,
             "port_hint": 3000,
             "bind_address": "10.0.1.13",
             "container_name": "open-webui",
@@ -642,8 +645,8 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Connects to PostgreSQL (port 5433) and Redis (ARQ queue).",
         {
             "category": "application",
-            "host_hint": "77.42.76.185 (orchestrator)",
-            "port_hint": 8000,
+            "host_hint": _HOST_ORCHESTRATOR,
+            "port_hint": 4444,
             "bind_address": "127.0.0.1",
             "exposure": "traefik_https",
             "stack": "FastAPI + SQLAlchemy + PostgreSQL + Redis",
@@ -667,7 +670,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Communicates with the API via Redis job queue (ARQ).",
         {
             "category": "application",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "exposure": "not_exposed",
             "stack": "ARQ + Redis + Python",
             "runtime": "arq worker",
@@ -686,7 +689,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Dev: port 3333. Production: behind Traefik HTTPS.",
         {
             "category": "application",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "port_hint": 3333,
             "bind_address": "127.0.0.1",
             "exposure": "traefik_https",
@@ -706,7 +709,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
         "Configurable via the Workers > Scheduler UI.",
         {
             "category": "application",
-            "host_hint": "77.42.76.185 (orchestrator)",
+            "host_hint": _HOST_ORCHESTRATOR,
             "exposure": "not_exposed",
             "stack": "ARQ cron + PostgreSQL worker.worker_schedule",
             "runtime": "arq cron",

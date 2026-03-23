@@ -31,7 +31,7 @@ with e.connect() as c:
 
     print("\n--- AI/ML detailed ---")
     AI_CODES = (
-        "'vllm-fast-9b','vllm-fast-14b','vllm-reasoning-32b','ollama-embed','open-webui-main'"
+        "'vllm-fast-14b','vllm-reasoning-32b','ollama-embed','open-webui-main'"
     )
     ai = c.execute(
         sa.text(

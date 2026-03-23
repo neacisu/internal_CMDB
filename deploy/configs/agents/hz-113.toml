@@ -1,0 +1,31 @@
+# Agent config: hz.113 (GPU full profile — vLLM reasoning + fast)
+# Role: Primary GPU inference node, QwQ-32B + Qwen2.5-14B
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "hz.113"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "docker_state",
+    "container_resources",
+    "gpu_state",
+    "vllm_metrics",
+    "llm_endpoint_health",
+    "service_health",
+    "network_state",
+    "network_latency",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "certificate_state",
+    "security_posture",
+    "full_hardware",
+    "full_audit",
+]

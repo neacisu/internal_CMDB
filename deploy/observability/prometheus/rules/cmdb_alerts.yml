@@ -1,0 +1,29 @@
+groups:
+  - name: cmdb_alerts
+    rules:
+      - alert: HITLQueueOverflow
+        expr: internalcmdb_hitl_pending_count > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HITL queue overflow"
+          description: "Human-in-the-loop pending queue has {{ $value }} items (threshold: 20) for more than 5 minutes."
+
+      - alert: CollectorLag
+        expr: time() - internalcmdb_collector_last_ingest_timestamp > 120
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Collector ingest lag on {{ $labels.collector }}"
+          description: "Collector {{ $labels.collector }} has not ingested data for {{ $value | printf \"%.0f\" }}s (threshold: 120s)."
+
+      - alert: AgentOffline
+        expr: internalcmdb_agent_status{status="offline"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CMDB agent offline: {{ $labels.agent }}"
+          description: "Agent {{ $labels.agent }} on {{ $labels.instance }} has been offline for more than 2 minutes."

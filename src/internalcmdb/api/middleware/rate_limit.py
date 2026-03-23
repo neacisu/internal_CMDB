@@ -1,0 +1,108 @@
+"""internalCMDB — Rate Limiting Middleware (Phase 16, F16.3).
+
+Uses slowapi to enforce per-endpoint rate limits keyed by agent ID or
+client IP.  When Redis is reachable the limiter shares counters across
+workers; otherwise it falls back to in-memory storage with a warning.
+
+Registration::
+
+    from internalcmdb.api.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+from typing import Any
+
+from fastapi import Request, Response
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+
+logger = logging.getLogger(__name__)
+
+_EXEMPT_PATHS = frozenset({
+    "/health",
+    "/metrics",
+    "/api/docs",
+    "/api/redoc",
+    "/api/openapi.json",
+})
+
+
+def _key_func(request: Request) -> str:
+    """Extract rate-limit key: prefer X-Agent-ID, then X-Forwarded-For, then client IP."""
+    if request.url.path in _EXEMPT_PATHS:
+        return "exempt"
+    agent_id = request.headers.get("x-agent-id")
+    if agent_id:
+        return f"agent:{agent_id}"
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "anonymous"
+
+
+def _build_storage_uri() -> str | None:
+    """Resolve a Redis URI for shared rate-limit counters across workers.
+
+    Falls back to in-memory storage when REDIS_URL is unset or when the
+    URL scheme is not supported by limits (e.g. ``rediss://`` with
+    client-cert auth is fine, but totally custom schemes are not).
+    """
+    redis_url = os.getenv("REDIS_URL", "")
+    if not redis_url:
+        logger.warning(
+            "REDIS_URL not set — rate-limit counters are per-worker (in-memory). "
+            "Set REDIS_URL for shared counters in multi-worker deployments."
+        )
+        return None
+    if not re.match(r"^rediss?://", redis_url):
+        logger.warning("REDIS_URL scheme unsupported by rate limiter; using in-memory storage")
+        return None
+    return redis_url
+
+
+_storage_uri = _build_storage_uri()
+
+limiter = Limiter(
+    key_func=_key_func,
+    storage_uri=_storage_uri,  # type: ignore[arg-type]
+    default_limits=["200/minute"],
+)
+
+RATE_LIMITS: dict[str, str] = {
+    "/api/v1/collectors/ingest": "60/minute",
+    "/api/v1/cognitive/query": "10/minute",
+    "/api/v1/hitl/bulk-decide": "5/minute",
+}
+
+
+def rate_limit_exceeded_handler(_request: Request, exc: RateLimitExceeded) -> Response:
+    """Return 429 with Retry-After header derived from the limit window."""
+    retry_match = re.search(r"(\d+) per (\d+) (\w+)", str(exc.detail))
+    if retry_match:
+        window_seconds = {
+            "second": 1, "minute": 60, "hour": 3600, "day": 86400,
+        }.get(retry_match.group(3), 60)
+        retry_after = str(int(retry_match.group(2)) * window_seconds)
+    else:
+        retry_after = "60"
+
+    logger.warning("Rate limit exceeded: %s", exc.detail)
+    return Response(
+        content=f'{{"detail": "Rate limit exceeded: {exc.detail}"}}',
+        status_code=429,
+        media_type="application/json",
+        headers={"Retry-After": retry_after},
+    )
+
+
+def get_rate_limit_decorators() -> dict[str, Any]:
+    """Return a mapping of path → limiter.limit decorator for router-level use."""
+    return {path: limiter.limit(limit) for path, limit in RATE_LIMITS.items()}

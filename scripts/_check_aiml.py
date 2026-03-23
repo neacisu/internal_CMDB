@@ -33,7 +33,6 @@ with e.connect() as c:
     codes = [
         "vllm-reasoning-32b",
         "vllm-fast-14b",
-        "vllm-fast-9b",
         "ollama-embed",
         "open-webui-main",
     ]

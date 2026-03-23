@@ -54,7 +54,7 @@ internalCMDB follows a **fail-closed** policy for all security and governance su
 | Step | Outcome |
 | --- | --- |
 | vLLM primary container stopped | complex_analysis + multi_step_reasoning requests fail with LLM-ERR-002 |
-| fast_9b routing for summarization | Unaffected; continues on port 8001 |
+| fast_14b routing for summarization | Unaffected; continues on port 8002 |
 | Agent run record created for failed run | YES — failure_reason=LLM-ERR-002 recorded |
 | No silent fallback to external API | CONFIRMED |
 

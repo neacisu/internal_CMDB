@@ -1,0 +1,26 @@
+# ============================================================================
+# Alertmanager — route all alerts to InternalCMDB EventBus
+# ============================================================================
+
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: internalcmdb-eventbus
+
+receivers:
+  - name: internalcmdb-eventbus
+    webhook_configs:
+      - url: "http://127.0.0.1:4444/api/v1/events/alert"
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = warning
+    equal: ["alertname", "instance"]

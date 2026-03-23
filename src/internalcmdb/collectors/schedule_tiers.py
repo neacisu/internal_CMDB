@@ -34,22 +34,22 @@ TIERS: dict[str, ScheduleTier] = {
         ScheduleTier(
             code="15s",
             interval_seconds=15,
-            collectors=["docker_state"],
+            collectors=["docker_state", "container_resources"],
         ),
         ScheduleTier(
             code="30s",
             interval_seconds=30,
-            collectors=["gpu_state"],
+            collectors=["gpu_state", "vllm_metrics", "llm_endpoint_health"],
         ),
         ScheduleTier(
             code="1min",
             interval_seconds=60,
-            collectors=["service_health"],
+            collectors=["service_health", "network_latency"],
         ),
         ScheduleTier(
             code="5min",
             interval_seconds=300,
-            collectors=["network_state", "disk_state"],
+            collectors=["network_state", "disk_state", "journal_errors"],
         ),
         ScheduleTier(
             code="30min",
@@ -59,7 +59,7 @@ TIERS: dict[str, ScheduleTier] = {
         ScheduleTier(
             code="1h",
             interval_seconds=3600,
-            collectors=["trust_surface_lite"],
+            collectors=["trust_surface_lite", "certificate_state"],
         ),
         ScheduleTier(
             code="3h",

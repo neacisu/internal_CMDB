@@ -17,7 +17,7 @@ AGENT_SRC="$REPO_ROOT/src/internalcmdb"
 SYSTEMD_UNIT="$REPO_ROOT/deploy/agent/internalcmdb-agent.service"
 REMOTE_AGENT_DIR="/opt/internalcmdb/agent"
 REMOTE_CONFIG_DIR="/etc/internalcmdb"
-DEFAULT_API_URL="http://localhost:4444/api/v1/collectors"
+DEFAULT_API_URL="https://infraq.app/api/v1/collectors"
 
 # All known hosts
 HOSTS=(
@@ -50,12 +50,19 @@ deploy_to_host() {
     # Copy __init__.py for package structure
     ssh "$host_code" "touch $REMOTE_AGENT_DIR/internalcmdb/__init__.py"
 
+    # Validate URL scheme
+    if [[ "$api_url" != https://* ]]; then
+        echo "WARNING: api_url '$api_url' is not HTTPS — agents should use TLS in production"
+    fi
+
     # Generate agent config
     ssh "$host_code" "cat > $REMOTE_CONFIG_DIR/agent.toml << TOML
 [agent]
 api_url = \"$api_url\"
 host_code = \"$host_code\"
 log_level = \"INFO\"
+verify_ssl = true
+# ca_bundle = \"\"  # Set to CA cert path for self-signed Traefik certs
 TOML"
 
     # Install systemd unit

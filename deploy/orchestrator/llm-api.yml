@@ -1,0 +1,297 @@
+# ============================================================================
+# LLM API Gateway — path-based routes on infraq.app
+# ============================================================================
+# Exposes all self-hosted LLM models and guardrails as API endpoints
+# under the unified infraq.app domain.
+#
+# Model endpoints (OpenAI-compatible):
+#   https://infraq.app/llm/v1/reasoning/*  →  vLLM QwQ-32B-AWQ (complex reasoning)
+#   https://infraq.app/llm/v1/fast/*       →  vLLM Qwen2.5-14B-AWQ (fast tasks)
+#   https://infraq.app/llm/v1/embeddings/* →  Ollama Qwen3-Embedding-8B (embeddings)
+#
+# Guardrails endpoint (LLM Guard API):
+#   https://infraq.app/llm/v1/guard/*      →  LLM Guard (input/output scanning)
+#
+# Usage from any environment:
+#   base_url = "https://infraq.app/llm/v1/reasoning"   (or /fast)
+#
+#   OpenAI-compatible (routed via addPrefix /v1):
+#     POST {base_url}/chat/completions            →  /v1/chat/completions
+#     POST {base_url}/completions                 →  /v1/completions
+#     POST {base_url}/chat/completions/render     →  /v1/chat/completions/render
+#     POST {base_url}/completions/render          →  /v1/completions/render
+#     GET  {base_url}/models                      →  /v1/models
+#
+#   Anthropic Messages API:
+#     POST {base_url}/messages                    →  /v1/messages
+#
+#   OpenAI Responses API:
+#     POST {base_url}/responses                   →  /v1/responses
+#     GET  {base_url}/responses/{id}              →  /v1/responses/{id}
+#     POST {base_url}/responses/{id}/cancel       →  /v1/responses/{id}/cancel
+#
+#   vLLM root-level (routed WITHOUT addPrefix /v1):
+#     POST {base_url}/tokenize                    →  /tokenize
+#     POST {base_url}/detokenize                  →  /detokenize
+#     GET  {base_url}/ping                        →  /ping
+#     GET  {base_url}/health                      →  /health
+#     GET  {base_url}/version                     →  /version
+#     GET  {base_url}/load                        →  /load
+#     GET  {base_url}/openapi.json                →  /openapi.json
+#
+#   Embeddings:
+#     embed_url = "https://infraq.app/llm/v1/embeddings"
+#     POST {embed_url}/embeddings                 →  /v1/embeddings  (OpenAI-compat)
+#     GET  {embed_url}/models                     →  /v1/models
+#     POST {embed_url}/api/embed                  →  /api/embed      (Ollama native)
+#     GET  {embed_url}/api/tags                   →  /api/tags
+#     GET  {embed_url}/api/version                →  /api/version
+#     GET  {embed_url}/api/ps                     →  /api/ps
+#
+#   Guardrails:
+#     guard_url = "https://infraq.app/llm/v1/guard"
+#     POST {guard_url}/analyze/prompt             →  /analyze/prompt  (input scan)
+#     POST {guard_url}/analyze/output             →  /analyze/output  (output scan)
+#     POST {guard_url}/scan/prompt                →  /scan/prompt     (alt input scan)
+#     POST {guard_url}/scan/output                →  /scan/output     (alt output scan)
+#     GET  {guard_url}/healthz                    →  /healthz
+#     GET  {guard_url}/readyz                     →  /readyz
+#
+# Path rewriting strategy:
+#   OpenAI-compat:  strip prefix → add /v1   (/chat/completions → /v1/chat/completions)
+#   Root-level:     strip prefix only         (/tokenize → /tokenize)
+#   Guard:          strip prefix only         (/analyze/prompt → /analyze/prompt)
+#   Ollama native:  strip prefix only         (/api/embed → /api/embed)
+#
+# Deploy:
+#   scp deploy/orchestrator/llm-api.yml orchestrator:/opt/traefik/dynamic/llm-api.yml
+#   (Traefik watches /etc/traefik/dynamic/ — auto-reload, zero downtime)
+# ============================================================================
+
+http:
+  middlewares:
+    llm-api-strip-reasoning:
+      stripPrefix:
+        prefixes:
+          - "/llm/v1/reasoning"
+        forceSlash: false
+
+    llm-api-strip-fast:
+      stripPrefix:
+        prefixes:
+          - "/llm/v1/fast"
+        forceSlash: false
+
+    llm-api-strip-embeddings:
+      stripPrefix:
+        prefixes:
+          - "/llm/v1/embeddings"
+        forceSlash: false
+
+    llm-api-strip-guard:
+      stripPrefix:
+        prefixes:
+          - "/llm/v1/guard"
+        forceSlash: false
+
+    llm-api-add-v1:
+      addPrefix:
+        prefix: "/v1"
+
+    llm-api-rate-limit:
+      rateLimit:
+        average: 60
+        burst: 120
+
+    llm-api-guard-rate-limit:
+      rateLimit:
+        average: 30
+        burst: 60
+
+    chain-llm-api-reasoning:
+      chain:
+        middlewares:
+          - security-headers
+          - llm-api-rate-limit
+          - llm-api-strip-reasoning
+          - llm-api-add-v1
+
+    chain-llm-api-fast:
+      chain:
+        middlewares:
+          - security-headers
+          - llm-api-rate-limit
+          - llm-api-strip-fast
+          - llm-api-add-v1
+
+    chain-llm-api-embeddings:
+      chain:
+        middlewares:
+          - security-headers
+          - llm-api-rate-limit
+          - llm-api-strip-embeddings
+          - llm-api-add-v1
+
+    chain-llm-api-guard:
+      chain:
+        middlewares:
+          - security-headers
+          - llm-api-guard-rate-limit
+          - llm-api-strip-guard
+
+    # Root-level vLLM endpoints (tokenize, detokenize, ping) — NO /v1 prefix
+    chain-llm-api-reasoning-root:
+      chain:
+        middlewares:
+          - security-headers
+          - llm-api-rate-limit
+          - llm-api-strip-reasoning
+
+    chain-llm-api-fast-root:
+      chain:
+        middlewares:
+          - security-headers
+          - llm-api-rate-limit
+          - llm-api-strip-fast
+
+    # Root-level Ollama endpoints (native API) — NO /v1 prefix
+    chain-llm-api-embeddings-root:
+      chain:
+        middlewares:
+          - security-headers
+          - llm-api-rate-limit
+          - llm-api-strip-embeddings
+
+  routers:
+    # ── vLLM QwQ-32B-AWQ (Reasoning) ──────────────────────────────────────
+    llm-api-reasoning:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/llm/v1/reasoning`)"
+      priority: 250
+      service: llm-api-reasoning-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-llm-api-reasoning
+      tls:
+        certResolver: cloudflare
+
+    # ── vLLM Qwen2.5-14B-Instruct-AWQ (Fast) ─────────────────────────────
+    llm-api-fast:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/llm/v1/fast`)"
+      priority: 250
+      service: llm-api-fast-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-llm-api-fast
+      tls:
+        certResolver: cloudflare
+
+    # ── Ollama Qwen3-Embedding-8B-Q5_K_M (Embeddings) ────────────────────
+    llm-api-embeddings:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/llm/v1/embeddings`)"
+      priority: 250
+      service: llm-api-embeddings-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-llm-api-embeddings
+      tls:
+        certResolver: cloudflare
+
+    # ── vLLM Root-level endpoints (tokenize/detokenize/ping) ────────────
+    # Higher priority (260) to match before the general PathPrefix routes (250)
+    llm-api-reasoning-root:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && (PathPrefix(`/llm/v1/reasoning/tokenize`) || PathPrefix(`/llm/v1/reasoning/detokenize`) || PathPrefix(`/llm/v1/reasoning/ping`) || PathPrefix(`/llm/v1/reasoning/health`) || PathPrefix(`/llm/v1/reasoning/version`) || PathPrefix(`/llm/v1/reasoning/load`) || PathPrefix(`/llm/v1/reasoning/openapi.json`))"
+      priority: 260
+      service: llm-api-reasoning-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-llm-api-reasoning-root
+      tls:
+        certResolver: cloudflare
+
+    llm-api-fast-root:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && (PathPrefix(`/llm/v1/fast/tokenize`) || PathPrefix(`/llm/v1/fast/detokenize`) || PathPrefix(`/llm/v1/fast/ping`) || PathPrefix(`/llm/v1/fast/health`) || PathPrefix(`/llm/v1/fast/version`) || PathPrefix(`/llm/v1/fast/load`) || PathPrefix(`/llm/v1/fast/openapi.json`))"
+      priority: 260
+      service: llm-api-fast-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-llm-api-fast-root
+      tls:
+        certResolver: cloudflare
+
+    # ── Ollama native API endpoints ──────────────────────────────────────
+    llm-api-embeddings-root:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && (PathPrefix(`/llm/v1/embeddings/api/`) || PathPrefix(`/llm/v1/embeddings/ping`))"
+      priority: 260
+      service: llm-api-embeddings-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-llm-api-embeddings-root
+      tls:
+        certResolver: cloudflare
+
+    # ── LLM Guard (Input/Output Guardrails) ───────────────────────────────
+    llm-api-guard:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/llm/v1/guard`)"
+      priority: 250
+      service: llm-api-guard-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-llm-api-guard
+      tls:
+        certResolver: cloudflare
+
+  services:
+    # vLLM primary — SSE streaming, flush instant
+    llm-api-reasoning-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.10:49001"
+        healthCheck:
+          path: "/health"
+          interval: "30s"
+          timeout: "10s"
+        responseForwarding:
+          flushInterval: "-1"
+
+    # vLLM secondary — SSE streaming, flush instant
+    llm-api-fast-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.10:49002"
+        healthCheck:
+          path: "/health"
+          interval: "30s"
+          timeout: "10s"
+        responseForwarding:
+          flushInterval: "-1"
+
+    # Ollama embedding — synchronous REST, standard flush
+    llm-api-embeddings-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.10:49003"
+        healthCheck:
+          path: "/"
+          interval: "30s"
+          timeout: "10s"
+        responseForwarding:
+          flushInterval: "100ms"
+
+    # LLM Guard — synchronous REST on orchestrator localhost
+    llm-api-guard-svc:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8000"
+        healthCheck:
+          path: "/healthz"
+          interval: "30s"
+          timeout: "10s"
+        responseForwarding:
+          flushInterval: "100ms"

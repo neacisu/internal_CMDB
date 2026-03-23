@@ -14,17 +14,29 @@ authors = [
 license = { text = "Proprietary" }
 dependencies = [
   "alembic>=1.14",
+  "asyncpg>=0.30",
   "arq>=0.26",
+  "croniter>=6.0",
   "deepdiff>=7.0",
   "fastapi>=0.115",
   "httpx>=0.28",
   "psycopg[binary]>=3.2",
+  "prometheus-client>=0.21",
   "pydantic-settings>=2.7",
   "python-dotenv>=1.0",
   "pyyaml>=6.0",
-  "redis>=5.2",
+  "redis[hiredis]>=5.2",
   "sqlalchemy>=2.0",
+  "networkx>=3.4",
   "uvicorn[standard]>=0.34",
+  "opentelemetry-api>=1.28",
+  "opentelemetry-sdk>=1.28",
+  "opentelemetry-exporter-otlp>=1.28",
+  "opentelemetry-instrumentation-fastapi>=0.49b",
+  "opentelemetry-instrumentation-httpx>=0.49b",
+  "opentelemetry-instrumentation-sqlalchemy>=0.49b",
+  "slowapi>=0.1.9",
+  "hvac>=2.3",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +50,10 @@ dev = [
   "pytest-cov>=7.0.0",
   "ruff>=0.12.12",
   "types-PyYAML>=6.0",
-  "types-setuptools>=80.9.0.20250822"
+  "types-setuptools>=80.9.0.20250822",
+  "locust>=2.29",
+  "pytest-asyncio>=0.24",
+  "aioresponses>=0.7",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -49,6 +64,8 @@ minversion = "8.0"
 addopts = "-ra --strict-markers --strict-config --cov=src/proiecteit --cov=src/internalcmdb --cov-report=term-missing --cov-report=xml --cov-fail-under=90"
 testpaths = ["tests"]
 pythonpath = ["src"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 branch = true

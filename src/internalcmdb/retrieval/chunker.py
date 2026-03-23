@@ -41,10 +41,20 @@ from dataclasses import dataclass, field
 
 _DEFAULT_MAX_TOKENS: int = 512
 _DEFAULT_OVERLAP_TOKENS: int = 64
+_DEFAULT_MIN_TOKENS: int = 20
 _CHARS_PER_TOKEN: int = 4  # conservative BPE estimate for mixed prose/YAML
 
-# Markdown heading pattern — captures heading level and text.
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)", re.MULTILINE)
+
+_SUPPORTED_FORMATS: frozenset[str] = frozenset({
+    ".md", ".markdown", ".txt", ".rst", ".yaml", ".yml", ".json", ".toml",
+    ".cfg", ".ini", ".csv", ".log", ".py", ".sh", ".sql",
+})
+
+_BINARY_SIGNATURE_BYTES = (
+    b"%PDF", b"\x89PNG", b"\xff\xd8\xff", b"PK\x03\x04",
+    b"\x1f\x8b", b"\x00\x00\x01\x00", b"GIF8",
+)
 
 
 @dataclass(frozen=True)
@@ -61,7 +71,8 @@ class ChunkerConfig:
 
     max_tokens: int = _DEFAULT_MAX_TOKENS
     overlap_tokens: int = _DEFAULT_OVERLAP_TOKENS
-    embedding_model_code: str = "text-embedding-3-small"
+    min_tokens: int = _DEFAULT_MIN_TOKENS
+    embedding_model_code: str = "qwen3-embedding-8b-q5km"
 
 
 # ---------------------------------------------------------------------------
@@ -116,17 +127,70 @@ class Chunker:
     # Public API
     # ------------------------------------------------------------------
 
-    def chunk(self, text: str) -> list[TextChunk]:
+    def chunk(self, text: str, *, source_path: str | None = None) -> list[TextChunk]:
         """Split *text* into a list of :class:`TextChunk` instances.
 
+        Args:
+            text: Raw document content.
+            source_path: Optional file path for format validation.
+
         Returns an empty list for blank/whitespace-only input.
+
+        Raises:
+            ValueError: If *source_path* has an unsupported extension or binary content.
         """
         if not text or not text.strip():
             return []
 
+        if source_path is not None:
+            self._validate_format(source_path, text)
+
         paragraphs = self._split_paragraphs(text)
         raw_chunks = self._assemble_chunks(paragraphs)
         return self._tag_chunks(raw_chunks)
+
+    @staticmethod
+    def _validate_format(source_path: str, content: str) -> None:
+        """Reject unsupported file formats and binary content."""
+        import os  # noqa: PLC0415
+
+        _, ext = os.path.splitext(source_path.lower())
+        if ext and ext not in _SUPPORTED_FORMATS:
+            msg = (
+                f"Unsupported document format '{ext}' for '{source_path}'. "
+                f"Supported: {', '.join(sorted(_SUPPORTED_FORMATS))}"
+            )
+            raise ValueError(msg)
+
+        raw_bytes = content[:16].encode("utf-8", errors="replace")
+        for sig in _BINARY_SIGNATURE_BYTES:
+            if raw_bytes.startswith(sig):
+                msg = f"Binary content detected in '{source_path}' — cannot chunk"
+                raise ValueError(msg)
+
+    def deduplicated_chunks(
+        self,
+        chunks: list[TextChunk],
+        existing_hashes: frozenset[str],
+    ) -> list[TextChunk]:
+        """Filter out chunks whose content_hash already exists in the store.
+
+        Args:
+            chunks: Newly generated chunks.
+            existing_hashes: Set of SHA-256 hashes already persisted.
+
+        Returns only chunks with novel content (stable ordering preserved).
+        """
+        seen: set[str] = set()
+        result: list[TextChunk] = []
+        for c in chunks:
+            if c.content_hash in existing_hashes:
+                continue
+            if c.content_hash in seen:
+                continue
+            seen.add(c.content_hash)
+            result.append(c)
+        return result
 
     # ------------------------------------------------------------------
     # Internal split helpers
@@ -204,15 +268,36 @@ class Chunker:
     # ------------------------------------------------------------------
 
     def _tag_chunks(self, raw_chunks: list[tuple[str, str]]) -> list[TextChunk]:
-        """Convert raw (section, text) pairs into :class:`TextChunk` objects."""
-        result: list[TextChunk] = []
+        """Convert raw (section, text) pairs into :class:`TextChunk` objects.
+
+        Chunks smaller than ``min_tokens`` are merged into the previous chunk
+        to avoid producing fragments too small for meaningful embedding.
+        """
+        min_tokens = self._config.min_tokens
+        tagged: list[TextChunk] = []
+
         for idx, (section, text) in enumerate(raw_chunks):
             normalised = text.strip()
             if not normalised:
                 continue
             token_count = max(1, len(normalised) // _CHARS_PER_TOKEN)
+
+            if token_count < min_tokens and tagged:
+                prev = tagged[-1]
+                merged_content = prev.content + "\n\n" + normalised
+                merged_token_count = max(1, len(merged_content) // _CHARS_PER_TOKEN)
+                tagged[-1] = TextChunk(
+                    index=prev.index,
+                    content=merged_content,
+                    token_count=merged_token_count,
+                    section_path=prev.section_path,
+                    content_hash=hashlib.sha256(merged_content.encode()).hexdigest(),
+                    embedding_model_code=self._config.embedding_model_code,
+                )
+                continue
+
             content_hash = hashlib.sha256(normalised.encode()).hexdigest()
-            result.append(
+            tagged.append(
                 TextChunk(
                     index=idx,
                     content=normalised,
@@ -222,4 +307,16 @@ class Chunker:
                     embedding_model_code=self._config.embedding_model_code,
                 )
             )
-        return result
+
+        for i, chunk in enumerate(tagged):
+            if chunk.index != i:
+                tagged[i] = TextChunk(
+                    index=i,
+                    content=chunk.content,
+                    token_count=chunk.token_count,
+                    section_path=chunk.section_path,
+                    content_hash=chunk.content_hash,
+                    embedding_model_code=chunk.embedding_model_code,
+                )
+
+        return tagged

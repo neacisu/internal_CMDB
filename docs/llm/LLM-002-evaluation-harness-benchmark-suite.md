@@ -27,9 +27,9 @@ Satisfies pt-038 [m12-2].
 | --- | --- | --- |
 | reasoning_32b | complex_analysis | Answer accuracy on held-out reasoning set; F1 ≥ 0.80 target |
 | reasoning_32b | multi_step_reasoning | Step completion rate; ≥ 85% correct step sequences |
-| fast_9b | summarization | ROUGE-L ≥ 0.40; response latency ≤ 3s |
-| fast_9b | classification | Accuracy ≥ 85% on classification test set |
-| fast_9b | extraction | Precision ≥ 0.80 on extraction benchmark |
+| fast_14b | summarization | ROUGE-L ≥ 0.40; response latency ≤ 3s |
+| fast_14b | classification | Accuracy ≥ 85% on classification test set |
+| fast_14b | extraction | Precision ≥ 0.80 on extraction benchmark |
 
 ---
 
@@ -57,7 +57,7 @@ Datasets are held-out representative samples (not training data).
 
 ## 4. Wave-1 Baseline Results
 
-### reasoning_32b (Qwen3.5-QwQ-32B-AWQ)
+### reasoning_32b (Qwen/QwQ-32B-AWQ)
 
 | Task Type | Metric | Result | Target | Status |
 | --- | --- | --- | --- | --- |
@@ -65,7 +65,7 @@ Datasets are held-out representative samples (not training data).
 | multi_step_reasoning | Step completion rate | 0.88 | ≥ 0.85 | PASS |
 | Avg. first-token latency | ms | 420ms | ≤ 600ms | PASS |
 
-### fast_9b (Qwen3.5-9B-Instruct-AWQ)
+### fast_14b (Qwen/Qwen2.5-14B-Instruct-AWQ)
 
 | Task Type | Metric | Result | Target | Status |
 | --- | --- | --- | --- | --- |

@@ -25,7 +25,7 @@ Satisfies pt-047 [m7-4].
 
 ### Application Metrics
 
-The `internalcmdb-app` service exposes metrics on `:8080/metrics`.
+The `internalcmdb-api` service exposes metrics on `:4444/metrics`.
 
 | Label | Required | Description |
 | --- | --- | --- |
@@ -38,9 +38,9 @@ The `internalcmdb-app` service exposes metrics on `:8080/metrics`.
 
 ```yaml
 scrape_configs:
-  - job_name: internalcmdb-app
+  - job_name: internalcmdb-api
     static_configs:
-      - targets: ["internalcmdb-app:8080"]
+      - targets: ["internalcmdb-api:4444"]
     scrape_interval: 15s
     labels:
       env: wave1-production

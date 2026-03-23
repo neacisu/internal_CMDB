@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,8 @@ from internalcmdb.models.discovery import EvidenceArtifact
 
 from ..config import get_settings
 from ..deps import get_db
+from ..middleware.rate_limit import limiter
+from ..middleware.rbac import require_role
 from ..schemas.collectors import (
     AgentConfigUpdate,
     AgentOut,
@@ -47,6 +49,8 @@ from ..schemas.collectors import (
 
 router = APIRouter(prefix="/collectors", tags=["collectors"])
 
+_AGENT_NOT_FOUND_DETAIL = "Agent not found"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -60,6 +64,39 @@ def _generate_agent_token(agent_id: uuid.UUID, secret: str) -> str:
         str(agent_id).encode(),
         hashlib.sha256,
     ).hexdigest()
+
+
+def verify_agent_token(
+    authorization: Annotated[str | None, Header()] = None,
+    x_agent_id: Annotated[str | None, Header()] = None,
+) -> uuid.UUID:
+    """Validate HMAC bearer token sent by collector agents.
+
+    Recomputes the expected token from the agent_id and the application
+    secret, then performs a timing-safe comparison to prevent oracle attacks.
+    """
+    if not x_agent_id:
+        raise HTTPException(status_code=401, detail="Missing X-Agent-ID header")
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    settings = get_settings()
+
+    try:
+        agent_id = uuid.UUID(x_agent_id)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid agent ID")
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+
+    token = authorization.removeprefix("Bearer ")
+    expected = _generate_agent_token(agent_id, settings.secret_key)
+
+    if not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Invalid agent token")
+
+    return agent_id
 
 
 def _next_snapshot_version(db: Session, agent_id: uuid.UUID) -> int:
@@ -136,7 +173,7 @@ def enroll_agent(
     db.commit()
 
     settings = get_settings()
-    token = _generate_agent_token(agent.agent_id, settings.postgres_password)
+    token = _generate_agent_token(agent.agent_id, settings.secret_key)
 
     tiers: dict[str, int] = DEFAULT_AGENT_CONFIG["tiers"]  # type: ignore[assignment]
     collectors: list[str] = DEFAULT_AGENT_CONFIG["enabled_collectors"]  # type: ignore[assignment]
@@ -149,7 +186,11 @@ def enroll_agent(
     )
 
 
-@router.get("/agents", response_model=list[AgentOut])
+@router.get(
+    "/agents",
+    response_model=list[AgentOut],
+    dependencies=[Depends(require_role("admin", "operator", "viewer"))],
+)
 def list_agents(
     db: Annotated[Session, Depends(get_db)],
     status: str | None = None,
@@ -167,18 +208,27 @@ def list_agents(
     return agents  # type: ignore[return-value]
 
 
-@router.get("/agents/{agent_id}", response_model=AgentOut)
+@router.get(
+    "/agents/{agent_id}",
+    response_model=AgentOut,
+    dependencies=[Depends(require_role("admin", "operator", "viewer"))],
+)
 def get_agent(
     agent_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
 ) -> CollectorAgent:
     agent = db.get(CollectorAgent, agent_id)
     if agent is None:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
+    agent.status = derive_agent_status(agent)
     return agent
 
 
-@router.put("/agents/{agent_id}/config", response_model=AgentOut)
+@router.put(
+    "/agents/{agent_id}/config",
+    response_model=AgentOut,
+    dependencies=[Depends(require_role("admin", "operator"))],
+)
 def update_agent_config(
     agent_id: uuid.UUID,
     body: AgentConfigUpdate,
@@ -186,7 +236,7 @@ def update_agent_config(
 ) -> CollectorAgent:
     agent = db.get(CollectorAgent, agent_id)
     if agent is None:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
 
     config = dict(agent.agent_config_jsonb or {})
     if body.tiers is not None:
@@ -199,14 +249,18 @@ def update_agent_config(
     return agent
 
 
-@router.delete("/agents/{agent_id}", status_code=204)
+@router.delete(
+    "/agents/{agent_id}",
+    status_code=204,
+    dependencies=[Depends(require_role("admin"))],
+)
 def retire_agent(
     agent_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     agent = db.get(CollectorAgent, agent_id)
     if agent is None:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
     agent.is_active = False
     agent.status = "retired"
     db.commit()
@@ -218,14 +272,23 @@ def retire_agent(
 
 
 @router.post("/ingest", response_model=IngestResponse)
+@limiter.limit("60/minute")
 def ingest_snapshots(
+    request: Request,
     body: IngestRequest,
     db: Annotated[Session, Depends(get_db)],
+    authenticated_agent_id: Annotated[uuid.UUID, Depends(verify_agent_token)],
 ) -> IngestResponse:
     """Receive a batch of snapshots from an agent."""
+    if body.agent_id != authenticated_agent_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Token agent ID does not match request body agent_id",
+        )
+
     agent = db.get(CollectorAgent, body.agent_id)
     if agent is None:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
 
     accepted = 0
     deduplicated = 0
@@ -292,6 +355,15 @@ def ingest_snapshots(
     agent.status = "online"
     db.commit()
 
+    try:
+        from internalcmdb.observability.metrics import COLLECTOR_INGEST_TOTAL
+
+        host_code = agent.host_code or str(body.agent_id)
+        for item in body.snapshots:
+            COLLECTOR_INGEST_TOTAL.labels(host=host_code, kind=item.snapshot_kind).inc()
+    except Exception:
+        pass
+
     return IngestResponse(accepted=accepted, deduplicated=deduplicated, errors=errors)
 
 
@@ -299,11 +371,18 @@ def ingest_snapshots(
 def heartbeat(
     body: HeartbeatRequest,
     db: Annotated[Session, Depends(get_db)],
+    authenticated_agent_id: Annotated[uuid.UUID, Depends(verify_agent_token)],
 ) -> HeartbeatResponse:
     """Lightweight keep-alive from an agent."""
+    if body.agent_id != authenticated_agent_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Token agent ID does not match request body agent_id",
+        )
+
     agent = db.get(CollectorAgent, body.agent_id)
     if agent is None:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
 
     agent.last_heartbeat_at = str(datetime.now(UTC))
     agent.agent_version = body.agent_version
@@ -489,7 +568,12 @@ def get_snapshot_diff(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/reports/generate", response_model=ReportOut, status_code=201)
+@router.post(
+    "/reports/generate",
+    response_model=ReportOut,
+    status_code=201,
+    dependencies=[Depends(require_role("admin", "operator"))],
+)
 def generate_report(
     body: ReportGenerateRequest,
     db: Annotated[Session, Depends(get_db)],

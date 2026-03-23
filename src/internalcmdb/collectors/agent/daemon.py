@@ -16,12 +16,17 @@ import httpx
 from internalcmdb.collectors.schedule_tiers import TIERS
 
 from .collectors import (
+    certificate_state,
+    container_resources,
     disk_state,
     docker_state,
     full_audit,
     full_hardware,
     gpu_state,
     heartbeat,
+    journal_errors,
+    llm_endpoint_health,
+    network_latency,
     network_state,
     process_inventory,
     security_posture,
@@ -29,6 +34,7 @@ from .collectors import (
     system_vitals,
     systemd_state,
     trust_surface_lite,
+    vllm_metrics,
 )
 
 logger = logging.getLogger("internalcmdb.agent")
@@ -38,13 +44,19 @@ COLLECTOR_MODULES: dict[str, Any] = {
     "heartbeat": heartbeat,
     "system_vitals": system_vitals,
     "docker_state": docker_state,
+    "container_resources": container_resources,
     "gpu_state": gpu_state,
+    "vllm_metrics": vllm_metrics,
+    "llm_endpoint_health": llm_endpoint_health,
     "service_health": service_health,
     "network_state": network_state,
+    "network_latency": network_latency,
     "disk_state": disk_state,
     "process_inventory": process_inventory,
     "systemd_state": systemd_state,
+    "journal_errors": journal_errors,
     "trust_surface_lite": trust_surface_lite,
+    "certificate_state": certificate_state,
     "security_posture": security_posture,
     "full_hardware": full_hardware,
     "full_audit": full_audit,
@@ -99,6 +111,8 @@ class AgentDaemon:
     agent_version: str = "1.0.0"
     enrollment_token: str = ""
     log_level: str = "INFO"
+    verify_ssl: bool = True
+    ca_bundle: str | None = None
 
     # Runtime state
     _buffer: list[PendingSnapshot] = field(default_factory=_snapshot_buffer)
@@ -107,10 +121,28 @@ class AgentDaemon:
     _schedule: dict[str, int] = field(default_factory=_str_int_dict)
     _enabled_collectors: list[str] = field(default_factory=_str_list)
     _running: bool = False
+    # Latest heartbeat vitals — kept fresh by the collection loop
+    _latest_heartbeat: dict[str, object] = field(default_factory=dict)
 
     max_buffer_size: int = 1000
     flush_interval: float = 5.0
     flush_batch_size: int = 10
+
+    @property
+    def _ssl_verify(self) -> bool | str:
+        """Return the ssl verify param: CA bundle path if set, else bool."""
+        if self.ca_bundle and self.verify_ssl:
+            return self.ca_bundle
+        return self.verify_ssl
+
+    def _auth_headers(self) -> dict[str, str]:
+        """Build Authorization and X-Agent-ID headers for authenticated requests."""
+        if not self.agent_id or not self.api_token:
+            return {}
+        return {
+            "Authorization": f"Bearer {self.api_token}",
+            "X-Agent-ID": str(self.agent_id),
+        }
 
     async def start(self) -> None:
         """Enroll with the API and start the collection loop."""
@@ -123,6 +155,7 @@ class AgentDaemon:
         await asyncio.gather(
             self._collection_loop(),
             self._flush_loop(),
+            self._heartbeat_ping_loop(),
         )
 
     async def _enroll(self) -> None:
@@ -130,7 +163,7 @@ class AgentDaemon:
         url = f"{self.api_url}/enroll"
         capabilities = list(COLLECTOR_MODULES.keys())
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, verify=self._ssl_verify) as client:
             resp = await client.post(
                 url,
                 json={
@@ -200,6 +233,10 @@ class AgentDaemon:
             collected_at=datetime.now(UTC).isoformat(),
         )
 
+        # Cache latest heartbeat vitals for the dedicated ping loop
+        if name == "heartbeat":
+            self._latest_heartbeat = payload
+
         if len(self._buffer) < self.max_buffer_size:
             self._buffer.append(snapshot)
         else:
@@ -234,9 +271,10 @@ class AgentDaemon:
             ],
         }
 
+        headers = self._auth_headers()
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(url, json=payload)
+            async with httpx.AsyncClient(timeout=30, verify=self._ssl_verify) as client:
+                resp = await client.post(url, json=payload, headers=headers)
                 if resp.status_code == 200:  # noqa: PLR2004
                     data = resp.json()
                     logger.debug(
@@ -254,6 +292,35 @@ class AgentDaemon:
         except httpx.HTTPError:
             logger.warning("API unreachable, re-buffering %d items", len(batch))
             self._buffer = batch + self._buffer
+
+    async def _heartbeat_ping_loop(self) -> None:
+        """Send a lightweight POST /heartbeat every flush_interval seconds.
+
+        This runs independently of the snapshot buffer so the control plane
+        always sees a fresh ``last_heartbeat_at`` even when every snapshot is
+        deduplicated and the ingest buffer stays empty.
+        """
+        while self._running:
+            await asyncio.sleep(self.flush_interval)
+            if not self.agent_id:
+                continue
+            vitals = self._latest_heartbeat
+            url = f"{self.api_url}/heartbeat"
+            body = {
+                "agent_id": self.agent_id,
+                "agent_version": self.agent_version,
+                "uptime_seconds": vitals.get("uptime_seconds", 0.0),
+                "load_avg": vitals.get("load_avg", []),
+                "memory_pct": vitals.get("memory_pct"),
+            }
+            headers = self._auth_headers()
+            try:
+                async with httpx.AsyncClient(timeout=10, verify=self._ssl_verify) as client:
+                    resp = await client.post(url, json=body, headers=headers)
+                    if resp.status_code != 200:  # noqa: PLR2004
+                        logger.debug("Heartbeat ping returned %d", resp.status_code)
+            except httpx.HTTPError:
+                logger.debug("Heartbeat ping failed — API unreachable")
 
     async def stop(self) -> None:
         """Gracefully stop the daemon."""

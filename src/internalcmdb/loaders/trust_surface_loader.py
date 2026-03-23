@@ -154,19 +154,29 @@ def _ensure_discovery_source(
 # ---------------------------------------------------------------------------
 
 
+def _sshd_directive_key_value(stripped: str) -> tuple[str, str] | None:
+    """Map one normalised sshd_config line to ``(finding_key, value)`` if recognised."""
+    parts = stripped.split()
+    tail = parts[-1] if parts else ""
+    if stripped.startswith("permitrootlogin"):
+        return "permit_root_login", tail or "unknown"
+    if stripped.startswith("passwordauthentication"):
+        return "password_auth", tail or "unknown"
+    if stripped.startswith("pubkeyauthentication"):
+        return "pubkey_auth", tail or "unknown"
+    if stripped.startswith("port "):
+        return "port", tail or "22"
+    return None
+
+
 def _sshd_findings(sshd_lines: list[str]) -> dict[str, str]:
     """Parse sshd_config lines into a flat findings dict."""
     findings: dict[str, str] = {}
     for line in sshd_lines:
         stripped = line.strip().lower()
-        if stripped.startswith("permitrootlogin"):
-            findings["permit_root_login"] = stripped.split()[-1] if stripped.split() else "unknown"
-        elif stripped.startswith("passwordauthentication"):
-            findings["password_auth"] = stripped.split()[-1] if stripped.split() else "unknown"
-        elif stripped.startswith("pubkeyauthentication"):
-            findings["pubkey_auth"] = stripped.split()[-1] if stripped.split() else "unknown"
-        elif stripped.startswith("port "):
-            findings["port"] = stripped.split()[-1] if stripped.split() else "22"
+        kv = _sshd_directive_key_value(stripped)
+        if kv is not None:
+            findings[kv[0]] = kv[1]
     return findings
 
 
@@ -204,48 +214,59 @@ def _load_host(
     data: dict[str, Any] = cast(dict[str, Any], node.get("data") or {})
 
     # ── SSHD config observed fact ─────────────────────────────────────────
+    from internalcmdb.governance.redaction_scanner import RedactionScanner  # noqa: PLC0415
+
     sshd_raw: Any = data.get("sshd") or []
-    sshd_lines: list[str] = [
-        str(line) for line in cast(list[Any], sshd_raw) if isinstance(sshd_raw, list)
-    ]
+    sshd_lines: list[str] = (
+        [str(line) for line in sshd_raw if isinstance(line, str)]
+        if isinstance(sshd_raw, list)
+        else []
+    )
     sshd_findgs = _sshd_findings(sshd_lines)
     risk = _sshd_risk_level(sshd_findgs)
 
-    conn.execute(
-        sa.text(
-            """
-            INSERT INTO discovery.observed_fact
-              (observed_fact_id, collection_run_id,
-               entity_kind_term_id, entity_id,
-               fact_namespace, fact_key, fact_value_jsonb,
-               observation_status_term_id, observed_at)
-            VALUES
-              (:id, :run,
-               :entity, :eid,
-               :ns, :key, CAST(:val AS jsonb),
-               :obs_status, now())
-            """
-        ),
-        {
-            "id": uuid.uuid4(),
-            "run": run_id,
-            "entity": _term(term_map, "entity_kind", "host"),
-            "eid": host_id,
-            "ns": "trust_surface.sshd",
-            "key": "sshd_config_snapshot",
-            "val": json.dumps(
-                {
-                    "sshd_raw": sshd_lines,
-                    "findings": sshd_findgs,
-                    "risk_level": risk,
-                    "secret_paths_count": len(cast(list[Any], data.get("secret_paths") or [])),
-                    "ssh_dirs_count": len(cast(list[Any], data.get("ssh_dirs") or [])),
-                    "certs_count": len(cast(list[Any], data.get("certs") or [])),
-                }
+    fact_payload: dict[str, Any] = {
+        "sshd_raw": sshd_lines,
+        "findings": sshd_findgs,
+        "risk_level": risk,
+        "secret_paths_count": len(cast(list[Any], data.get("secret_paths") or [])),
+        "ssh_dirs_count": len(cast(list[Any], data.get("ssh_dirs") or [])),
+        "certs_count": len(cast(list[Any], data.get("certs") or [])),
+    }
+
+    scanner = RedactionScanner()
+    scan_result = scanner.scan_fact_payload(fact_payload)
+    if not scan_result.safe:
+        print(
+            f"  REDACT {alias}: sshd fact rejected — matched {scan_result.matched_patterns}"
+        )
+    else:
+        conn.execute(
+            sa.text(
+                """
+                INSERT INTO discovery.observed_fact
+                  (observed_fact_id, collection_run_id,
+                   entity_kind_term_id, entity_id,
+                   fact_namespace, fact_key, fact_value_jsonb,
+                   observation_status_term_id, observed_at)
+                VALUES
+                  (:id, :run,
+                   :entity, :eid,
+                   :ns, :key, CAST(:val AS jsonb),
+                   :obs_status, now())
+                """
             ),
-            "obs_status": _term(term_map, "observation_status", "observed"),
-        },
-    )
+            {
+                "id": uuid.uuid4(),
+                "run": run_id,
+                "entity": _term(term_map, "entity_kind", "host"),
+                "eid": host_id,
+                "ns": "trust_surface.sshd",
+                "key": "sshd_config_snapshot",
+                "val": json.dumps(fact_payload),
+                "obs_status": _term(term_map, "observation_status", "observed"),
+            },
+        )
 
     # ── EvidenceArtifact: full raw trust surface snapshot ────────────────
     conn.execute(
@@ -279,6 +300,20 @@ def _load_host(
 # ---------------------------------------------------------------------------
 
 
+def _endpoint_health_code(ok: bool, error: str | None) -> str:
+    """Derive taxonomy-friendly health code from probe outcome (no nested ternaries, S3358)."""
+    if ok:
+        return "healthy"
+    err_lower = str(error).lower()
+    if "refused" in err_lower:
+        return "connection_refused"
+    if "timeout" in err_lower:
+        return "timeout"
+    if "tls" in err_lower:
+        return "tls_handshake_failed"
+    return "unknown"
+
+
 def _load_endpoints(
     conn: sa.engine.Connection,
     endpoints: list[Any],
@@ -295,19 +330,7 @@ def _load_endpoints(
         ok: bool = bool(ep.get("ok"))
         error: str | None = ep.get("error")
 
-        health_code = (
-            "healthy"
-            if ok
-            else (
-                "connection_refused"
-                if "refused" in str(error).lower()
-                else "timeout"
-                if "timeout" in str(error).lower()
-                else "tls_handshake_failed"
-                if "tls" in str(error).lower()
-                else "unknown"
-            )
-        )
+        health_code = _endpoint_health_code(ok, error)
 
         conn.execute(
             sa.text(
@@ -357,23 +380,35 @@ def _load_endpoints(
 # ---------------------------------------------------------------------------
 
 
-def load(conn: sa.engine.Connection, audit_data: dict[str, Any]) -> None:
-    term_map = _load_term_map(conn)
-    if not term_map:
-        print(
-            "ERROR: taxonomy term map empty — run taxonomy_seed.py first.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+def _exit_if_empty_term_map(term_map: dict[tuple[str, str], uuid.UUID]) -> None:
+    if term_map:
+        return
+    print(
+        "ERROR: taxonomy term map empty — run taxonomy_seed.py first.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
+
+def _audit_host_and_endpoint_lists(audit_data: dict[str, Any]) -> tuple[list[Any], list[Any]]:
+    """Normalise ``audit_data["results"]`` into host rows and endpoint rows."""
     results_raw: Any = audit_data.get("results") or {}
     if isinstance(results_raw, dict):
-        results_dict: dict[str, Any] = cast(dict[str, Any], results_raw)
-        host_results: list[Any] = cast(list[Any], results_dict.get("hosts") or [])
-        endpoint_results: list[Any] = cast(list[Any], results_dict.get("endpoints") or [])
-    else:
-        host_results = results_raw if isinstance(results_raw, list) else []
-        endpoint_results = []
+        results_dict = cast(dict[str, Any], results_raw)
+        return (
+            cast(list[Any], results_dict.get("hosts") or []),
+            cast(list[Any], results_dict.get("endpoints") or []),
+        )
+    if isinstance(results_raw, list):
+        return results_raw, []
+    return [], []
+
+
+def load(conn: sa.engine.Connection, audit_data: dict[str, Any]) -> None:
+    term_map = _load_term_map(conn)
+    _exit_if_empty_term_map(term_map)
+
+    host_results, endpoint_results = _audit_host_and_endpoint_lists(audit_data)
 
     source_id = _ensure_discovery_source(conn, term_map)
 

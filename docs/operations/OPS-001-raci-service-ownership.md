@@ -39,7 +39,7 @@ Satisfies pt-043 [m14-1].
 | internalcmdb-postgres (DB) | platform_architecture_lead | security_and_policy_owner |
 | internalcmdb-app (API) | platform_architecture_lead | security_and_policy_owner |
 | vLLM primary (reasoning_32b) | platform_architecture_lead | — |
-| vLLM secondary (fast_9b) | platform_architecture_lead | — |
+| vLLM secondary (fast_14b) | platform_architecture_lead | — |
 | Prometheus / Grafana | platform_architecture_lead | — |
 | SSH access / host OS | platform_architecture_lead | security_and_policy_owner |
 

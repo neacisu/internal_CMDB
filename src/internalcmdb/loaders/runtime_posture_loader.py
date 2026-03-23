@@ -351,6 +351,26 @@ def _insert_observed_fact(
     host_id: uuid.UUID,
     data: dict[str, Any],
 ) -> None:
+    from internalcmdb.governance.redaction_scanner import RedactionScanner  # noqa: PLC0415
+
+    fact_payload: dict[str, Any] = {
+        "docker_present": data.get("docker_present"),
+        "docker_server": data.get("docker_server"),
+        "container_count": len(data.get("containers") or []),
+        "containers_all_count": len(data.get("containers_all") or []),
+        "indicators_count": len(data.get("indicators") or []),
+        "paths": data.get("paths"),
+    }
+
+    scanner = RedactionScanner()
+    scan_result = scanner.scan_fact_payload(fact_payload)
+    if not scan_result.safe:
+        print(
+            f"  REDACT: runtime_posture fact rejected for host {host_id} "
+            f"— matched {scan_result.matched_patterns}"
+        )
+        return
+
     ctx.conn.execute(
         sa.text(
             """
@@ -373,16 +393,7 @@ def _insert_observed_fact(
             "eid": host_id,
             "ns": "runtime_posture",
             "key": "runtime_posture_snapshot",
-            "val": json.dumps(
-                {
-                    "docker_present": data.get("docker_present"),
-                    "docker_server": data.get("docker_server"),
-                    "container_count": len(data.get("containers") or []),
-                    "containers_all_count": len(data.get("containers_all") or []),
-                    "indicators_count": len(data.get("indicators") or []),
-                    "paths": data.get("paths"),
-                }
-            ),
+            "val": json.dumps(fact_payload),
             "obs_status": _term(ctx.term_map, "observation_status", "observed"),
         },
     )
@@ -391,6 +402,43 @@ def _insert_observed_fact(
 # ---------------------------------------------------------------------------
 # Per-node loader
 # ---------------------------------------------------------------------------
+
+
+def _running_names_from_posture(data: dict[str, Any]) -> set[str]:
+    """Names of containers reported as running in the posture payload."""
+    running_containers: list[Any] = cast(list[Any], data.get("containers") or [])
+    return {
+        str(c_inner["name"])
+        for c_inner in (
+            cast(dict[str, Any], c) for c in running_containers if isinstance(c, dict)
+        )
+        if c_inner.get("name")
+    }
+
+
+def _upsert_container_row(
+    ctx: _LoadCtx,
+    host_id: uuid.UUID,
+    c_raw: Any,
+    running_names: set[str],
+) -> None:
+    """Normalise one container dict from ``containers_all`` and upsert CMDB rows."""
+    if not isinstance(c_raw, dict):
+        return
+
+    container: dict[str, Any] = cast(dict[str, Any], c_raw)
+    name: str = str(container.get("name") or "")
+    if not name:
+        return
+
+    # If not in running_containers list, mark status as stopped
+    if name not in running_names:
+        container = dict(container)
+        container["status"] = container.get("status") or "Exited"
+
+    service_kind_code = _infer_service_kind(name)
+    svc_id = _upsert_shared_service(ctx, service_kind_code)
+    _upsert_service_instance(ctx, host_id, svc_id, container)
 
 
 def _load_node(ctx: _LoadCtx, node: dict[str, Any]) -> bool:
@@ -405,33 +453,12 @@ def _load_node(ctx: _LoadCtx, node: dict[str, Any]) -> bool:
 
     data: dict[str, Any] = cast(dict[str, Any], node.get("data") or {})
 
-    # Observed fact
     _insert_observed_fact(ctx, host_id, data)
 
-    # All containers (running + stopped)
+    running_names = _running_names_from_posture(data)
     all_containers: list[Any] = cast(list[Any], data.get("containers_all") or [])
-    running_containers: list[Any] = cast(list[Any], data.get("containers") or [])
-    running_names = {
-        c_inner["name"]
-        for c_inner in [cast(dict[str, Any], c) for c in running_containers if isinstance(c, dict)]
-        if c_inner.get("name")
-    }
-
     for c_raw in all_containers:
-        if not isinstance(c_raw, dict):
-            continue
-        container: dict[str, Any] = cast(dict[str, Any], c_raw)
-        name: str = container.get("name") or ""
-        if not name:
-            continue
-        # If not in running_containers list, mark status as stopped
-        if name not in running_names:
-            container = dict(container)
-            container["status"] = container.get("status") or "Exited"
-
-        service_kind_code = _infer_service_kind(name)
-        svc_id = _upsert_shared_service(ctx, service_kind_code)
-        _upsert_service_instance(ctx, host_id, svc_id, container)
+        _upsert_container_row(ctx, host_id, c_raw, running_names)
 
     return True
 

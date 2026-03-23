@@ -46,11 +46,13 @@ from internalcmdb.models.discovery import EvidenceArtifact, ObservedFact
 from internalcmdb.models.docs import Document
 from internalcmdb.models.registry import Host, OwnershipAssignment, ServiceInstance, SharedService
 from internalcmdb.models.retrieval import (
+    _EMBEDDING_DIM,
     ChunkEmbedding,
     DocumentChunk,
     EvidencePack,
     EvidencePackItem,
 )
+from internalcmdb.retrieval.ranker import Ranker
 from internalcmdb.retrieval.task_types import (
     ContextClass,
     ContractViolation,
@@ -203,6 +205,11 @@ class RetrievalBroker:
             stage4 = self._stage4_semantic(request, contract, token_total)
             items.extend(stage4)
             token_total += sum(i.estimated_token_count for i in stage4)
+
+        # Stage 4.5 — Ranker reranking (ADR-003 priority ordering)
+        ranker = Ranker(contract)
+        items = ranker.rank(items, token_budget=contract.token_budget)
+        token_total = sum(i.estimated_token_count for i in items)
 
         # Stage 5 — Policy enforcement
         present_classes = frozenset(i.context_class for i in items)
@@ -515,6 +522,12 @@ class RetrievalBroker:
 
         if request.semantic_query_vec is None:
             return assembled
+
+        if len(request.semantic_query_vec) != _EMBEDDING_DIM:
+            raise ValueError(
+                f"semantic_query_vec has {len(request.semantic_query_vec)} dimensions, "
+                f"expected {_EMBEDDING_DIM}"
+            )
 
         vec_literal = "[" + ",".join(str(v) for v in request.semantic_query_vec) + "]"
 

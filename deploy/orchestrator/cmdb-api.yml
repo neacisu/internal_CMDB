@@ -1,0 +1,193 @@
+# ============================================================================
+# InternalCMDB API Gateway — path-based routes on infraq.app
+# ============================================================================
+# Exposes the InternalCMDB FastAPI backend under /api/v1/* paths.
+# All endpoints served by a single FastAPI instance on :4444.
+#
+# Endpoints:
+#   https://infraq.app/api/v1/cognitive/*    →  Cognitive engine (RAG, summaries)
+#   https://infraq.app/api/v1/hitl/*         →  Human-in-the-loop workflow
+#   https://infraq.app/api/v1/metrics/*      →  Live metrics & telemetry
+#   https://infraq.app/api/v1/debug/*        →  Debug / introspection
+#   https://infraq.app/api/v1/graph/*        →  Dependency graph queries
+#   https://infraq.app/api/v1/slo/*          →  SLO definitions & status
+#   https://infraq.app/api/v1/compliance/*   →  Compliance & governance
+#   https://infraq.app/api/v1/collectors/*   →  Collector management & ingest
+#   https://infraq.app/api/v1/events/alert   →  Alertmanager webhook receiver
+#   https://infraq.app/api/v1/ws/*           →  WebSocket (realtime feeds)
+#
+# Deploy:
+#   scp deploy/orchestrator/cmdb-api.yml orchestrator:/opt/traefik/dynamic/cmdb-api.yml
+#   (Traefik watches /etc/traefik/dynamic/ — auto-reload, zero downtime)
+# ============================================================================
+
+http:
+  middlewares:
+    cmdb-api-rate-limit:
+      rateLimit:
+        average: 120
+        burst: 240
+
+    cmdb-api-ws-rate-limit:
+      rateLimit:
+        average: 30
+        burst: 60
+
+    chain-cmdb-api:
+      chain:
+        middlewares:
+          - security-headers
+          - cmdb-api-rate-limit
+
+    chain-cmdb-api-ws:
+      chain:
+        middlewares:
+          - cmdb-api-ws-rate-limit
+
+  routers:
+    # ── WebSocket — higher priority to match before REST catch-all ──────────
+    cmdb-api-ws:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api/v1/ws`)"
+      priority: 260
+      service: cmdb-api-ws-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api-ws
+      tls:
+        certResolver: cloudflare
+
+    # ── Alertmanager webhook receiver ──────────────────────────────────────
+    cmdb-api-events:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && Path(`/api/v1/events/alert`)"
+      priority: 260
+      service: cmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api
+      tls:
+        certResolver: cloudflare
+
+    # ── Cognitive engine ───────────────────────────────────────────────────
+    cmdb-api-cognitive:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api/v1/cognitive`)"
+      priority: 250
+      service: cmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api
+      tls:
+        certResolver: cloudflare
+
+    # ── Human-in-the-loop ──────────────────────────────────────────────────
+    cmdb-api-hitl:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api/v1/hitl`)"
+      priority: 250
+      service: cmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api
+      tls:
+        certResolver: cloudflare
+
+    # ── Live metrics & telemetry ───────────────────────────────────────────
+    cmdb-api-metrics:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api/v1/metrics`)"
+      priority: 250
+      service: cmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api
+      tls:
+        certResolver: cloudflare
+
+    # ── Debug / introspection ──────────────────────────────────────────────
+    cmdb-api-debug:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api/v1/debug`)"
+      priority: 250
+      service: cmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api
+      tls:
+        certResolver: cloudflare
+
+    # ── Dependency graph ───────────────────────────────────────────────────
+    cmdb-api-graph:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api/v1/graph`)"
+      priority: 250
+      service: cmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api
+      tls:
+        certResolver: cloudflare
+
+    # ── SLO definitions & status ───────────────────────────────────────────
+    cmdb-api-slo:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api/v1/slo`)"
+      priority: 250
+      service: cmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api
+      tls:
+        certResolver: cloudflare
+
+    # ── Compliance & governance ────────────────────────────────────────────
+    cmdb-api-compliance:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api/v1/compliance`)"
+      priority: 250
+      service: cmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api
+      tls:
+        certResolver: cloudflare
+
+    # ── Collector management & ingest ──────────────────────────────────────
+    cmdb-api-collectors:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api/v1/collectors`)"
+      priority: 250
+      service: cmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-cmdb-api
+      tls:
+        certResolver: cloudflare
+
+  services:
+    # FastAPI backend — synchronous REST, standard flush
+    cmdb-api-svc:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:4444"
+        passHostHeader: true
+        healthCheck:
+          path: "/health"
+          interval: "30s"
+          timeout: "10s"
+        responseForwarding:
+          flushInterval: "100ms"
+
+    # WebSocket service — instant flush for realtime feeds
+    cmdb-api-ws-svc:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:4444"
+        passHostHeader: true
+        healthCheck:
+          path: "/health"
+          interval: "30s"
+          timeout: "10s"
+        responseForwarding:
+          flushInterval: "-1"

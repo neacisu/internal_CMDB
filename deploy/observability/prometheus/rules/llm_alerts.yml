@@ -1,0 +1,29 @@
+groups:
+  - name: llm_alerts
+    rules:
+      - alert: LLMEndpointDown
+        expr: probe_success{job="blackbox-http"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM endpoint unreachable: {{ $labels.instance }}"
+          description: "Blackbox probe for {{ $labels.instance }} has failed for more than 1 minute."
+
+      - alert: LLMQueueDepth
+        expr: vllm:num_requests_waiting > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM request queue depth high on {{ $labels.instance }}"
+          description: "vLLM instance {{ $labels.instance }} has {{ $value }} waiting requests (threshold: 10) for more than 5 minutes."
+
+      - alert: LLMHighLatency
+        expr: histogram_quantile(0.99, rate(vllm:e2e_request_latency_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM p99 latency high on {{ $labels.instance }}"
+          description: "vLLM instance {{ $labels.instance }} p99 latency is {{ $value | printf \"%.1f\" }}s (threshold: 30s)."

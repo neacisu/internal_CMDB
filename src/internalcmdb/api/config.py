@@ -23,14 +23,28 @@ class Settings(BaseSettings):
     postgres_password: str = "change_me"
     postgres_sslmode: str = "prefer"
 
-    # Redis / ARQ
-    redis_url: str = (
-        "rediss://infraq_app:aKRiMYjXij6AqCq54GQF49S-aW-sQmb4UwnbXGxAFrs@redis.infraq.app:443/0"
-    )
+    # Redis / ARQ — real credentials MUST come from .env or VAULT, never hardcoded
+    redis_url: str = "redis://localhost:6379/0"
+
+    # Security
+    secret_key: str = "change_me_to_a_random_32_char_or_longer_value"
+
+    # Embedding
+    embedding_vector_dim: int = 4096
 
     # Application
     log_level: str = "INFO"
+    log_format: str = "json"  # "json" for production, "dev" for coloured console
     cors_origins: str = "http://localhost:3333,http://localhost:3000,http://127.0.0.1:3333"
+
+    # OpenTelemetry
+    otlp_endpoint: str = "http://localhost:4317"
+    otlp_protocol: str = "grpc"  # "grpc" or "http"
+    otlp_insecure: bool = True
+    otel_sample_rate: float = 1.0  # 0.0–1.0; 1.0 = trace everything
+
+    # Debug endpoints
+    debug_enabled: bool = True
 
     @property
     def database_url(self) -> str:

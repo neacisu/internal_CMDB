@@ -1,0 +1,20 @@
+groups:
+  - name: gpu_alerts
+    rules:
+      - alert: GPUOverheat
+        expr: DCGM_FI_DEV_GPU_TEMP > 85
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU overheating on {{ $labels.instance }}"
+          description: "GPU {{ $labels.gpu }} on {{ $labels.instance }} temperature is {{ $value }}°C (threshold: 85°C)."
+
+      - alert: GPUVRAMCritical
+        expr: (DCGM_FI_DEV_FB_USED / (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU VRAM critical on {{ $labels.instance }}"
+          description: "GPU {{ $labels.gpu }} on {{ $labels.instance }} VRAM usage is at {{ $value | printf \"%.1f\" }}% (threshold: 95%)."

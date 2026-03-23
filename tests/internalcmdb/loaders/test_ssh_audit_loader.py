@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import uuid
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -11,10 +12,15 @@ import pytest
 from internalcmdb.loaders.ssh_audit_loader import (
     _create_collection_run,
     _ensure_discovery_source,
+    _exit_if_empty_term_map,
     _insert_hardware_snapshot,
     _int_or_none,
     _load_term_map,
+    _node_docker_running_count,
     _os_family_term_code,
+    _primary_host_role_term_code,
+    _process_audit_node,
+    _ssh_ok_hosts_from_check,
     _term,
     _upsert_gpu_devices,
     _upsert_host,
@@ -430,3 +436,101 @@ class TestUpsertGpuDevicesHelper:
         gpus: list[dict[str, Any]] = [{"gpu_uuid": "GPU-abc", "gpu_name": "A100"}]
         _upsert_gpu_devices(conn, uuid.uuid4(), gpus, uuid.uuid4())
         assert conn.execute.call_count >= 2
+
+
+# ---------------------------------------------------------------------------
+# Refactored helpers (cognitive complexity / S3776)
+# ---------------------------------------------------------------------------
+
+
+class TestNodeDockerRunningCount:
+    def test_missing_docker(self) -> None:
+        assert _node_docker_running_count({}) == 0
+
+    def test_counts_only_running(self) -> None:
+        node = {
+            "docker": {
+                "containers": [
+                    {"state": "running"},
+                    {"state": "exited"},
+                    {"state": "running"},
+                ]
+            }
+        }
+        assert _node_docker_running_count(node) == 2
+
+
+class TestPrimaryHostRoleTermCode:
+    def test_gpu_wins_over_container_count(self) -> None:
+        assert _primary_host_role_term_code("any", True, 99) == "gpu_inference_node"
+
+    def test_many_containers(self) -> None:
+        assert _primary_host_role_term_code("worker-1", False, 6) == "application_runtime_host"
+
+    def test_named_hosts(self) -> None:
+        assert _primary_host_role_term_code("orchestrator", False, 0) == "automation_host"
+        assert _primary_host_role_term_code("postgres-main", False, 0) == "database_host"
+
+    def test_default_monitored(self) -> None:
+        assert _primary_host_role_term_code("gpu-01", False, 3) == "monitored_host"
+
+
+class TestSshOkHostsFromCheck:
+    def test_none_payload(self) -> None:
+        assert _ssh_ok_hosts_from_check(None) == set()
+
+    def test_collects_ok_hosts(self) -> None:
+        data = {
+            "payload": {
+                "results": [
+                    {"ok": True, "host": "a"},
+                    {"ok": False, "host": "b"},
+                    {"ok": True, "host": 1},
+                ]
+            }
+        }
+        assert _ssh_ok_hosts_from_check(data) == {"a"}
+
+
+class TestExitIfEmptyTermMap:
+    def test_non_empty_no_exit(self) -> None:
+        _exit_if_empty_term_map({("x", "y"): uuid.uuid4()})
+
+    def test_empty_calls_exit(self) -> None:
+        with patch.object(sys, "exit", side_effect=RuntimeError("exit")) as mock_exit:
+            with pytest.raises(RuntimeError, match="exit"):
+                _exit_if_empty_term_map({})
+        mock_exit.assert_called_once_with(1)
+
+
+class TestProcessAuditNode:
+    def test_skip_on_node_error(self) -> None:
+        conn = MagicMock()
+        out = _process_audit_node(
+            conn,
+            {"alias": "h1", "error": "disk full"},
+            {},
+            uuid.uuid4(),
+            set(),
+        )
+        assert out == ("skip", "h1", "disk full")
+        conn.execute.assert_not_called()
+
+    def test_ok_runs_pipeline(self) -> None:
+        conn = MagicMock()
+        conn.execute.return_value.fetchone.return_value = None
+        term_map = {
+            ("entity_kind", "host"): uuid.uuid4(),
+            ("environment", "production"): uuid.uuid4(),
+            ("lifecycle_status", "unknown"): uuid.uuid4(),
+            ("lifecycle_status", "active"): uuid.uuid4(),
+            ("os_family", "unknown"): uuid.uuid4(),
+            ("os_family", "ubuntu"): uuid.uuid4(),
+            ("host_role", "monitored_host"): uuid.uuid4(),
+        }
+        node: dict[str, Any] = {"alias": "edge-1", "system": {"os": "Ubuntu 22.04"}}
+        rid = uuid.uuid4()
+        out = _process_audit_node(conn, node, term_map, rid, set())
+        assert out[0] == "ok"
+        assert out[1] == "edge-1"
+        uuid.UUID(out[2])  # host_id

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from typing import Any, ClassVar
 
@@ -11,13 +12,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
 
+_SERVER_NOW = "now()"
+
 # pgvector VECTOR type — optional; falls back to TEXT until the extension
 # is enabled on the server and the column is altered by a follow-up migration.
+_EMBEDDING_DIM: int = int(os.environ.get("EMBEDDING_VECTOR_DIM", "4096"))
+
 _embedding_col: Any
 try:
     from pgvector.sqlalchemy import Vector
 
-    _embedding_col = Vector(1536)
+    _embedding_col = Vector(_EMBEDDING_DIM)
 except ImportError:
     _embedding_col = Text()
 
@@ -37,7 +42,7 @@ class DocumentChunk(Base):
     section_path_text: Mapped[str | None] = mapped_column(Text)
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
 
 
@@ -50,13 +55,13 @@ class ChunkEmbedding(Base):
         ForeignKey("retrieval.document_chunk.document_chunk_id"), nullable=False
     )
     embedding_model_code: Mapped[str] = mapped_column(Text, nullable=False)
-    # Stored as VECTOR(1536) when pgvector extension is present, TEXT otherwise.
+    # Stored as VECTOR(4096) when pgvector extension is present, TEXT otherwise.
     embedding_vector: Mapped[str | None] = mapped_column(_embedding_col)
     lexical_tsv: Mapped[str | None] = mapped_column(TSVECTOR)
     summary_text: Mapped[str | None] = mapped_column(Text)
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
 
 
@@ -72,7 +77,7 @@ class EvidencePack(Base):
     token_budget: Mapped[int | None] = mapped_column(Integer)
     created_by: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
 
 
@@ -98,5 +103,5 @@ class EvidencePackItem(Base):
     inclusion_reason_text: Mapped[str | None] = mapped_column(Text)
     is_mandatory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )

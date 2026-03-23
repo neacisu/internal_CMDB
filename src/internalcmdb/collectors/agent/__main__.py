@@ -43,7 +43,7 @@ def main() -> None:
 
     api_url = os.environ.get(
         "AGENT_API_URL",
-        str(agent_conf.get("api_url", "http://localhost:4444/api/v1/collectors")),
+        str(agent_conf.get("api_url", "https://infraq.app/api/v1/collectors")),
     )
     host_code = os.environ.get(
         "AGENT_HOST_CODE",
@@ -53,11 +53,31 @@ def main() -> None:
         "AGENT_LOG_LEVEL",
         str(agent_conf.get("log_level", "INFO")),
     )
+    verify_ssl_raw = os.environ.get(
+        "AGENT_VERIFY_SSL",
+        str(agent_conf.get("verify_ssl", "true")),
+    )
+    verify_ssl = verify_ssl_raw.lower() not in ("false", "0", "no")
+
+    ca_bundle = os.environ.get(
+        "AGENT_CA_BUNDLE",
+        str(agent_conf.get("ca_bundle", "")),
+    ) or None
+
+    if not api_url.startswith("https://"):
+        import sys  # noqa: PLC0415
+
+        print(  # noqa: T201
+            f"WARNING: api_url '{api_url}' is not HTTPS — TLS is strongly recommended",
+            file=sys.stderr,
+        )
 
     daemon = AgentDaemon(
         api_url=str(api_url),
         host_code=str(host_code),
         log_level=str(log_level),
+        verify_ssl=verify_ssl,
+        ca_bundle=ca_bundle,
     )
 
     loop = asyncio.new_event_loop()

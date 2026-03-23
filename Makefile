@@ -1,7 +1,7 @@
 PYTHON ?= python
 
 .PHONY: help init install lint format type test test-cov security audit check build clean run \
-        api ui worker migrate-worker dev-up dev-down \
+        api ui worker migrate-worker migrate-check dev-up dev-down \
         start stop restart status logs \
         deploy deploy-api deploy-frontend deploy-logs
 
@@ -62,7 +62,7 @@ test:
 	pytest
 
 test-cov:
-	pytest --cov=src/proiecteit --cov-report=term-missing --cov-report=xml
+	pytest --cov=src/proiecteit --cov=src/internalcmdb --cov-report=term-missing --cov-report=xml
 
 security:
 	bandit -c pyproject.toml -r src
@@ -89,6 +89,19 @@ worker:
 
 migrate-worker:
 	alembic -c alembic.ini upgrade head
+
+migrate-check:
+	@echo "=== Migration dry-run (SQL preview) ==="
+	@alembic -c alembic.ini upgrade head --sql > /tmp/migration_preview.sql 2>&1 || true
+	@echo "Checking for dangerous operations..."
+	@if grep -iE 'DROP\s+(TABLE|COLUMN|INDEX|CONSTRAINT|SCHEMA)|TRUNCATE\s|DELETE\s+FROM|SET\s+\S+\s*=\s*NULL' /tmp/migration_preview.sql 2>/dev/null; then \
+		echo "WARNING: Destructive or data-loss operations detected in migration!"; \
+		echo "Review /tmp/migration_preview.sql before proceeding."; \
+		exit 1; \
+	else \
+		echo "No destructive operations found."; \
+	fi
+	@echo "=== Migration check passed ==="
 
 dev-up:
 	docker compose -f docker-compose.dev.yml up -d
@@ -142,3 +155,11 @@ deploy-frontend:
 
 deploy-logs:
 	ssh orchestrator 'docker compose -f $(COMPOSE_FILE) logs -f'
+
+rollback-migration:
+	alembic -c alembic.ini downgrade -1
+	@echo "Rolled back one migration step"
+
+rollback-api:
+	ssh orchestrator 'docker compose -f $(COMPOSE_FILE) up -d --no-deps internalcmdb-api internalcmdb-worker'
+	@echo "API + worker restarted with current :latest image"

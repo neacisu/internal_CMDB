@@ -65,7 +65,7 @@ IVFFlat index rebuild recommended at 100k+ vectors (approx. 5 months at current 
 | --- | --- | --- |
 | internalcmdb-app (API workers) | 4 | Uvicorn worker count |
 | vLLM reasoning_32b | 4 concurrent requests | vLLM --max-num-seqs |
-| vLLM fast_9b | 8 concurrent requests | vLLM --max-num-seqs |
+| vLLM fast_14b | 8 concurrent requests | vLLM --max-num-seqs |
 | PostgreSQL connections | 20 | SQLAlchemy pool_size=5 per worker × 4 workers |
 
 ---

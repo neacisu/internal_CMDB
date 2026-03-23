@@ -1,0 +1,15 @@
+# ============================================================================
+# Blackbox exporter — HTTP/TCP/ICMP endpoint probing
+# ============================================================================
+
+services:
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: blackbox-exporter
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9115:9115"
+    volumes:
+      - ./blackbox.yml:/config/blackbox.yml:ro
+    command:
+      - "--config.file=/config/blackbox.yml"

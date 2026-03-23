@@ -1,0 +1,22 @@
+# Agent config: LXC lite profile
+# Role: Lightweight collection for LXC containers (collected via pct exec from Proxmox host)
+# Note: This config is used when running agent directly inside an LXC container.
+# Preferred approach is Option C (agent on Proxmox host with pct exec).
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "lxc-100"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "service_health",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+]

@@ -27,9 +27,9 @@ Satisfies pt-039 [m12-3].
 | --- | --- | --- | --- | --- |
 | reasoning_32b | complex_analysis | 800ms | 2s | 30s |
 | reasoning_32b | multi_step_reasoning | 1s | 4s | 60s |
-| fast_9b | summarization | 500ms | 1.5s | 10s |
-| fast_9b | classification | 200ms | 800ms | 5s |
-| fast_9b | extraction | 300ms | 1s | 8s |
+| fast_14b | summarization | 500ms | 1.5s | 10s |
+| fast_14b | classification | 200ms | 800ms | 5s |
+| fast_14b | extraction | 300ms | 1s | 8s |
 
 Hard timeout == vLLM request timeout setting. Requests exceeding hard timeout return `503`.
 
@@ -42,7 +42,7 @@ Hard timeout == vLLM request timeout setting. Requests exceeding hard timeout re
 | vLLM endpoint returns 5xx | Retry once after 500ms; fail with error code LLM-ERR-001 | agent_run.failure_reason |
 | vLLM endpoint unreachable (connection refused) | Fail immediately; no retry; error LLM-ERR-002 | agent_run.failure_reason |
 | Request exceeds hard timeout | Fail with error LLM-ERR-003; log prompt token count | agent_run |
-| fast_9b unavailable | Route summarization/classification/extraction to reasoning_32b | agent_run.model_class_used |
+| fast_14b unavailable | Route summarization/classification/extraction to reasoning_32b | agent_run.model_class_used |
 | reasoning_32b unavailable | No fallback; return error LLM-ERR-004 to caller | agent_run |
 | GPU OOM (CUDA out of memory) | vLLM returns 503; fail with LLM-ERR-005; alert fired (ALT-007) | agent_run + alert |
 
@@ -74,7 +74,7 @@ Hard timeout == vLLM request timeout setting. Requests exceeding hard timeout re
 
 | Condition | Degradation Level | Automatic Actions |
 | --- | --- | --- |
-| fast_9b latency > P95 target | DEGRADED | Alert ALT-006; route to reasoning_32b if possible |
+| fast_14b latency > P95 target | DEGRADED | Alert ALT-006; route to reasoning_32b if possible |
 | reasoning_32b latency > P95 target | DEGRADED | Alert ALT-007; restrict to critical task types only |
 | VRAM utilization > 90% | CRITICAL | Alert ALT-007; reject new requests with 429 |
 | All models unavailable | OUTAGE | Alert ALT-008; all agent runs fail with LLM-ERR-999 |
@@ -85,8 +85,8 @@ Hard timeout == vLLM request timeout setting. Requests exceeding hard timeout re
 
 In Wave-1, compute is self-hosted. Cost controls focus on resource protection:
 
-- `--gpu-memory-utilization` caps set per model (0.55 for reasoning_32b, 0.25 for fast_9b).
-- Concurrent request limits: max 4 concurrent for reasoning_32b, max 8 for fast_9b (vLLM default).
+- `--gpu-memory-utilization` caps set per model (0.65 for reasoning_32b, 0.28 for fast_14b).
+- Concurrent request limits: max 4 concurrent for reasoning_32b, max 8 for fast_14b (vLLM default).
 - Long-running requests (> 60s) killed automatically by hard timeout.
 
 ---

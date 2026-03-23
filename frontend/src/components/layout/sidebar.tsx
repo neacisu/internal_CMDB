@@ -15,6 +15,13 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Brain,
+  MessageSquare,
+  AlertTriangle,
+  ShieldCheck,
+  Gauge,
+  ScrollText,
+  Bug,
   type LucideIcon,
 } from "lucide-react";
 
@@ -24,16 +31,24 @@ type NavItem =
 
 const nav: NavItem[] = [
   { type: "link", href: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { type: "section", label: "Cognitive" },
+  { type: "link", href: "/cognitive", icon: Brain, label: "Overview" },
+  { type: "link", href: "/cognitive/chat", icon: MessageSquare, label: "Chat" },
+  { type: "link", href: "/cognitive/insights", icon: AlertTriangle, label: "Insights" },
+  { type: "link", href: "/hitl", icon: ShieldCheck, label: "HITL" },
   { type: "section", label: "Infrastructure" },
   { type: "link", href: "/hosts", icon: Server, label: "Hosts" },
   { type: "link", href: "/gpu", icon: Cpu, label: "GPU" },
   { type: "link", href: "/services", icon: Network, label: "Services" },
+  { type: "link", href: "/metrics", icon: Gauge, label: "Metrics" },
   { type: "section", label: "Operations" },
   { type: "link", href: "/workers", icon: Wrench, label: "Workers" },
   { type: "link", href: "/discovery", icon: Activity, label: "Discovery" },
   { type: "link", href: "/results", icon: FileSearch, label: "Results" },
+  { type: "link", href: "/audit", icon: ScrollText, label: "Audit" },
   { type: "section", label: "System" },
   { type: "link", href: "/documents", icon: BookOpen, label: "Documents" },
+  { type: "link", href: "/debug", icon: Bug, label: "Debug" },
   { type: "link", href: "/settings", icon: Settings, label: "Settings" },
 ];
 
@@ -146,11 +161,14 @@ export default function Sidebar() {
           scrollbarWidth: "none",
         }}
       >
-        {nav.map((item, i) => {
+        {nav.map((item) => {
           if (item.type === "section") {
-            return !collapsed ? (
+            if (collapsed) {
+              return null;
+            }
+            return (
               <div
-                key={`section-${i}`}
+                key={`section-${item.label}`}
                 className="sb-section"
                 style={{
                   fontFamily: "var(--fM)",
@@ -166,7 +184,7 @@ export default function Sidebar() {
               >
                 {item.label}
               </div>
-            ) : null;
+            );
           }
 
           const active =

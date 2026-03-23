@@ -30,7 +30,7 @@ import sys
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import sqlalchemy as sa
 from dotenv import load_dotenv
@@ -212,6 +212,38 @@ def _create_collection_run(
 # ---------------------------------------------------------------------------
 
 
+def _node_docker_running_count(node: dict[str, Any]) -> int:
+    """Count running Docker containers reported under ``node["docker"]``."""
+    docker_raw: Any = node.get("docker")
+    docker_info: dict[str, Any] = (
+        cast(dict[str, Any], docker_raw) if isinstance(docker_raw, dict) else {}
+    )
+    containers_raw: Any = docker_info.get("containers")
+    if not isinstance(containers_raw, list):
+        return 0
+    docker_containers: list[dict[str, Any]] = [
+        cast(dict[str, Any], c) for c in containers_raw if isinstance(c, dict)
+    ]
+    return sum(1 for c in docker_containers if c.get("state") == "running")
+
+
+def _primary_host_role_term_code(
+    alias: str,
+    is_gpu: bool,
+    n_running_containers: int,
+) -> str:
+    """Map host signals to a ``host_role`` taxonomy term_code."""
+    if is_gpu:
+        return "gpu_inference_node"
+    if n_running_containers > 5:  # noqa: PLR2004
+        return "application_runtime_host"
+    if alias == "orchestrator":
+        return "automation_host"
+    if alias == "postgres-main":
+        return "database_host"
+    return "monitored_host"
+
+
 def _upsert_host(
     conn: sa.engine.Connection,
     node: dict[str, Any],
@@ -239,29 +271,8 @@ def _upsert_host(
     lifecycle_term = _term(term_map, "lifecycle_status", lifecycle_term_code, fallback="unknown")
     os_term = _term(term_map, "os_family", os_family_code, fallback="unknown")
 
-    # Determine primary host role
-    docker_raw: Any = node.get("docker")
-    docker_info: dict[str, Any] = (
-        cast(dict[str, Any], docker_raw) if isinstance(docker_raw, dict) else {}
-    )
-    containers_raw: Any = docker_info.get("containers")
-    docker_containers: list[dict[str, Any]] = (
-        [cast(dict[str, Any], c) for c in containers_raw if isinstance(c, dict)]
-        if isinstance(containers_raw, list)
-        else []
-    )
-    n_containers = sum(1 for c in docker_containers if c.get("state") == "running")
-    if is_gpu:
-        role_code = "gpu_inference_node"
-    elif n_containers > 5:  # noqa: PLR2004
-        role_code = "application_runtime_host"
-    elif alias in ("orchestrator",):
-        role_code = "automation_host"
-    elif alias in ("postgres-main",):
-        role_code = "database_host"
-    else:
-        role_code = "monitored_host"
-
+    n_running = _node_docker_running_count(node)
+    role_code = _primary_host_role_term_code(alias, is_gpu, n_running)
     primary_role_term = _term(term_map, "host_role", role_code, fallback="monitored_host")
 
     # Check if host already exists
@@ -412,7 +423,7 @@ def _insert_hardware_snapshot(
 def _int_or_none(value: Any) -> int | None:
     try:
         return int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -443,7 +454,7 @@ def _upsert_gpu_devices(
         def _dec(v: Any) -> float | None:
             try:
                 return float(v)
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return None
 
         params: dict[str, Any] = {
@@ -525,34 +536,69 @@ def _upsert_gpu_devices(
 # ---------------------------------------------------------------------------
 
 
+def _exit_if_empty_term_map(term_map: dict[tuple[str, str], uuid.UUID]) -> None:
+    """Abort the process when taxonomy has not been seeded."""
+    if term_map:
+        return
+    print(
+        "ERROR: taxonomy term map is empty — run taxonomy_seed.py before this loader.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def _ssh_ok_hosts_from_check(ssh_check_data: dict[str, Any] | None) -> set[str]:
+    """Hosts that reported SSH connectivity OK in optional checker payload."""
+    if not ssh_check_data:
+        return set()
+
+    payload_raw: Any = ssh_check_data.get("payload")
+    payload_dict: dict[str, Any] = (
+        cast(dict[str, Any], payload_raw) if isinstance(payload_raw, dict) else {}
+    )
+    out: set[str] = set()
+    for r_raw in cast(list[Any], payload_dict.get("results") or []):
+        if not isinstance(r_raw, dict):
+            continue
+        r = cast(dict[str, Any], r_raw)
+        if r.get("ok") and isinstance(r.get("host"), str):
+            out.add(cast(str, r["host"]))
+    return out
+
+
+def _process_audit_node(
+    conn: sa.engine.Connection,
+    node: dict[str, Any],
+    term_map: dict[tuple[str, str], uuid.UUID],
+    run_id: uuid.UUID,
+    ssh_ok_set: set[str],
+) -> tuple[Literal["skip", "ok", "err"], str, str]:
+    """Load one node: returns (outcome, alias, detail) for CLI messaging."""
+    alias = node.get("alias", "<unknown>")
+    err_raw = node.get("error")
+    if err_raw is not None:
+        return "skip", alias, str(err_raw)
+
+    try:
+        host_id = _upsert_host(conn, node, term_map, run_id, ssh_ok_set)
+        _insert_hardware_snapshot(conn, host_id, run_id, node)
+        _upsert_gpu_devices(conn, host_id, node.get("gpu") or [], run_id)
+        return "ok", alias, str(host_id)
+    except Exception as exc:
+        return "err", alias, str(exc)
+
+
 def load(
     conn: sa.engine.Connection,
     audit_data: dict[str, Any],
     ssh_check_data: dict[str, Any] | None = None,
 ) -> None:
     term_map = _load_term_map(conn)
-    if not term_map:
-        print(
-            "ERROR: taxonomy term map is empty — run taxonomy_seed.py before this loader.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    _exit_if_empty_term_map(term_map)
 
     nodes: list[dict[str, Any]] = audit_data.get("nodes") or []
     audit_ts: str = audit_data.get("audit_ts") or datetime.now(UTC).isoformat()
-
-    # Build set of hosts that answered SSH OK (from connectivity check)
-    ssh_ok_set: set[str] = set()
-    if ssh_check_data:
-        payload_raw: Any = ssh_check_data.get("payload")
-        payload_dict: dict[str, Any] = (
-            cast(dict[str, Any], payload_raw) if isinstance(payload_raw, dict) else {}
-        )
-        for r_raw in cast(list[Any], payload_dict.get("results") or []):
-            if isinstance(r_raw, dict):
-                r: dict[str, Any] = cast(dict[str, Any], r_raw)
-                if r.get("ok") and isinstance(r.get("host"), str):
-                    ssh_ok_set.add(cast(str, r["host"]))
+    ssh_ok_set = _ssh_ok_hosts_from_check(ssh_check_data)
 
     source_id = _ensure_discovery_source(conn, term_map)
     node_aliases = [n["alias"] for n in nodes if "alias" in n]
@@ -561,19 +607,17 @@ def load(
     loaded = 0
     errors = 0
     for node in nodes:
-        alias = node.get("alias", "<unknown>")
-        if node.get("error"):
-            print(f"  SKIP {alias}: audit error — {node['error']}")
-            continue
-        try:
-            host_id = _upsert_host(conn, node, term_map, run_id, ssh_ok_set)
-            _insert_hardware_snapshot(conn, host_id, run_id, node)
-            _upsert_gpu_devices(conn, host_id, node.get("gpu") or [], run_id)
+        outcome, alias, detail = _process_audit_node(
+            conn, node, term_map, run_id, ssh_ok_set
+        )
+        if outcome == "skip":
+            print(f"  SKIP {alias}: audit error — {detail}")
+        elif outcome == "ok":
             loaded += 1
-            print(f"  OK   {alias} → host_id={host_id}")
-        except Exception as exc:
-            print(f"  ERR  {alias}: {exc}", file=sys.stderr)
+            print(f"  OK   {alias} → host_id={detail}")
+        else:
             errors += 1
+            print(f"  ERR  {alias}: {detail}", file=sys.stderr)
 
     conn.commit()
     print(f"\nDone: {loaded} hosts loaded, {errors} errors. collection_run_id={run_id}")

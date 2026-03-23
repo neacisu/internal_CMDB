@@ -20,7 +20,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
 
 const DASHBOARD_INTERVAL = 30_000;
-const FLEET_INTERVAL = 15_000;
+const FLEET_INTERVAL = 6_000;
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();

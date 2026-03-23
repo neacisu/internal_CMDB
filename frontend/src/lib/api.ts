@@ -16,6 +16,17 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/**
+ * Append `?{params}` when callers pass a non-empty query string (e.g. from
+ * `URLSearchParams`). Avoids nested template literals (Sonar S4624).
+ */
+function withQuerySuffix(path: string, params?: string): string {
+  if (params == null || params === "") {
+    return path;
+  }
+  return `${path}?${params}`;
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface PageMeta { page: number; page_size: number; total: number }
@@ -182,18 +193,22 @@ export const getFleetHealth = () => apiFetch<FleetHealthSummary>("/collectors/he
 
 // Registry
 export const getClusters = () => apiFetch<Cluster[]>("/registry/clusters");
-export const getHosts = (params?: string) => apiFetch<Page<Host>>(`/registry/hosts${params ? `?${params}` : ""}`);
+export const getHosts = (params?: string) =>
+  apiFetch<Page<Host>>(withQuerySuffix("/registry/hosts", params));
 export const getHost = (id: string) => apiFetch<HostDetail>(`/registry/hosts/${id}`);
-export const getGpuDevices = (params?: string) => apiFetch<Page<GpuDevice>>(`/registry/gpu-devices${params ? `?${params}` : ""}`);
+export const getGpuDevices = (params?: string) =>
+  apiFetch<Page<GpuDevice>>(withQuerySuffix("/registry/gpu-devices", params));
 export const getServices = () => apiFetch<SharedService[]>("/registry/services");
 export const getServiceInstances = (serviceId: string) => apiFetch<ServiceInstance[]>(`/registry/services/${serviceId}/instances`);
 
 // Discovery
-export const getDiscoveryRuns = (params?: string) => apiFetch<Page<CollectionRun>>(`/discovery/runs${params ? `?${params}` : ""}`);
+export const getDiscoveryRuns = (params?: string) =>
+  apiFetch<Page<CollectionRun>>(withQuerySuffix("/discovery/runs", params));
 
 // Workers
 export const getScripts = () => apiFetch<ScriptMeta[]>("/workers/scripts");
-export const getJobs = (params?: string) => apiFetch<Page<Job>>(`/workers/jobs${params ? `?${params}` : ""}`);
+export const getJobs = (params?: string) =>
+  apiFetch<Page<Job>>(withQuerySuffix("/workers/jobs", params));
 export const getJob = (id: string) => apiFetch<JobDetail>(`/workers/jobs/${id}`);
 export const runScript = (taskName: string, args?: string[]) =>
   apiFetch<{ job_id: string; status: string }>(`/workers/run/${taskName}`, {
@@ -213,6 +228,213 @@ export const deleteSchedule = (id: string) =>
 // Results
 export const getResultTypes = () => apiFetch<ResultTypeMeta[]>("/results/types");
 export const getCurrentResult = (type: string) => apiFetch<unknown>(`/results/${type}/current`);
+
+// Cognitive
+export interface NLQueryResponse {
+  answer: string;
+  sources: { chunk_id: string; content: string; section: string | null; distance: number | null }[];
+  confidence: number;
+  tokens_used: number;
+}
+
+export interface AnalysisOut {
+  entity_id: string;
+  entity_type: string;
+  is_anomaly: boolean;
+  severity: string;
+  category: string;
+  confidence: number;
+  explanation: string;
+  facts_analyzed: number;
+  timestamp: string | null;
+}
+
+export interface InsightOut {
+  insight_id: string;
+  entity_id: string | null;
+  entity_type: string | null;
+  severity: string;
+  category: string | null;
+  title: string;
+  description: string;
+  remediation: string | null;
+  status: string;
+  confidence: number;
+  evidence: Record<string, unknown>[];
+  created_at: string | null;
+  acknowledged_by: string | null;
+  dismissed_reason: string | null;
+}
+
+export interface HealthScoreOut {
+  entity_id: string;
+  entity_type: string;
+  score: number;
+  breakdown: Record<string, unknown>;
+  status: string;
+  timestamp: string | null;
+}
+
+export interface CognitiveReportOut {
+  report_id: string;
+  report_kind: string;
+  title: string;
+  content: string;
+  generated_at: string | null;
+  generated_by: string;
+}
+
+export interface DriftResultOut {
+  drift_id: string;
+  entity_id: string;
+  entity_type: string;
+  has_drift: boolean;
+  drift_type: string;
+  fields_changed: string[];
+  confidence: number;
+  explanation: string;
+  detected_at: string | null;
+}
+
+export interface SelfHealActionOut {
+  action_id: string;
+  playbook_name: string;
+  entity_id: string | null;
+  status: string;
+  result_summary: string;
+  executed_at: string | null;
+  executed_by: string;
+}
+
+export interface PlaybookOut {
+  playbook_id: string;
+  name: string;
+  description: string;
+  trigger_conditions: string[];
+  risk_level: string;
+  is_active: boolean;
+}
+
+export interface HITLItem {
+  item_id: string;
+  item_type: string;
+  risk_class: string;
+  priority: string;
+  status: string;
+  source_event_id: string | null;
+  correlation_id: string | null;
+  context_jsonb: Record<string, unknown> | null;
+  llm_suggestion: Record<string, unknown> | null;
+  llm_confidence: number | null;
+  llm_model_used: string | null;
+  decided_by: string | null;
+  decision: string | null;
+  decision_reason: string | null;
+  created_at: string | null;
+  expires_at: string | null;
+  decided_at: string | null;
+  escalated_to: string | null;
+  escalation_count: number;
+}
+
+export interface HITLStats {
+  pending_count: number;
+  escalated_count: number;
+  approved_count: number;
+  rejected_count: number;
+  blocked_count: number;
+  avg_decision_time_seconds: number | null;
+  accuracy: number | null;
+}
+
+// Cognitive API calls
+export const cognitiveQuery = (question: string) =>
+  apiFetch<NLQueryResponse>("/cognitive/query", {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+
+export const analyzeHost = (hostId: string) =>
+  apiFetch<AnalysisOut>(`/cognitive/analyze/host/${hostId}`, { method: "POST" });
+
+export const analyzeService = (serviceId: string) =>
+  apiFetch<AnalysisOut>(`/cognitive/analyze/service/${serviceId}`, { method: "POST" });
+
+export const getInsights = (params?: string) =>
+  apiFetch<InsightOut[]>(withQuerySuffix("/cognitive/insights", params));
+
+export const getInsight = (id: string) =>
+  apiFetch<InsightOut>(`/cognitive/insights/${id}`);
+
+export const ackInsight = (id: string, by: string) =>
+  apiFetch<{ insight_id: string; status: string }>(`/cognitive/insights/${id}/ack`, {
+    method: "POST",
+    body: JSON.stringify({ acknowledged_by: by }),
+  });
+
+export const dismissInsight = (id: string, by: string, reason: string) =>
+  apiFetch<{ insight_id: string; status: string }>(`/cognitive/insights/${id}/dismiss`, {
+    method: "POST",
+    body: JSON.stringify({ dismissed_by: by, reason }),
+  });
+
+export const getHealthScores = () =>
+  apiFetch<HealthScoreOut[]>("/cognitive/health-scores");
+
+export const getHealthScore = (entityType: string, entityId: string) =>
+  apiFetch<HealthScoreOut>(`/cognitive/health-scores/${entityType}/${entityId}`);
+
+export const getCognitiveReports = (params?: string) =>
+  apiFetch<CognitiveReportOut[]>(withQuerySuffix("/cognitive/reports", params));
+
+export const getCognitiveReport = (id: string) =>
+  apiFetch<CognitiveReportOut>(`/cognitive/reports/${id}`);
+
+export const generateCognitiveReport = (kind: string) =>
+  apiFetch<CognitiveReportOut>("/cognitive/reports/generate", {
+    method: "POST",
+    body: JSON.stringify({ report_kind: kind }),
+  });
+
+export const triggerDriftCheck = () =>
+  apiFetch<Record<string, unknown>>("/cognitive/drift/check", { method: "POST", body: JSON.stringify({}) });
+
+export const getDriftResults = () =>
+  apiFetch<DriftResultOut[]>("/cognitive/drift/results");
+
+export const getSelfHealHistory = (params?: string) =>
+  apiFetch<SelfHealActionOut[]>(withQuerySuffix("/cognitive/self-heal/history", params));
+
+export const getPlaybooks = () =>
+  apiFetch<PlaybookOut[]>("/cognitive/self-heal/playbooks");
+
+// HITL API calls
+export const getHITLQueue = (params?: string) =>
+  apiFetch<HITLItem[]>(withQuerySuffix("/hitl/queue", params));
+
+export const getHITLStats = () =>
+  apiFetch<HITLStats>("/hitl/stats");
+
+export const getHITLHistory = (params?: string) =>
+  apiFetch<HITLItem[]>(withQuerySuffix("/hitl/history", params));
+
+export const approveHITLItem = (id: string, by: string, reason: string) =>
+  apiFetch<{ item_id: string; decision: string }>(`/hitl/queue/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ decided_by: by, reason }),
+  });
+
+export const rejectHITLItem = (id: string, by: string, reason: string) =>
+  apiFetch<{ item_id: string; decision: string }>(`/hitl/queue/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ decided_by: by, reason }),
+  });
+
+// Fleet health dashboard
+export const getFleetHealthDashboard = () =>
+  apiFetch<{ agent_id: string | null; host_code: string; hostname: string; status: string; has_agent: boolean }[]>(
+    "/dashboard/fleet-health"
+  );
 
 // Documents
 export interface DocMeta {
