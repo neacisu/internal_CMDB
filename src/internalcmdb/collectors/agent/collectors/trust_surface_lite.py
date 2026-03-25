@@ -53,7 +53,7 @@ def _listening_ports() -> list[dict[str, str]]:
             if len(parts) >= 4:  # noqa: PLR2004
                 ports.append({"state": parts[0], "local_addr": parts[3]})
         return ports
-    except FileNotFoundError, subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return []
 
 

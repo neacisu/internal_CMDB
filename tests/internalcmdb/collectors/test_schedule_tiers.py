@@ -28,7 +28,7 @@ class TestScheduleTiers:
     def test_default_agent_config_has_tiers(self) -> None:
         assert "tiers" in DEFAULT_AGENT_CONFIG
         assert "enabled_collectors" in DEFAULT_AGENT_CONFIG
-        assert len(DEFAULT_AGENT_CONFIG["enabled_collectors"]) == 13
+        assert len(DEFAULT_AGENT_CONFIG["enabled_collectors"]) == 19
 
     def test_tier_is_frozen(self) -> None:
         tier = ScheduleTier(code="test", interval_seconds=1, collectors=["a"])
@@ -40,7 +40,8 @@ class TestScheduleTiers:
     def test_1d_tier_has_full_audit(self) -> None:
         assert "full_audit" in TIERS["1d"].collectors
 
-    def test_5min_tier_has_two_collectors(self) -> None:
-        assert len(TIERS["5min"].collectors) == 2
+    def test_5min_tier_has_expected_collectors(self) -> None:
+        assert len(TIERS["5min"].collectors) == 3
         assert "network_state" in TIERS["5min"].collectors
         assert "disk_state" in TIERS["5min"].collectors
+        assert "journal_errors" in TIERS["5min"].collectors

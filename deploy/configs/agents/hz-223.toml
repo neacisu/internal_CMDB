@@ -1,0 +1,35 @@
+# Agent config: hz.223 / Proxmox VE 9.1.5, kernel 6.17.9-1-pve
+# Cluster: "NewCluster" (Node ID 4) — public 95.217.32.223
+# vSwitch IPs: 10.0.1.8, 10.0.1.12
+# Resources: 48 cores, 126 GB RAM
+# LXC guests: 108 (CI-worker), 109 (prod-cerniq), 110 (staging-cerniq)
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "hz.223"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "docker_state",
+    "container_resources",
+    "service_health",
+    "network_state",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "certificate_state",
+    "security_posture",
+    "full_hardware",
+    "full_audit",
+]
+
+[lxc]
+enabled = true
+container_ids = [108, 109, 110]
+collect_via = "pct_exec"

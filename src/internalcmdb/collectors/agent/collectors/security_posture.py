@@ -17,7 +17,7 @@ def _iptables_rules() -> list[str]:
             timeout=10,
         )
         return result.stdout.strip().splitlines() if result.returncode == 0 else []
-    except FileNotFoundError, subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return []
 
 
@@ -32,7 +32,7 @@ def _ufw_status() -> dict[str, str | bool]:
             timeout=5,
         )
         return {"raw": result.stdout.strip(), "active": "active" in result.stdout.lower()}
-    except FileNotFoundError, subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return {"raw": "", "active": "unknown"}
 
 
@@ -55,7 +55,7 @@ def _fail2ban_status() -> dict[str, Any]:
                 if len(jail_part) > 1:
                     jails = [j.strip() for j in jail_part[1].split(",") if j.strip()]
         return {"installed": True, "jails": jails}
-    except FileNotFoundError, subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return {"installed": False}
 
 

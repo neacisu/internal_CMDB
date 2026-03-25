@@ -1,0 +1,23 @@
+# Agent config: CI-worker (LXC 108 on hz.223)
+# Role: CI/CD build worker
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "lxc-ci-worker"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "service_health",
+    "network_state",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "security_posture",
+    "full_audit",
+]

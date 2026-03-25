@@ -15,6 +15,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from .config import get_settings
 from .routers import (
     agent,
+    audit,
     cognitive,
     collectors,
     compliance,
@@ -182,6 +183,7 @@ def create_app() -> FastAPI:
     fapp.include_router(registry.router, prefix=prefix)
     fapp.include_router(discovery.router, prefix=prefix)
     fapp.include_router(governance.router, prefix=prefix)
+    fapp.include_router(audit.router, prefix=prefix)
     fapp.include_router(retrieval.router, prefix=prefix)
     fapp.include_router(agent.router, prefix=prefix)
     fapp.include_router(collectors.router, prefix=prefix)

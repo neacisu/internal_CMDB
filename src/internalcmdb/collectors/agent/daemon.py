@@ -8,7 +8,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -230,7 +230,7 @@ class AgentDaemon:
             tier_code=tier_code,
             payload=payload,
             payload_hash=payload_hash,
-            collected_at=datetime.now(UTC).isoformat(),
+            collected_at=datetime.now(timezone.utc).isoformat(),
         )
 
         # Cache latest heartbeat vitals for the dedicated ping loop

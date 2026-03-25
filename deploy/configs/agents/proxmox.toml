@@ -1,5 +1,12 @@
-# Agent config: hz.164 / Proxmox host (Proxmox profile)
-# Role: Proxmox hypervisor, LXC host, Cerniq containers
+# Agent config: hz.164 / Bare-metal Ubuntu 24.04.3 LTS
+# NOTE: hz.164 is NOT a Proxmox node. It is a bare-metal Ubuntu server
+# (64 cores, 126 GB RAM, kernel 6.8.0-86-generic).
+# Runs Docker workloads (cerniq-dev, neanelu dev).
+#
+# Proxmox infrastructure (3 instances):
+#   1) Cluster "NewCluster" (PVE 9.1.5): orchestrator + hz.215 + hz.223 + hz.247
+#   2) Standalone "proxmox2" (PVE 9.1.5): hz.118 (10.0.1.4)
+#   3) Standalone "proxmox" (PVE 7.4-17): hz.157
 
 [agent]
 api_url = "https://infraq.app/api/v1/collectors"

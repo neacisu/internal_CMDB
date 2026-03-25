@@ -1,0 +1,28 @@
+# Agent config: wapp-pro-app (LXC 105 on hz.215)
+# Role: WAPP Pro — Evolution API + Gateway + Workers + Admin (Docker on LXC)
+# Network: eth0 10.0.1.105/24 (VLAN 4000, internal vmbr4000)
+#          eth1 95.216.36.226/32 (public internet, vmbr0→enp98s0f0, MAC 00:50:56:01:1F:F0 Hetzner dedicated)
+# Node-exporter: 10.0.1.105:9100
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "lxc-wapp-pro-app"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "service_health",
+    "network_state",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "certificate_state",
+    "security_posture",
+    "full_hardware",
+    "full_audit",
+]

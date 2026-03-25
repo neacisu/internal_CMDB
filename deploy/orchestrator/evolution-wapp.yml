@@ -1,0 +1,50 @@
+# WAPP Pro App — Traefik dynamic config (internalCMDB deploy artifact)
+# Target on orchestrator: /opt/traefik/dynamic/evolution-wapp.yml
+# Ref: docs/wapp_pro_app.md §10.4
+
+http:
+  routers:
+    wapp-admin:
+      rule: "Host(`infraq.app`) && PathPrefix(`/wapp/`) && !PathPrefix(`/wapp/v1/`)"
+      priority: 500
+      entryPoints:
+        - websecure
+      service: wapp-admin-svc
+      tls:
+        certResolver: cloudflare
+    wapp-gateway:
+      rule: "Host(`infraq.app`) && PathPrefix(`/wapp/v1/`)"
+      priority: 500
+      entryPoints:
+        - websecure
+      service: wapp-gateway-svc
+      tls:
+        certResolver: cloudflare
+      middlewares:
+        - wapp-ratelimit
+        - wapp-security-headers
+
+  services:
+    wapp-admin-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.10:26011"
+        passHostHeader: true
+    wapp-gateway-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.10:26010"
+        passHostHeader: true
+
+  middlewares:
+    wapp-ratelimit:
+      rateLimit:
+        average: 50
+        burst: 100
+        period: 1s
+    wapp-security-headers:
+      headers:
+        customResponseHeaders:
+          X-Frame-Options: "DENY"
+          X-Content-Type-Options: "nosniff"
+          Strict-Transport-Security: "max-age=31536000; includeSubDomains"

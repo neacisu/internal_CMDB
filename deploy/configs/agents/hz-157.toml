@@ -1,0 +1,36 @@
+# Agent config: hz.157 / Proxmox VE 7.4-17 STANDALONE ("proxmox")
+# kernel 5.15.131-2-pve
+# Resources: 16 cores, 63 GB RAM, 436 GB disk (314 GB free)
+# Storage extern: HEL1-BX69 (CIFS, 100 GB)
+# LXC guests: 100 (neanelu1), 101 (neanelu2, stopped),
+#             102 (erp.neanelu.ro), 103 (mediaserver1, stopped), 104 (ES, stopped)
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "hz.157"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "docker_state",
+    "container_resources",
+    "service_health",
+    "network_state",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "certificate_state",
+    "security_posture",
+    "full_hardware",
+    "full_audit",
+]
+
+[lxc]
+enabled = true
+container_ids = [100, 101, 102, 103, 104]
+collect_via = "pct_exec"

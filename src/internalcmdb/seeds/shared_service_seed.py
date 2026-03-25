@@ -1,5 +1,9 @@
 """Shared service seed — idempotent upsert of all known shared services.
 
+v1.5 — 2026-03-24 — wapp-pro-app dual-homed: eth0 10.0.1.105 (VLAN 4000) + eth1 95.216.36.226 (public, MAC 00:50:56:01:1F:F0).
+
+v1.4 — 2026-03-24 — WAPP Pro: LXC wapp-pro-app host bootstrap, app services, proxy mesh metadata.
+
 v1.3 — 2026-03-15 — host_hint: public IP + SSH alias for all services.
 
 v1.2 — 2026-03-14 — Add 4 discovered services (activepieces, kafka, n8n, neo4j).
@@ -30,7 +34,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import sqlalchemy as sa
 from dotenv import load_dotenv
@@ -47,6 +51,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 _HOST_ORCHESTRATOR = "77.42.76.185 (orchestrator)"
 _HOST_HZ_113 = "49.13.97.113 (hz.113)"
+_HOST_WAPP_PRO_APP = "10.0.1.105 / 95.216.36.226 (lxc-wapp-pro-app)"
 
 _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
     # ── Database ──────────────────────────────────────────────────────────────
@@ -807,7 +812,209 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
             ],
         },
     ),
+    # ── WAPP Pro (LXC wapp-pro-app, hz.215 CT 105) ─────────────────────────────
+    (
+        "evo-wapp-core",
+        "WAPP Evolution API Core",
+        "application_api",
+        "production",
+        "active",
+        "Evolution API v2.3.7 (Baileys) on wapp-pro-app. "
+        "Ports: host 26000 → container 7780; HAProxy VIP 26012.",
+        {
+            "category": "application",
+            "project": "wapp-pro",
+            "host_hint": _HOST_WAPP_PRO_APP,
+            "container_name": "evo-wapp-core",
+            "image": "evoapicloud/evolution-api:v2.3.7",
+            "port_internal": 7780,
+            "port_host": 26000,
+            "haproxy_vip_port": 26012,
+            "mem_limit": "6g",
+        },
+    ),
+    (
+        "evo-wapp-gateway",
+        "WAPP Gateway (Fastify)",
+        "application_api",
+        "production",
+        "active",
+        "WAPP Gateway Fastify 5.x — API, webhooks, Socket.IO. "
+        "Ports: host 26001 → 7781; HAProxy VIP 26010 (Traefik backend).",
+        {
+            "category": "application",
+            "project": "wapp-pro",
+            "host_hint": _HOST_WAPP_PRO_APP,
+            "container_name": "evo-wapp-gateway",
+            "image": "ghcr.io/alexneacsu/evo-wapp-gateway:latest",
+            "port_internal": 7781,
+            "port_host": 26001,
+            "haproxy_vip_port": 26010,
+            "mem_limit": "1g",
+        },
+    ),
+    (
+        "evo-wapp-workers",
+        "WAPP Workers (BullMQ)",
+        "application_worker",
+        "production",
+        "active",
+        "BullMQ workers + health endpoint. "
+        "Ports: host 26004 → 7784; HAProxy VIP 26013 (Prometheus scrape).",
+        {
+            "category": "application",
+            "project": "wapp-pro",
+            "host_hint": _HOST_WAPP_PRO_APP,
+            "container_name": "evo-wapp-workers",
+            "image": "ghcr.io/alexneacsu/evo-wapp-gateway:latest",
+            "port_internal": 7784,
+            "port_host": 26004,
+            "haproxy_vip_port": 26013,
+            "mem_limit": "1g",
+        },
+    ),
+    (
+        "wapp-admin",
+        "WAPP Admin (Next.js)",
+        "web_frontend",
+        "production",
+        "active",
+        "Next.js 16 admin UI. Port host 26002 → 7782; HAProxy VIP 26011.",
+        {
+            "category": "application",
+            "project": "wapp-pro",
+            "host_hint": _HOST_WAPP_PRO_APP,
+            "container_name": "wapp-admin",
+            "image": "ghcr.io/alexneacsu/wapp-admin:latest",
+            "port_internal": 7782,
+            "port_host": 26002,
+            "haproxy_vip_port": 26011,
+            "mem_limit": "256m",
+        },
+    ),
 ]
+
+# SOCKS5 proxy mesh — metadata only (Etapa 2 deploy). One row per HAProxy VIP port 26100–26110.
+_WAPP_PROXY_MESH_SPEC: list[tuple[str, str, str, str, str, str, str]] = [
+    ("hz62", "hz.62", "26100", "10.0.1.62:1080", "95.216.66.62", "95.216.66.0/24", "T1"),
+    ("hz113", "hz.113", "26101", "10.0.1.13:1080", "49.13.97.113", "49.13.97.0/24", "T1"),
+    ("hz118", "hz.118", "26102", "10.0.1.4:1080", "95.216.72.118", "95.216.72.0/24", "T1"),
+    ("hz123", "hz.123", "26103", "10.0.1.5:1080", "94.130.68.123", "94.130.68.0/24", "T1"),
+    ("hz157", "hz.157", "26104", "10.0.1.3:1080", "95.216.225.157", "95.216.225.0/24", "T1"),
+    ("hz164", "hz.164", "26105", "10.0.1.6:1080", "135.181.183.164", "135.181.183.0/24", "T1"),
+    ("hz215", "hz.215", "26106", "10.0.1.9:1080", "95.216.36.215", "95.216.36.0/24", "T1"),
+    ("hz223", "hz.223", "26107", "10.0.1.8:1080", "95.217.32.223", "95.217.32.0/24", "T1"),
+    ("hz247", "hz.247", "26108", "10.0.1.7:1080", "95.216.68.247", "95.216.68.0/24", "T1"),
+    ("orchestrator", "orchestrator", "26109", "10.0.1.18:1080", "77.42.76.185", "77.42.76.0/24", "T1"),
+    ("hz118spare", "hz.118-spare", "26110", "10.0.1.4:1081", "95.216.125.173", "95.216.125.0/24", "T2"),
+]
+
+_SERVICES.extend(
+    [
+        (
+            f"wapp-proxy-mesh-{suffix}",
+            f"WAPP SOCKS mesh — {alias} (design Etapa 2)",
+            "application_api",
+            "production",
+            "planned",
+            f"Reserved SOCKS5 exit via HAProxy VIP :{haport} → microsocks {bind}. "
+            f"Public exit {pub_ip} ({subnet}). Tier {tier}.",
+            {
+                "category": "proxy",
+                "project": "wapp-pro",
+                "design_only_etapa_2": True,
+                "host_hint": f"{pub_ip} ({alias})",
+                "haproxy_vip": "10.0.1.10",
+                "haproxy_port": int(haport),
+                "microsocks_bind": bind,
+                "subnet_24": subnet,
+                "tier": tier,
+                "exit_public_ipv4": pub_ip,
+            },
+        )
+        for suffix, alias, haport, bind, pub_ip, subnet, tier in _WAPP_PROXY_MESH_SPEC
+    ]
+)
+
+
+def _upsert_wapp_pro_host(
+    connection: sa.engine.Connection,
+    get_term_id: Callable[[str], uuid.UUID],
+) -> None:
+    """Bootstrap registry.host for LXC wapp-pro-app (agent host_code lxc-wapp-pro-app)."""
+    hid = uuid.uuid4()
+    meta = {
+        "parent_proxmox": "hz.215",
+        "lxc_ctid": 105,
+        "runtime_kind": "lxc_guest",
+        "ssh_alias_mesh": "wapp-pro-app",
+        "vlan": "4000",
+        "network": {
+            "eth0": {
+                "ip": "10.0.1.105",
+                "prefix": "/24",
+                "gateway": "10.0.1.7",
+                "mac": "BC:24:11:F1:D1:04",
+                "bridge": "vmbr4000",
+                "role": "internal_vlan4000",
+            },
+            "eth1": {
+                "ip": "95.216.36.226",
+                "prefix": "/32",
+                "gateway": "95.216.36.193",
+                "mac": "00:50:56:01:1F:F0",
+                "bridge": "vmbr0",
+                "role": "public_internet",
+                "hetzner_dedicated_mac": True,
+            },
+        },
+    }
+    connection.execute(
+        sa.text(
+            """
+            INSERT INTO registry.host (
+              host_id, host_code, hostname, ssh_alias, fqdn,
+              entity_kind_term_id, primary_host_role_term_id,
+              environment_term_id, lifecycle_term_id, os_family_term_id,
+              os_version_text, kernel_version_text, architecture_text,
+              is_gpu_capable, is_docker_host, is_hypervisor,
+              primary_public_ipv4, primary_private_ipv4,
+              observed_hostname, confidence_score, metadata_jsonb
+            ) VALUES (
+              :id, :code, :hostname, :ssh_alias, NULL,
+              :entity, :role, :env, :lifecycle, :os_fam,
+              'Ubuntu LTS', NULL, 'amd64',
+              FALSE, TRUE, FALSE,
+              CAST(:pub_ip AS inet), CAST(:priv_ip AS inet),
+              :hostname, 0.90, CAST(:meta AS jsonb)
+            )
+            ON CONFLICT (host_code) DO UPDATE SET
+              hostname = EXCLUDED.hostname,
+              ssh_alias = EXCLUDED.ssh_alias,
+              primary_public_ipv4 = EXCLUDED.primary_public_ipv4,
+              primary_private_ipv4 = EXCLUDED.primary_private_ipv4,
+              primary_host_role_term_id = EXCLUDED.primary_host_role_term_id,
+              lifecycle_term_id = EXCLUDED.lifecycle_term_id,
+              is_docker_host = EXCLUDED.is_docker_host,
+              metadata_jsonb = EXCLUDED.metadata_jsonb,
+              updated_at = now()
+            """
+        ),
+        {
+            "id": hid,
+            "code": "lxc-wapp-pro-app",
+            "hostname": "wapp-pro-app",
+            "ssh_alias": "wapp-pro-app",
+            "entity": get_term_id("host"),
+            "role": get_term_id("application_runtime_host"),
+            "env": get_term_id("production"),
+            "lifecycle": get_term_id("active"),
+            "os_fam": get_term_id("ubuntu"),
+            "pub_ip": "95.216.36.226",
+            "priv_ip": "10.0.1.105",
+            "meta": json.dumps(meta),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -841,6 +1048,8 @@ def seed(connection: sa.engine.Connection) -> None:
         if row is None:
             raise RuntimeError(f"Taxonomy term '{code}' not found — run taxonomy_seed first.")
         return cast(uuid.UUID, row[0])
+
+    _upsert_wapp_pro_host(connection, _get_term_id)
 
     service_table = sa.table(
         "shared_service",

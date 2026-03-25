@@ -1,5 +1,6 @@
-# Agent config: hz.113 (GPU full profile — vLLM reasoning + fast)
+# Agent config: hz.113 / Bare-metal Ubuntu ("ai-node-enterprise")
 # Role: Primary GPU inference node, QwQ-32B + Qwen2.5-14B
+# NOT a Proxmox node
 
 [agent]
 api_url = "https://infraq.app/api/v1/collectors"

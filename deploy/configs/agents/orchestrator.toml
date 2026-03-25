@@ -1,5 +1,9 @@
-# Agent config: orchestrator (77.42.76.185)
-# Role: Control plane, Prometheus, HAProxy, Docker host
+# Agent config: orchestrator / Proxmox VE 9.1.5, kernel 6.12.73+deb13-cloud-amd64
+# Cluster: "NewCluster" (Node ID 1) — public 77.42.76.185
+# vSwitch IP: 10.0.1.18
+# Resources: 8 cores, 15 GB RAM, 38 GB disk
+# Role: Control plane, Prometheus, Traefik, HAProxy, Docker host, CMDB API
+# No LXC/VM guests on this node
 
 [agent]
 api_url = "https://infraq.app/api/v1/collectors"

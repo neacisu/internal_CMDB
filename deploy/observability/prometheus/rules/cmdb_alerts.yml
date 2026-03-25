@@ -27,3 +27,57 @@ groups:
         annotations:
           summary: "CMDB agent offline: {{ $labels.agent }}"
           description: "Agent {{ $labels.agent }} on {{ $labels.instance }} has been offline for more than 2 minutes."
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis exporter reports the Redis instance is unreachable for more than 1 minute."
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis memory usage is at {{ $value | printf \"%.1f\" }}% of max (threshold: 90%)."
+
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "Postgres exporter reports the database is unreachable for more than 1 minute."
+
+      - alert: PostgresConnectionsHigh
+        expr: pg_stat_activity_count > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connection count high"
+          description: "PostgreSQL has {{ $value }} active connections (threshold: 80) for more than 5 minutes."
+
+      - alert: PostgresSlowQueries
+        expr: rate(pg_stat_activity_max_tx_duration{state="active"}[5m]) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL slow transactions detected"
+          description: "Long-running transactions detected on PostgreSQL ({{ $value | printf \"%.1f\" }}s average)."
+
+      - alert: HostICMPUnreachable
+        expr: probe_success{job="blackbox-icmp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host unreachable via ICMP: {{ $labels.instance }}"
+          description: "ICMP ping to {{ $labels.instance }} has failed for more than 2 minutes."

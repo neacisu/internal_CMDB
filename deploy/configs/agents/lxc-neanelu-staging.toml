@@ -1,0 +1,23 @@
+# Agent config: neanelu-staging (LXC 112 on hz.215)
+# Role: Staging web application
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "lxc-neanelu-staging"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "service_health",
+    "network_state",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "security_posture",
+    "full_audit",
+]

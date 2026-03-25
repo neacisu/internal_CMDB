@@ -33,7 +33,10 @@ def run_script(job_id: uuid.UUID, task_name: str, extra_args: list[str] | None =
         raise ValueError(f"Unknown task: {task_name!r}")
 
     script_abs = BASE / script_def.script_path
-    args = [sys.executable, str(script_abs)] + (script_def.default_args or []) + (extra_args or [])
+    if str(script_abs).endswith(".sh"):
+        args = ["bash", str(script_abs)] + (script_def.default_args or []) + (extra_args or [])
+    else:
+        args = [sys.executable, str(script_abs)] + (script_def.default_args or []) + (extra_args or [])
 
     db = _db_session()
     job: JobHistory | None = None

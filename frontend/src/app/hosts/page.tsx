@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getHosts, getClusters, type Host, type Page, type Cluster } from "@/lib/api";
+import { getHosts, getClusters, getFleetVitals, type Host, type Page, type Cluster, type FleetVital } from "@/lib/api";
 import Link from "next/link";
 import { useState } from "react";
 import {
@@ -36,8 +36,18 @@ export default function HostsPage() {
     queryFn: getClusters,
   });
 
+  const { data: vitals } = useQuery<FleetVital[]>({
+    queryKey: ["fleet", "vitals"],
+    queryFn: getFleetVitals,
+    refetchInterval: 10_000,
+  });
+
   const clusterMap = Object.fromEntries(
     (clusters ?? []).map((c) => [c.cluster_id, c.name])
+  );
+
+  const vitalsMap = Object.fromEntries(
+    (vitals ?? []).map((v) => [v.host_code, v])
   );
 
   const filtered = data?.items.filter((h) =>
@@ -84,15 +94,17 @@ export default function HostsPage() {
               <TableHead>OS</TableHead>
               <TableHead>Arch</TableHead>
               <TableHead>Caps</TableHead>
+              <TableHead>Agent</TableHead>
+              <TableHead>RAM / Load</TableHead>
               <TableHead className="text-right">Confidence</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading
               ? Array.from({ length: 10 }).map((_, i) => (
-                  <TableRow key={i}>
-                    {Array.from({ length: 7 }).map((__, j) => (
-                      <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+                  <TableRow key={`skeleton-row-${String(i)}`}>
+                    {Array.from({ length: 9 }).map((__, j) => (
+                      <TableCell key={`skeleton-cell-${String(i)}-${String(j)}`}><Skeleton className="h-4 w-full" /></TableCell>
                     ))}
                   </TableRow>
                 ))
@@ -135,10 +147,35 @@ export default function HostsPage() {
                         )}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const v = vitalsMap[host.host_code];
+                        if (!v) return <span className="text-xs text-(--tx4)">—</span>;
+                        let color = "var(--er)";
+                        if (v.status === "online") color = "var(--ok)";
+                        else if (v.status === "degraded") color = "var(--wa)";
+                        return (
+                          <span className="flex items-center gap-1 text-xs" style={{ fontFamily: "var(--fM)" }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                            {v.status}
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-xs" style={{ fontFamily: "var(--fM)" }}>
+                      {(() => {
+                        const v = vitalsMap[host.host_code];
+                        if (v?.status !== "online") return "—";
+                        const parts: string[] = [];
+                        if (v.memory_pct != null) parts.push(`${v.memory_pct}%`);
+                        if (v.load_avg.length > 0) parts.push(`⚡${v.load_avg[0].toFixed(1)}`);
+                        return parts.join(" · ") || "—";
+                      })()}
+                    </TableCell>
                     <TableCell className="text-right text-xs" style={{ fontFamily: "var(--fM)" }}>
-                      {host.confidence_score != null
-                        ? `${(host.confidence_score * 100).toFixed(0)}%`
-                        : "—"}
+                      {host.confidence_score == null
+                        ? "—"
+                        : `${(host.confidence_score * 100).toFixed(0)}%`}
                     </TableCell>
                   </TableRow>
                 ))}

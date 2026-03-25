@@ -1,0 +1,20 @@
+# Agent config: LXC 115 / llm-guard (on hz.215 "NewCluster" Node ID 3)
+# IP: 10.0.1.115
+# Role: LLM Guard API — input/output scanning for AI safety
+# Container: laiyer/llm-guard-api:latest on port 8000
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "lxc-llm-guard"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "disk_state",
+    "docker_state",
+    "service_health",
+    "network_state",
+]

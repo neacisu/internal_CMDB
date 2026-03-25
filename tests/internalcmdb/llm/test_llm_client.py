@@ -97,17 +97,19 @@ class TestLLMClient:
 
     @pytest.mark.asyncio
     async def test_embed_returns_vectors(self, client: LLMClient) -> None:
-        vectors = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+        dim = 4096
+        vec_a = [0.1] * dim
+        vec_b = [0.2] * dim
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"embeddings": vectors}
+        mock_resp.json.return_value = {"embeddings": [vec_a, vec_b]}
         mock_resp.raise_for_status = MagicMock()
 
         client._client.request = AsyncMock(return_value=mock_resp)
 
         result = await client.embed(["text1", "text2"])
         assert len(result) == 2
-        assert result[0] == [0.1, 0.2, 0.3]
+        assert len(result[0]) == dim
 
     @pytest.mark.asyncio
     async def test_retry_on_server_error(self, client: LLMClient) -> None:

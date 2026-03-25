@@ -17,6 +17,8 @@ REMOTE_CONFIG="/etc/internalcmdb/agent.toml"
 # Host code → SSH alias mapping (matches deploy_agent.sh)
 declare -A HOST_MAP=(
     [orchestrator]="orchestrator"
+    [postgres-main]="postgres-main"
+    [imac]="imac"
     [hz-113]="hz.113"
     [hz-62]="hz.62"
     [hz-118]="hz.118"

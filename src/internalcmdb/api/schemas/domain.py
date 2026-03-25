@@ -44,6 +44,17 @@ class ObservedFactOut(OrmBase):
     observed_at: DatetimeStr
 
 
+class EvidenceArtifactOut(OrmBase):
+    evidence_artifact_id: uuid.UUID
+    collection_run_id: uuid.UUID
+    artifact_path: str | None = None
+    artifact_hash: str | None = None
+    mime_type: str | None = None
+    content_excerpt_text: str | None = None
+    metadata_jsonb: dict[str, Any] | None = None
+    created_at: DatetimeStr
+
+
 # --- Governance ---
 
 

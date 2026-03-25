@@ -157,7 +157,15 @@ class PlaybookOut(BaseModel):
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
     mapping = row._mapping
-    return {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in mapping.items()}
+    result: dict[str, Any] = {}
+    for k, v in mapping.items():
+        if hasattr(v, "isoformat"):
+            result[k] = v.isoformat()
+        elif isinstance(v, uuid.UUID):
+            result[k] = str(v)
+        else:
+            result[k] = v
+    return result
 
 
 def _now_iso() -> str:
@@ -465,6 +473,116 @@ async def dismiss_insight(
 # ---------------------------------------------------------------------------
 
 
+async def _fetch_host_snapshot_rows(
+    session: AsyncSession, limit: int, offset: int,
+) -> list[Any]:
+    result = await session.execute(
+        text("""
+            SELECT h.host_id, h.host_code,
+                   vitals.payload_jsonb AS vitals_payload,
+                   disk.payload_jsonb AS disk_payload,
+                   docker.payload_jsonb AS docker_payload
+            FROM registry.host h
+            LEFT JOIN LATERAL (
+                SELECT cs.payload_jsonb
+                FROM discovery.collector_snapshot cs
+                JOIN discovery.collector_agent ca ON ca.agent_id = cs.agent_id
+                WHERE ca.host_id = h.host_id AND cs.snapshot_kind = 'system_vitals'
+                ORDER BY cs.collected_at DESC LIMIT 1
+            ) vitals ON true
+            LEFT JOIN LATERAL (
+                SELECT cs.payload_jsonb
+                FROM discovery.collector_snapshot cs
+                JOIN discovery.collector_agent ca ON ca.agent_id = cs.agent_id
+                WHERE ca.host_id = h.host_id AND cs.snapshot_kind = 'disk_state'
+                ORDER BY cs.collected_at DESC LIMIT 1
+            ) disk ON true
+            LEFT JOIN LATERAL (
+                SELECT cs.payload_jsonb
+                FROM discovery.collector_snapshot cs
+                JOIN discovery.collector_agent ca ON ca.agent_id = cs.agent_id
+                WHERE ca.host_id = h.host_id AND cs.snapshot_kind = 'docker_state'
+                ORDER BY cs.collected_at DESC LIMIT 1
+            ) docker ON true
+            ORDER BY h.host_code
+            LIMIT :limit OFFSET :offset
+        """),
+        {"limit": limit, "offset": offset},
+    )
+    return result.fetchall()
+
+
+def _parse_mem_pct(vitals_payload: dict[str, Any]) -> float:
+    mem_kb = vitals_payload.get("memory_kb") or {}
+    mem_total = float(mem_kb.get("MemTotal") or 0)
+    mem_avail = float(mem_kb.get("MemAvailable") or mem_kb.get("MemFree") or 0)
+    return ((mem_total - mem_avail) / mem_total * 100) if mem_total > 0 else 0.0
+
+
+def _parse_cpu_pct(vitals_payload: dict[str, Any]) -> float:
+    cpu_times = vitals_payload.get("cpu_times") or {}
+    cpu_idle = float(cpu_times.get("idle") or 0)
+    cpu_total = sum(float(v) for v in cpu_times.values()) if cpu_times else 0
+    if cpu_total <= 0:
+        return 0.0
+    return max(0.0, min((cpu_total - cpu_idle) / cpu_total * 100, 100.0))
+
+
+def _parse_root_disk_pct(disk_payload: dict[str, Any]) -> float:
+    for d in disk_payload.get("disks") or []:
+        if d.get("mountpoint", "") == "/":
+            raw = str(d.get("used_pct", "0")).replace("%", "")
+            try:
+                return float(raw)
+            except ValueError:
+                return 0.0
+    return 0.0
+
+
+def _parse_container_counts(docker_payload: dict[str, Any]) -> tuple[int, int]:
+    containers = docker_payload.get("containers") or []
+    running = sum(
+        1 for c in containers
+        if isinstance(c, dict) and "Up" in str(c.get("status", ""))
+    )
+    return len(containers), running
+
+
+def _score_single_host(m: Any, scorer: Any) -> HealthScoreOut:
+    vp = m.get("vitals_payload") or {}
+    dp = m.get("disk_payload") or {}
+    docker_p = m.get("docker_payload") or {}
+
+    cpu_pct = _parse_cpu_pct(vp)
+    mem_pct = _parse_mem_pct(vp)
+    disk_pct = _parse_root_disk_pct(dp)
+    total_containers, running = _parse_container_counts(docker_p)
+
+    host_data = {
+        "host_id": str(m["host_id"]),
+        "cpu_usage_pct": cpu_pct,
+        "memory_usage_pct": mem_pct,
+        "disk_usage_pct": disk_pct,
+        "services_total": max(total_containers, 1),
+        "services_healthy": max(running, 1) if total_containers > 0 else 1,
+    }
+    hs = scorer.score_host(host_data)
+    return HealthScoreOut(
+        entity_id=hs.entity_id,
+        entity_type=hs.entity_type,
+        score=hs.score,
+        breakdown={
+            **hs.breakdown,
+            "host_code": str(m.get("host_code", "")),
+            "cpu_pct": round(cpu_pct, 1),
+            "mem_pct": round(mem_pct, 1),
+            "disk_pct": round(disk_pct, 1),
+        },
+        status=hs.breakdown.get("status", "unknown"),
+        timestamp=hs.timestamp,
+    )
+
+
 @router.get(
     "/health-scores",
     response_model=list[HealthScoreOut],
@@ -475,56 +593,16 @@ async def list_health_scores(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> list[HealthScoreOut]:
-    """Live health scores for all hosts (paginated)."""
+    """Live health scores for all hosts using real system_vitals + disk_state snapshots."""
     offset = (page - 1) * page_size
     try:
         from internalcmdb.cognitive.health_scorer import HealthScorer
 
         scorer = HealthScorer()
-
-        result = await session.execute(
-            text("""
-                SELECT h.host_id,
-                       COALESCE((hb.payload_jsonb->>'load_avg')::text, '[]') AS load_avg,
-                       COALESCE((hb.payload_jsonb->>'memory_pct')::float, 0) AS memory_pct
-                FROM registry.host h
-                LEFT JOIN LATERAL (
-                    SELECT cs.payload_jsonb
-                    FROM collectors.collector_snapshot cs
-                    JOIN collectors.collector_agent ca ON ca.agent_id = cs.agent_id
-                    WHERE ca.host_id = h.host_id AND cs.snapshot_kind = 'heartbeat'
-                    ORDER BY cs.collected_at DESC
-                    LIMIT 1
-                ) hb ON true
-                ORDER BY h.host_code
-                LIMIT :limit OFFSET :offset
-            """),
-            {"limit": page_size, "offset": offset},
-        )
-        rows = result.fetchall()
-
-        scores: list[HealthScoreOut] = []
-        for r in rows:
-            m = r._mapping
-            host_data = {
-                "host_id": str(m["host_id"]),
-                "cpu_usage_pct": float(m.get("memory_pct") or 0),
-                "memory_usage_pct": float(m.get("memory_pct") or 0),
-                "disk_usage_pct": 0.0,
-                "services_total": 1,
-                "services_healthy": 1,
-            }
-            hs = scorer.score_host(host_data)
-            scores.append(HealthScoreOut(
-                entity_id=hs.entity_id,
-                entity_type=hs.entity_type,
-                score=hs.score,
-                breakdown=hs.breakdown,
-                status=hs.breakdown.get("status", "unknown"),
-                timestamp=hs.timestamp,
-            ))
-        return scores
-    except Exception:
+        rows = await _fetch_host_snapshot_rows(session, page_size, offset)
+        return [_score_single_host(r._mapping, scorer) for r in rows]
+    except Exception as exc:
+        logger.warning("Health scores failed: %s", exc, exc_info=True)
         return []
 
 

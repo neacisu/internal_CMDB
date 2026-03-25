@@ -19,7 +19,7 @@ def _list_units() -> list[dict[str, str]]:
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)  # type: ignore[no-any-return]
-    except FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError:
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
         pass
     return []
 
@@ -36,7 +36,7 @@ def _list_timers() -> list[dict[str, str]]:
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)  # type: ignore[no-any-return]
-    except FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError:
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
         pass
     return []
 

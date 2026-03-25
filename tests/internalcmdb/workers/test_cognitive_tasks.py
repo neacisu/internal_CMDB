@@ -1,10 +1,16 @@
 """Tests for internalcmdb.workers.cognitive_tasks.
 
 Covers:
-  - S7503 fix: _check_database properly uses asyncio.to_thread (no bare async)
-  - Task wrapper: timing, structured output, retry semantics
-  - Registry completeness: all 10 cognitive tasks registered
-  - Dependency checks: _check_redis, _check_database
+  - S7503 compliance: _check_database properly uses asyncio.to_thread (source
+    fix); test helper stubs are plain ``def`` — ``AsyncMock`` wraps their
+    return values automatically, so ``async`` is neither required nor correct.
+  - S1244 compliance: all floating-point assertions use ``pytest.approx``
+    instead of equality checks.
+  - Task wrapper: timing, structured output, retry semantics.
+  - Registry completeness: all 10 cognitive tasks registered.
+  - Dependency checks: _check_redis, _check_database.
+  - Self-heal pipeline: threshold evaluation, recently-healed guard, auto-heal
+    vs. insight-only paths.
 """
 
 from __future__ import annotations
@@ -175,7 +181,6 @@ class TestCognitiveTaskExecution:
         "cognitive_report_weekly",
         "embedding_sync",
         "guard_audit",
-        "self_heal_check",
         "hitl_escalation",
         "accuracy_eval",
     ])
@@ -189,3 +194,146 @@ class TestCognitiveTaskExecution:
         assert result["status"] == "completed"
         assert result["task"] == task_name
         assert isinstance(result["elapsed_ms"], int)
+
+
+class TestSelfHealCheck:
+    """Dedicated tests for the self_heal_check task with mocked DB and Docker."""
+
+    @pytest.fixture
+    def ctx(self) -> dict[str, Any]:
+        return {"job_try": 1, "job_id": "self-heal-test"}
+
+    @pytest.mark.asyncio
+    async def test_no_hosts_above_threshold(self, ctx: dict[str, Any]) -> None:
+        """When all disks are below threshold, no plans are proposed."""
+        host_data = [
+            {
+                "host_id": "aaaa-bbbb",
+                "host_code": "orchestrator",
+                "disk_payload": {"disks": [{"mountpoint": "/", "used_pct": "60%"}]},
+            },
+        ]
+
+        # Plain ``def`` is correct here: ``patch`` creates an ``AsyncMock``
+        # for ``asyncio.to_thread`` (which is async), and ``AsyncMock`` wraps
+        # any regular callable's return value in a coroutine automatically.
+        # Using ``async def`` would add no value and violates S7503.
+        def _fake_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            if fn.__name__ == "_query_disk_health":
+                return host_data, set()
+            return None
+
+        with patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread):
+            result = await self_heal_check(ctx)
+
+        assert result["candidates_evaluated"] == 1
+        assert result["plans_proposed"] == 0
+        assert result["plans_executed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_host_above_threshold_not_orchestrator(self, ctx: dict[str, Any]) -> None:
+        """Remote hosts get an insight but no auto-heal."""
+        host_data = [
+            {
+                "host_id": "cccc-dddd",
+                "host_code": "hz.113",
+                "disk_payload": {"disks": [{"mountpoint": "/", "used_pct": "92%"}]},
+            },
+        ]
+        insight_created = []
+
+        # Plain ``def``: AsyncMock wraps return values; no ``await`` needed.
+        def _fake_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            name = getattr(fn, "__name__", "")
+            if name == "_query_disk_health":
+                return host_data, set()
+            if name == "_insert":
+                insight_created.append(True)
+            return None
+
+        with patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread):
+            result = await self_heal_check(ctx)
+
+        assert result["plans_proposed"] == 1
+        assert result["plans_executed"] == 0
+        assert len(insight_created) == 1
+
+    @pytest.mark.asyncio
+    async def test_recently_healed_host_skipped(self, ctx: dict[str, Any]) -> None:
+        """Hosts healed within the last hour are not re-evaluated."""
+        host_data = [
+            {
+                "host_id": "eeee-ffff",
+                "host_code": "orchestrator",
+                "disk_payload": {"disks": [{"mountpoint": "/", "used_pct": "95%"}]},
+            },
+        ]
+
+        # Plain ``def``: AsyncMock wraps return values; no ``await`` needed.
+        def _fake_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            if fn.__name__ == "_query_disk_health":
+                return host_data, {"eeee-ffff"}
+            return None
+
+        with patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread):
+            result = await self_heal_check(ctx)
+
+        assert result["plans_proposed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_auto_heal_no_socket(self, ctx: dict[str, Any]) -> None:
+        """Orchestrator without Docker socket creates insight but no auto-heal."""
+        host_data = [
+            {
+                "host_id": "1111-2222",
+                "host_code": "orchestrator",
+                "disk_payload": {"disks": [{"mountpoint": "/", "used_pct": "90%"}]},
+            },
+        ]
+        insights = []
+
+        # Plain ``def``: AsyncMock wraps return values; no ``await`` needed.
+        def _fake_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            name = getattr(fn, "__name__", "")
+            if name == "_query_disk_health":
+                return host_data, set()
+            if name == "_insert":
+                insights.append(True)
+            return None
+
+        with (
+            patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread),
+            patch("internalcmdb.cognitive.self_heal_disk.os.path.exists", return_value=False),
+        ):
+            result = await self_heal_check(ctx)
+
+        assert result["plans_proposed"] == 1
+        assert result["plans_executed"] == 0
+
+
+class TestExtractRootDiskPct:
+    """Tests for _extract_root_disk_pct utility."""
+
+    def test_parses_percentage_string(self) -> None:
+        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct
+
+        payload = {"disks": [{"mountpoint": "/", "used_pct": "87.5%"}]}
+        assert _extract_root_disk_pct(payload) == pytest.approx(87.5)
+
+    def test_parses_numeric_value(self) -> None:
+        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct
+
+        payload = {"disks": [{"mountpoint": "/", "used_pct": 92}]}
+        assert _extract_root_disk_pct(payload) == pytest.approx(92.0)
+
+    def test_no_root_disk_returns_zero(self) -> None:
+        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct
+
+        payload = {"disks": [{"mountpoint": "/data", "used_pct": "99%"}]}
+        assert _extract_root_disk_pct(payload) == pytest.approx(0.0)
+
+    def test_empty_payload_returns_zero(self) -> None:
+        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct
+
+        assert _extract_root_disk_pct({}) == pytest.approx(0.0)
+        assert _extract_root_disk_pct({"disks": None}) == pytest.approx(0.0)

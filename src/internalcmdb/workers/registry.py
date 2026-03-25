@@ -140,5 +140,66 @@ SCRIPTS: dict[str, ScriptDef] = {
             category="maintenance",
             script_path="scripts/deploy_agent.sh",
         ),
+        ScriptDef(
+            task_name="allow_cluster_ips",
+            display_name="Allow Cluster IPs (Firewall)",
+            description=(
+                "Adds UFW/iptables rules on every cluster node so that all peer IPs"
+                " are mutually allowed; writes JSON result to retained results."
+            ),
+            category="security",
+            script_path="subprojects/cluster-key-mesh/allow_cluster_ips.py",
+        ),
+        ScriptDef(
+            task_name="shared_service_seed",
+            display_name="Shared Service Seed",
+            description=(
+                "Idempotent upsert of the full shared-service catalogue into PostgreSQL."
+                " Requires taxonomy_seed to have run first."
+            ),
+            category="maintenance",
+            script_path="src/internalcmdb/seeds/shared_service_seed.py",
+        ),
+        ScriptDef(
+            task_name="cleanup_stale_services",
+            display_name="Cleanup Stale Services",
+            description=(
+                "Migrates service_instance references from stale shared_service entries"
+                " to canonical ones, then deletes the stale entries."
+            ),
+            category="maintenance",
+            script_path="scripts/cleanup_stale_services.py",
+            is_destructive=True,
+        ),
+        ScriptDef(
+            task_name="backup_cognitive",
+            display_name="Backup Cognitive Data",
+            description=(
+                "pg_dump of telemetry, governance, and cognitive schemas with lock"
+                " management and retention policy."
+            ),
+            category="maintenance",
+            script_path="scripts/backup_cognitive.sh",
+        ),
+        ScriptDef(
+            task_name="setup_firewall",
+            display_name="Setup Firewall (UFW)",
+            description=(
+                "Idempotent UFW setup on a node: allows SSH, exporters,"
+                " and inter-cluster traffic."
+            ),
+            category="security",
+            script_path="scripts/setup_firewall.sh",
+        ),
+        ScriptDef(
+            task_name="distribute_configs",
+            display_name="Distribute Agent Configs",
+            description=(
+                "SCP agent.toml configuration files to remote hosts and restarts"
+                " the internalcmdb-agent systemd service."
+            ),
+            category="maintenance",
+            script_path="scripts/distribute_configs.sh",
+        ),
     ]
 }

@@ -6,9 +6,11 @@ import {
   getFleetHealth,
   getGpuSummary,
   getFleetHealthDashboard,
+  getFleetVitals,
   getHealthScores,
   type FleetHealthSummary,
   type GpuSummaryItem,
+  type FleetVital,
   type HealthScoreOut,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +28,9 @@ import {
   Gauge,
   Thermometer,
   Zap,
+  MemoryStick,
+  HardDrive,
+  Container,
 } from "lucide-react";
 
 const REFRESH_INTERVAL = 6_000;
@@ -100,6 +105,13 @@ export default function MetricsPage() {
     queryFn: getHealthScores,
     refetchInterval: 15_000,
     staleTime: 10_000,
+  });
+
+  const { data: vitals } = useQuery<FleetVital[]>({
+    queryKey: ["fleet", "vitals"],
+    queryFn: getFleetVitals,
+    refetchInterval: REFRESH_INTERVAL,
+    staleTime: 4_000,
   });
 
   const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, REFRESH_INTERVAL);
@@ -236,26 +248,39 @@ export default function MetricsPage() {
         <CardContent>
           {fleetHosts ? (
             <div className="flex gap-2 flex-wrap">
-              {fleetHosts.map((h) => (
-                <div
-                  key={h.host_code}
-                  title={`${h.hostname} — ${h.status}`}
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 6,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: statusColor(h.status),
-                    opacity: h.has_agent ? 0.85 : 0.35,
-                    cursor: "default",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                  }}
-                >
-                  <Server size={14} style={{ color: "#fff" }} />
-                </div>
-              ))}
+              {fleetHosts.map((h) => {
+                const v = vitals?.find(vv => vv.host_code === h.host_code);
+                const memPct = v?.memory_pct;
+                const loadStr = v?.load_avg?.length ? v.load_avg.slice(0, 3).map(l => l.toFixed(1)).join("/") : "";
+                const ramPart = memPct == null ? "" : ` · RAM ${String(memPct)}%`;
+                const loadPart = loadStr ? ` · Load ${loadStr}` : "";
+                const tooltip = `${h.hostname} — ${h.status}${ramPart}${loadPart}`;
+                return (
+                  <div
+                    key={h.host_code}
+                    title={tooltip}
+                    style={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: 6,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                      background: statusColor(h.status),
+                      opacity: h.has_agent ? 0.85 : 0.35,
+                      cursor: "default",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                    }}
+                  >
+                    <Server size={12} style={{ color: "#fff" }} />
+                    <span style={{ fontSize: 7, color: "#fff", fontFamily: "var(--fM)", lineHeight: 1, opacity: 0.9, maxWidth: 46, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "center" }}>
+                      {h.host_code.replace("lxc-", "").slice(0, 8)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="flex gap-2 flex-wrap">
@@ -277,6 +302,98 @@ export default function MetricsPage() {
         </CardHeader>
         <CardContent>{gpuUtilizationBody}</CardContent>
       </Card>
+
+      {/* Resource Utilization — memory + disk bars per agent */}
+      {vitals?.some(v => v.status === "online") && (
+        <Card>
+          <CardHeader style={{ paddingBottom: 8 }}>
+            <CardTitle className="flex items-center gap-2">
+              <MemoryStick size={15} style={{ color: "var(--wa)" }} />
+              Memory Utilization
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {vitals.filter(v => v.status === "online" && v.memory_pct != null).map((v) => {
+                const pct = v.memory_pct ?? 0;
+                return (
+                  <div key={`mem-${v.agent_id}`} className="flex items-center gap-3">
+                    <div className="min-w-28 text-sm truncate" title={v.host_code}>{v.host_code}</div>
+                    <div className="flex-1 flex items-center gap-2">
+                      <Progress value={pct} className="h-2 flex-1" />
+                      <Badge className={`${utilColor(pct)} text-xs px-1.5 py-0 w-12 justify-center`}>{pct}%</Badge>
+                    </div>
+                    <span className="text-xs text-(--tx3) w-16 text-right" style={{ fontFamily: "var(--fM)" }}>
+                      {v.memory_total_gb ?? "—"} GB
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Disk Utilization */}
+      {vitals?.some(v => v.status === "online" && v.disk_root_pct != null) && (
+        <Card>
+          <CardHeader style={{ paddingBottom: 8 }}>
+            <CardTitle className="flex items-center gap-2">
+              <HardDrive size={15} style={{ color: "var(--in)" }} />
+              Disk Utilization (root /)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {vitals.filter(v => v.status === "online" && v.disk_root_pct != null).map((v) => {
+                const pct = v.disk_root_pct ?? 0;
+                return (
+                  <div key={`disk-${v.agent_id}`} className="flex items-center gap-3">
+                    <div className="min-w-28 text-sm truncate" title={v.host_code}>{v.host_code}</div>
+                    <div className="flex-1 flex items-center gap-2">
+                      <Progress value={pct} className="h-2 flex-1" />
+                      <Badge className={`${utilColor(pct)} text-xs px-1.5 py-0 w-12 justify-center`}>{pct}%</Badge>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Docker Fleet Overview */}
+      {vitals?.some(v => v.containers_total > 0) && (
+        <Card>
+          <CardHeader style={{ paddingBottom: 8 }}>
+            <CardTitle className="flex items-center gap-2">
+              <Container size={15} style={{ color: "var(--g2)" }} />
+              Docker Fleet
+              <span className="text-xs text-(--tx3) font-normal ml-auto" style={{ fontFamily: "var(--fM)" }}>
+                {vitals.filter(v => v.containers_total > 0).reduce((a, v) => a + v.containers_running, 0)} running / {vitals.filter(v => v.containers_total > 0).reduce((a, v) => a + v.containers_total, 0)} total containers
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {vitals.filter(v => v.containers_total > 0).map((v) => {
+                const runPct = v.containers_total > 0 ? Math.round(v.containers_running / v.containers_total * 100) : 0;
+                return (
+                  <div key={`docker-${v.agent_id}`} className="flex items-center gap-3">
+                    <div className="min-w-28 text-sm truncate" title={v.host_code}>{v.host_code}</div>
+                    <div className="flex-1 flex items-center gap-2">
+                      <Progress value={runPct} className="h-2 flex-1" />
+                      <Badge className="bg-(--g3) text-white text-xs px-1.5 py-0 min-w-16 justify-center">
+                        {v.containers_running} / {v.containers_total}
+                      </Badge>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Health Score distribution */}
       {healthScores && healthScores.length > 0 && (

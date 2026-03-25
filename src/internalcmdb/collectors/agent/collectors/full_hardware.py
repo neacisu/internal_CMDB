@@ -19,7 +19,7 @@ def _lscpu() -> dict[str, str]:
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)  # type: ignore[no-any-return]
-    except FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError:
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
         pass
     return {}
 
@@ -37,7 +37,7 @@ def _lsblk() -> list[dict[str, Any]]:
         if result.returncode == 0 and result.stdout.strip():
             data = json.loads(result.stdout)
             return data.get("blockdevices", [])  # type: ignore[no-any-return]
-    except FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError:
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
         pass
     return []
 
@@ -65,7 +65,7 @@ def _dmidecode_memory() -> list[dict[str, str]]:
                 modules.append(current)
                 current = {}
         return modules
-    except FileNotFoundError, subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return []
 
 

@@ -44,7 +44,7 @@ def _check_http(url: str, timeout: float = 3.0) -> str:
         if code.startswith("2"):
             return "healthy"
         return f"http_{code}"
-    except FileNotFoundError, subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return "error"
 
 

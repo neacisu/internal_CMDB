@@ -42,5 +42,5 @@ def collect() -> dict[str, Any]:
                     }
                 )
         return {"disks": disks, "total": len(disks)}
-    except FileNotFoundError, subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return {"disks": [], "error": "df not available"}

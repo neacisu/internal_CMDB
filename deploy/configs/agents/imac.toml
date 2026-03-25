@@ -1,0 +1,24 @@
+# Agent config: imac (macOS workstation profile)
+# Role: Developer/admin workstation — limited collectors (no systemd, no journalctl)
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "imac"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "docker_state",
+    "container_resources",
+    "service_health",
+    "network_latency",
+    "disk_state",
+    "process_inventory",
+    "trust_surface_lite",
+    "certificate_state",
+    "full_hardware",
+    "full_audit",
+]

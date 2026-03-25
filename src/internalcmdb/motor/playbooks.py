@@ -112,26 +112,121 @@ async def _restart_container_rollback(params: dict[str, Any]) -> dict[str, Any]:
 
 # --- clear_disk_space -----------------------------------------------------
 
+
 async def _clear_disk_pre(params: dict[str, Any]) -> dict[str, Any]:
-    await _playbook_step_yield()
+    """Pre-check: verify Docker socket is available and resources are reclaimable."""
+    from internalcmdb.cognitive.self_heal_disk import (  # noqa: PLC0415
+        SafeDockerCleaner,
+        _MINIMUM_RECLAIMABLE_MB,
+        docker_socket_available,
+        format_bytes,
+    )
+
     host = params.get("host", "localhost")
-    threshold = params.get("threshold_pct", 90)
-    logger.info("Pre-check: disk usage on %s (threshold %d%%).", host, threshold)
-    return {"host": host, "current_usage_pct": 85, "pre_check": "passed"}
+
+    if not docker_socket_available():
+        logger.warning("Docker socket unavailable on %s — aborting cleanup.", host)
+        return {"host": host, "pre_check": "failed", "reason": "Docker socket unavailable"}
+
+    def _analyze() -> dict[str, Any]:
+        cleaner = SafeDockerCleaner()
+        analysis = cleaner.analyze()
+        return {
+            "reclaimable_bytes": analysis.total_reclaimable_bytes,
+            "removable_images": len(analysis.removable_images),
+            "build_cache_bytes": analysis.build_cache_reclaimable_bytes,
+            "protected_skipped": analysis.protected_images_skipped,
+            "container_skipped": analysis.container_images_skipped,
+        }
+
+    info = await asyncio.to_thread(_analyze)
+    reclaimable_mb = info["reclaimable_bytes"] / (1024 * 1024)
+
+    if reclaimable_mb < _MINIMUM_RECLAIMABLE_MB:
+        logger.info(
+            "Only %s reclaimable on %s — cleanup not needed.",
+            format_bytes(info["reclaimable_bytes"]),
+            host,
+        )
+        return {
+            "host": host,
+            "pre_check": "skipped",
+            "reason": f"Only {reclaimable_mb:.1f} MB reclaimable (min {_MINIMUM_RECLAIMABLE_MB})",
+        }
+
+    logger.info(
+        "Pre-check passed for %s: %s reclaimable, %d removable images.",
+        host,
+        format_bytes(info["reclaimable_bytes"]),
+        info["removable_images"],
+    )
+    return {"host": host, "pre_check": "passed", **info}
 
 
 async def _clear_disk_exec(params: dict[str, Any]) -> dict[str, Any]:
+    """Execute safe Docker resource cleanup via the Engine API."""
+    from internalcmdb.cognitive.self_heal_disk import SafeDockerCleaner, format_bytes  # noqa: PLC0415
+
     host = params.get("host", "localhost")
-    logger.info("Clearing temp files and old logs on %s.", host)
-    await asyncio.sleep(0)
-    return {"host": host, "freed_mb": 2048, "action": "disk_cleaned"}
+    disk_pct = params.get("disk_pct", 0.0)
+
+    def _clean() -> dict[str, Any]:
+        cleaner = SafeDockerCleaner()
+        r = cleaner.execute_cleanup(disk_pct=disk_pct)
+        return {
+            "success": r.success,
+            "freed_bytes": r.total_freed_bytes,
+            "build_cache_freed": r.build_cache_freed_bytes,
+            "dangling_freed": r.dangling_images_freed_bytes,
+            "unused_images_freed": r.unused_images_freed_bytes,
+            "images_removed": r.unused_images_removed,
+            "audit_log": r.audit_log,
+            "errors": r.errors,
+        }
+
+    info = await asyncio.to_thread(_clean)
+    logger.info("Disk cleanup on %s: %s freed.", host, format_bytes(info["freed_bytes"]))
+
+    return {
+        "host": host,
+        "action": "disk_cleaned",
+        "freed_mb": info["freed_bytes"] / (1024 * 1024),
+        "executed": info["success"],
+        **info,
+    }
 
 
 async def _clear_disk_post(params: dict[str, Any]) -> dict[str, Any]:
-    await _playbook_step_yield()
+    """Post-check: verify Docker resource footprint after cleanup."""
+    from internalcmdb.cognitive.self_heal_disk import (  # noqa: PLC0415
+        SafeDockerCleaner,
+        docker_socket_available,
+        format_bytes,
+    )
+
     host = params.get("host", "localhost")
-    logger.info("Post-check: disk usage on %s after cleanup.", host)
-    return {"host": host, "current_usage_pct": 62, "post_check": "passed"}
+
+    if not docker_socket_available():
+        return {"host": host, "post_check": "passed", "healthy": True}
+
+    def _check() -> int:
+        cleaner = SafeDockerCleaner()
+        sysdf = cleaner._get_json("/system/df")  # noqa: SLF001
+        total = 0
+        for img in sysdf.get("Images") or []:
+            total += img.get("Size", 0)
+        for bc in sysdf.get("BuildCache") or []:
+            total += bc.get("Size", 0)
+        return total
+
+    remaining = await asyncio.to_thread(_check)
+    logger.info("Post-check: Docker footprint on %s is %s.", host, format_bytes(remaining))
+    return {
+        "host": host,
+        "post_check": "passed",
+        "docker_remaining_bytes": remaining,
+        "healthy": True,
+    }
 
 
 # --- restart_llm_engine ---------------------------------------------------

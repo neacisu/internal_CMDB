@@ -195,9 +195,12 @@ class TestRetrievalBrokerAssemble:
         ):
             result = broker.assemble(req)
 
-        # No mandatory items assembled → violations expected
-        assert isinstance(result, BrokerResult)
-        assert result.pack is None or len(result.violations) >= 0  # Pack may be None on violation
+        # All stages return []: every mandatory class is absent.
+        # ADR-003 §5 contract: violations → pack is never persisted (None).
+        # validate_pack_classes emits exactly one MANDATORY_MISSING violation per absent class.
+        assert result.pack is None
+        assert len(result.violations) == len(get_contract(req.task_type_code).mandatory_classes)
+        assert all(v.code == "MANDATORY_MISSING" for v in result.violations)
 
     def test_broker_init_stores_session(self) -> None:
         session = self._make_session()
@@ -487,9 +490,8 @@ class TestStage4Semantic:
 
     def test_exception_in_query_returns_empty(self) -> None:
         broker, session = _make_broker_and_session()
-        req = _infra_request(semantic_query_vec=[0.1, 0.2])
+        req = _infra_request(semantic_query_vec=[0.1] * 4096)
         contract = get_contract(TaskTypeCode.REGISTRY_RECONCILIATION)
-        # Make session.execute raise to simulate pgvector absent
         session.execute.side_effect = Exception("pgvector not installed")
         items = broker._stage4_semantic(req, contract, 0)
         assert not items
@@ -498,7 +500,7 @@ class TestStage4Semantic:
         broker, session = _make_broker_and_session()
         req = _infra_request(
             task_type_code=TaskTypeCode.REGISTRY_RECONCILIATION,
-            semantic_query_vec=[0.1, 0.2, 0.3],
+            semantic_query_vec=[0.1] * 4096,
         )
         contract = get_contract(req.task_type_code)
 
@@ -519,14 +521,9 @@ class TestStage4Semantic:
 class TestPersistPack:
     def test_creates_pack_and_items(self) -> None:
         broker, session = _make_broker_and_session()
-        # Make flush() set pack.evidence_pack_id
-        _pack_id = uuid.uuid4()
-
-        def flush_side_effect() -> None:
-            pass
-
-        session.flush.side_effect = flush_side_effect
-
+        # session.flush() is already a MagicMock no-op — no side_effect override needed.
+        # EvidencePack.evidence_pack_id remains a mock attribute, which is sufficient
+        # for verifying that add() and flush() were called and pack_items were built.
         req = _infra_request()
         contract = get_contract(req.task_type_code)
 

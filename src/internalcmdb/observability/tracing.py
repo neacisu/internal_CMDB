@@ -130,7 +130,7 @@ def _instrument_fastapi() -> None:
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # noqa: PLC0415
 
-        FastAPIInstrumentor.instrument()
+        FastAPIInstrumentor().instrument()
         logger.debug("FastAPI auto-instrumentation enabled")
     except ImportError:
         logger.debug("opentelemetry-instrumentation-fastapi not installed")
