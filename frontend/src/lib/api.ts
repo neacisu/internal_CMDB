@@ -202,8 +202,65 @@ export const getServices = () => apiFetch<SharedService[]>("/registry/services")
 export const getServiceInstances = (serviceId: string) => apiFetch<ServiceInstance[]>(`/registry/services/${serviceId}/instances`);
 
 // Discovery
+export interface DiscoverySource {
+  discovery_source_id: string;
+  source_code: string;
+  name: string;
+  tool_path: string | null;
+  command_template: string | null;
+  is_read_only: boolean;
+  description: string | null;
+  created_at: string;
+}
+
+export interface ObservedFact {
+  observed_fact_id: string;
+  collection_run_id: string;
+  entity_id: string;
+  fact_namespace: string;
+  fact_key: string;
+  fact_value_jsonb: Record<string, unknown> | null;
+  confidence_score: number | null;
+  observed_at: string;
+}
+
+export interface EvidenceArtifact {
+  evidence_artifact_id: string;
+  collection_run_id: string;
+  artifact_path: string | null;
+  artifact_hash: string | null;
+  mime_type: string | null;
+  content_excerpt_text: string | null;
+  metadata_jsonb: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface SnapshotKindStat { kind: string; count: number }
+export interface FactNamespaceStat { namespace: string; count: number }
+
+export interface DiscoveryStats {
+  sources: number;
+  collection_runs: number;
+  observed_facts: number;
+  evidence_artifacts: number;
+  fact_namespaces: FactNamespaceStat[];
+  active_agents: number;
+  total_snapshots: number;
+  snapshot_kinds: SnapshotKindStat[];
+  latest_run_at: string | null;
+  latest_snapshot_at: string | null;
+}
+
+export const getDiscoverySources = () =>
+  apiFetch<DiscoverySource[]>("/discovery/sources");
 export const getDiscoveryRuns = (params?: string) =>
   apiFetch<Page<CollectionRun>>(withQuerySuffix("/discovery/runs", params));
+export const getDiscoveryFacts = (params?: string) =>
+  apiFetch<Page<ObservedFact>>(withQuerySuffix("/discovery/facts", params));
+export const getDiscoveryEvidence = (params?: string) =>
+  apiFetch<Page<EvidenceArtifact>>(withQuerySuffix("/discovery/evidence", params));
+export const getDiscoveryStats = () =>
+  apiFetch<DiscoveryStats>("/discovery/stats");
 
 // Workers
 export const getScripts = () => apiFetch<ScriptMeta[]>("/workers/scripts");
@@ -224,6 +281,16 @@ export const createSchedule = (data: { task_name: string; cron_expression: strin
   apiFetch<WorkerSchedule>("/workers/schedules", { method: "POST", body: JSON.stringify(data) });
 export const deleteSchedule = (id: string) =>
   fetch(`${BASE}/workers/schedules/${id}`, { method: "DELETE" });
+
+// Cognitive tasks (ARQ)
+export interface CognitiveTask {
+  task_name: string;
+  display_name: string;
+  description: string;
+  category: string;
+  runtime: string;
+}
+export const getCognitiveTasks = () => apiFetch<CognitiveTask[]>("/workers/cognitive-tasks");
 
 // Results
 export const getResultTypes = () => apiFetch<ResultTypeMeta[]>("/results/types");
@@ -432,9 +499,36 @@ export const rejectHITLItem = (id: string, by: string, reason: string) =>
 
 // Fleet health dashboard
 export const getFleetHealthDashboard = () =>
-  apiFetch<{ agent_id: string | null; host_code: string; hostname: string; status: string; has_agent: boolean }[]>(
-    "/dashboard/fleet-health"
-  );
+  apiFetch<FleetHostEntry[]>("/dashboard/fleet-health");
+
+export interface FleetHostEntry {
+  agent_id: string | null;
+  host_code: string;
+  hostname: string;
+  status: string;
+  agent_version: string | null;
+  last_heartbeat_at: string | null;
+  enrolled_at: string | null;
+  has_agent: boolean;
+}
+
+// Fleet vitals — real-time system metrics from agent snapshots
+export interface FleetVital {
+  agent_id: string;
+  host_code: string;
+  status: string;
+  last_heartbeat_at: string | null;
+  load_avg: number[];
+  memory_pct: number | null;
+  memory_total_gb: number | null;
+  disk_root_pct: number | null;
+  containers_running: number;
+  containers_total: number;
+  vitals_at: string | null;
+}
+
+export const getFleetVitals = () =>
+  apiFetch<FleetVital[]>("/dashboard/fleet-vitals");
 
 // Documents
 export interface DocMeta {

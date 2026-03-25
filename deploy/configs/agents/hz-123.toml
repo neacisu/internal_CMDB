@@ -1,0 +1,27 @@
+# Agent config: hz.123 (94.130.68.123)
+# Role: Flowxify application host (Activepieces, n8n)
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "hz.123"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "docker_state",
+    "container_resources",
+    "service_health",
+    "network_state",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "certificate_state",
+    "security_posture",
+    "full_hardware",
+    "full_audit",
+]

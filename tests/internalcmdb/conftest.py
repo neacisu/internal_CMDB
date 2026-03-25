@@ -291,8 +291,9 @@ class MockEventBus:
         pending = self._pending.get(stream, [])[:count]
         events = []
         for item in pending:
-            msg_id = item.pop("_msg_id", "mock-0")
-            evt = Event.from_dict(item)
+            msg_id = item.get("_msg_id", "mock-0")
+            payload = {k: v for k, v in item.items() if k != "_msg_id"}
+            evt = Event.from_dict(payload)
             evt.redis_message_id = msg_id
             events.append(evt)
         return events

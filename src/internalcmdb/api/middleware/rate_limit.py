@@ -55,6 +55,10 @@ def _build_storage_uri() -> str | None:
     URL scheme is not supported by limits (e.g. ``rediss://`` with
     client-cert auth is fine, but totally custom schemes are not).
     """
+    rate_limit_redis = os.getenv("RATE_LIMIT_REDIS_URL", "")
+    if rate_limit_redis:
+        return rate_limit_redis
+
     redis_url = os.getenv("REDIS_URL", "")
     if not redis_url:
         logger.warning(
@@ -68,7 +72,28 @@ def _build_storage_uri() -> str | None:
     return redis_url
 
 
-_storage_uri = _build_storage_uri()
+def _safe_build_storage_uri() -> str | None:
+    """Try Redis, fall back to in-memory if connectivity fails."""
+    uri = _build_storage_uri()
+    if uri is None:
+        return None
+    try:
+        import redis as _redis  # noqa: PLC0415
+        client = _redis.from_url(uri, socket_connect_timeout=3)
+        client.ping()
+        test_key = "internalcmdb:rate_limit:probe"
+        client.set(test_key, "1", ex=10)
+        client.delete(test_key)
+        return uri
+    except Exception as exc:
+        logger.warning(
+            "Redis rate-limit storage unreachable (%s) — falling back to in-memory.",
+            exc,
+        )
+        return None
+
+
+_storage_uri = _safe_build_storage_uri()
 
 limiter = Limiter(
     key_func=_key_func,

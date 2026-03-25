@@ -1,0 +1,25 @@
+# Agent config: postgres-main (dedicated PostgreSQL host)
+# Role: Database server — no GPU, no Docker (or minimal)
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "postgres-main"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "service_health",
+    "network_state",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "certificate_state",
+    "security_posture",
+    "full_hardware",
+    "full_audit",
+]

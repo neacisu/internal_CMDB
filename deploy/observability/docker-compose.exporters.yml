@@ -47,3 +47,14 @@ services:
       DATA_SOURCE_NAME: "postgresql://internalcmdb:${POSTGRES_PASSWORD}@host.docker.internal:5433/internalCMDB?sslmode=prefer"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9121:9121"
+    environment:
+      REDIS_ADDR: "redis://10.0.0.2:6379"
+    command:
+      - "--redis.addr=redis://10.0.0.2:6379"

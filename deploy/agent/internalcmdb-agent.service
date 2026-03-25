@@ -11,12 +11,11 @@ WorkingDirectory=/opt/internalcmdb/agent
 ExecStart=/usr/bin/python3 -m internalcmdb.collectors.agent
 Restart=always
 RestartSec=5
-WatchdogSec=30
 
 # Resource limits
-MemoryMax=64M
-MemoryHigh=48M
-CPUQuota=5%
+MemoryMax=128M
+MemoryHigh=96M
+CPUQuota=25%
 
 # Environment
 Environment=PYTHONPATH=/opt/internalcmdb/agent

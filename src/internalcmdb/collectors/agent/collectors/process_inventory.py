@@ -43,5 +43,5 @@ def collect() -> dict[str, Any]:
                     }
                 )
         return {"processes": processes, "total": len(processes)}
-    except FileNotFoundError, subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return {"processes": [], "error": "ps not available"}

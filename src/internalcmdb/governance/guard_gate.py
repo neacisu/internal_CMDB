@@ -88,7 +88,7 @@ class GateDecision:
 # LLM Guard scanner (L2)
 # ---------------------------------------------------------------------------
 
-_LLM_GUARD_URL = os.getenv("LLM_GUARD_URL", "")
+_LLM_GUARD_URL = os.getenv("LLM_GUARD_URL", "http://10.0.1.115:8000")
 _LLM_GUARD_TIMEOUT = float(os.getenv("LLM_GUARD_TIMEOUT", "5"))
 
 

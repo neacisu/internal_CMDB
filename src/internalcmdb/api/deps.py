@@ -56,6 +56,12 @@ def get_db() -> Generator[Session]:
 def _make_async_sessionmaker(settings: Settings) -> async_sessionmaker[AsyncSession]:
     global _async_engine  # noqa: PLW0603
     url = settings.database_url.replace("postgresql+psycopg", "postgresql+asyncpg", 1)
+    from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit  # noqa: PLC0415
+    parts = urlsplit(url)
+    params = parse_qs(parts.query)
+    params.pop("sslmode", None)
+    clean_query = urlencode(params, doseq=True)
+    url = urlunsplit(parts._replace(query=clean_query))
     _async_engine = create_async_engine(
         url,
         pool_pre_ping=True,

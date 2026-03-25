@@ -30,7 +30,7 @@ class TestRemediationEngine:
     async def test_log_observation_is_rc1(self, engine: RemediationEngine) -> None:
         plan = await engine.propose({"type": "unknown_event", "target_entity": "host-1"})
         assert plan.risk_class == RC_1
-        assert plan.status == "auto_approved"
+        assert plan.status == "pending_approval"
 
     @pytest.mark.asyncio
     async def test_restart_container_is_rc2(self, engine: RemediationEngine) -> None:
@@ -103,8 +103,14 @@ class TestRemediationEngine:
     # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_rc1_auto_approved(self, engine: RemediationEngine) -> None:
-        plan = await engine.propose({"type": "info_event", "target_entity": "x"})
+    async def test_rc1_with_rich_context_auto_approved(self, engine: RemediationEngine) -> None:
+        plan = await engine.propose({
+            "type": "info_event",
+            "target_entity": "x",
+            "source": "agent-hz113",
+            "evidence": {"detail": "routine check"},
+            "severity": "low",
+        })
         assert plan.status == "auto_approved"
 
     @pytest.mark.asyncio

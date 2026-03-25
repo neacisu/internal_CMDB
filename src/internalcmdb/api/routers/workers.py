@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from internalcmdb.workers.cognitive_tasks import COGNITIVE_TASKS
 from internalcmdb.workers.executor import enqueue_job
 from internalcmdb.workers.models import JobHistory, WorkerSchedule
 from internalcmdb.workers.registry import SCRIPTS
@@ -27,6 +28,9 @@ from ..schemas.ops import (
 
 router = APIRouter(prefix="/workers", tags=["workers"])
 
+# Single source of truth for 404 detail when JobHistory row is missing (S1192).
+_JOB_NOT_FOUND_DETAIL = "Job not found"
+
 
 @router.get("/scripts", response_model=list[ScriptMeta])
 def list_scripts() -> list[ScriptMeta]:
@@ -42,6 +46,42 @@ def list_scripts() -> list[ScriptMeta]:
         )
         for s in SCRIPTS.values()
     ]
+
+
+@router.get("/cognitive-tasks")
+def list_cognitive_tasks() -> list[dict[str, str]]:
+    """Return the registry of async cognitive tasks (ARQ)."""
+    descriptions: dict[str, str] = {
+        "cognitive_fact_analysis": "Scans recent observed facts for pattern anomalies",
+        "cognitive_drift_check": "Compares current state vs baseline for drift detection",
+        "cognitive_health_score": "Recalculates composite health scores (0-100) per entity",
+        "cognitive_report_daily": "Generates daily operations summary report",
+        "cognitive_report_weekly": "Generates weekly executive summary report",
+        "embedding_sync": "Re-embeds new/modified documents into the vector store",
+        "guard_audit": "Validates governance guards on recently ingested facts",
+        "self_heal_check": "Evaluates self-healing candidates matching playbook patterns",
+        "hitl_escalation": "Escalates stale human-in-the-loop action requests",
+        "accuracy_eval": "Evaluates LLM answer accuracy against ground-truth samples",
+    }
+    extra_tasks = [
+        {
+            "task_name": "data_retention",
+            "display_name": "Data Retention",
+            "description": "Drops old partitions, deletes expired rows, vacuums tables, refreshes materialized views",
+            "category": "maintenance",
+            "runtime": "arq",
+        },
+    ]
+    return [
+        {
+            "task_name": name,
+            "display_name": name.replace("_", " ").title(),
+            "description": descriptions.get(name, ""),
+            "category": "cognitive",
+            "runtime": "arq",
+        }
+        for name in COGNITIVE_TASKS
+    ] + extra_tasks
 
 
 @router.post("/run/{task_name}", response_model=dict)
@@ -81,7 +121,7 @@ def list_jobs(
 def get_job(job_id: uuid.UUID, db: Annotated[Session, Depends(get_db)]) -> JobHistory:
     job = db.get(JobHistory, job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail=_JOB_NOT_FOUND_DETAIL)
     return job
 
 
@@ -92,7 +132,7 @@ def retry_job(
 ) -> dict[str, Any]:
     job = db.get(JobHistory, job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail=_JOB_NOT_FOUND_DETAIL)
     if job.status not in ("failed", "cancelled"):
         raise HTTPException(
             status_code=400,
@@ -112,7 +152,7 @@ def retry_job(
 def cancel_job(job_id: uuid.UUID, db: Annotated[Session, Depends(get_db)]) -> None:
     job = db.get(JobHistory, job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail=_JOB_NOT_FOUND_DETAIL)
     if job.status not in ("queued",):
         raise HTTPException(status_code=400, detail="Only queued jobs can be cancelled")
     job.status = "cancelled"

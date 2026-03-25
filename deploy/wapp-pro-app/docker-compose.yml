@@ -1,0 +1,105 @@
+# WAPP Pro App — Evolution API + Gateway + Workers + Admin
+# Ref: docs/wapp_pro_app.md §10.1
+# Deploy: staging temp → rsync → /opt/stacks/evolution-wapp/ on wapp-pro-app (no git clone)
+
+services:
+  evo-wapp-core:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evo-wapp-core
+    restart: unless-stopped
+    mem_limit: 6g
+    memswap_limit: 6g
+    env_file: .env.evolution
+    ports:
+      - "10.0.1.105:26000:7780"
+    volumes:
+      - evo-instances:/evolution/instances
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7780/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+    networks:
+      - wapp-internal
+
+  evo-wapp-gateway:
+    image: ghcr.io/alexneacsu/evo-wapp-gateway:latest
+    container_name: evo-wapp-gateway
+    restart: unless-stopped
+    mem_limit: 1g
+    memswap_limit: 1g
+    env_file: .env.gateway
+    ports:
+      - "10.0.1.105:26001:7781"
+    volumes:
+      - evo-instances:/evolution/instances:ro
+    depends_on:
+      evo-wapp-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7781/internal/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks:
+      - wapp-internal
+
+  evo-wapp-workers:
+    image: ghcr.io/alexneacsu/evo-wapp-gateway:latest
+    container_name: evo-wapp-workers
+    restart: unless-stopped
+    mem_limit: 1g
+    memswap_limit: 1g
+    env_file: .env.gateway
+    command: ["node", "dist/workers/start.js"]
+    ports:
+      - "10.0.1.105:26004:7784"
+    depends_on:
+      evo-wapp-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7784/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks:
+      - wapp-internal
+
+  wapp-admin:
+    image: ghcr.io/alexneacsu/wapp-admin:latest
+    container_name: wapp-admin
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      - PORT=7782
+      - HOSTNAME=0.0.0.0
+    ports:
+      - "10.0.1.105:26002:7782"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7782/wapp/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+    networks:
+      - wapp-internal
+
+volumes:
+  evo-instances:
+
+networks:
+  wapp-internal:
+    driver: bridge

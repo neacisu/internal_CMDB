@@ -2,13 +2,13 @@ groups:
   - name: host_alerts
     rules:
       - alert: HostDown
-        expr: up == 0
+        expr: up{job="node-exporter"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Host {{ $labels.instance }} is down"
-          description: "Target {{ $labels.instance }} (job {{ $labels.job }}) has been unreachable for more than 1 minute."
+          summary: "Host {{ $labels.host }} is down"
+          description: "Node exporter on {{ $labels.instance }} ({{ $labels.host }}) has been unreachable for more than 1 minute."
 
       - alert: DiskCritical
         expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
@@ -16,16 +16,25 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "Disk space critical on {{ $labels.instance }}"
+          summary: "Disk space critical on {{ $labels.host }}"
           description: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} has less than 10% available space ({{ $value | printf \"%.1f\" }}%)."
 
+      - alert: DiskWarning
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk space low on {{ $labels.host }}"
+          description: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} has less than 20% available space ({{ $value | printf \"%.1f\" }}%)."
+
       - alert: HighCPU
-        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        expr: 100 - (avg by(instance, host) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "High CPU usage on {{ $labels.instance }}"
+          summary: "High CPU usage on {{ $labels.host }}"
           description: "CPU usage on {{ $labels.instance }} has exceeded 90% for more than 5 minutes ({{ $value | printf \"%.1f\" }}%)."
 
       - alert: HighMemory
@@ -34,5 +43,49 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "High memory usage on {{ $labels.instance }}"
+          summary: "High memory usage on {{ $labels.host }}"
           description: "Memory usage on {{ $labels.instance }} has exceeded 90% for more than 5 minutes ({{ $value | printf \"%.1f\" }}%)."
+
+      - alert: HighSwapUsage
+        expr: (1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High swap usage on {{ $labels.host }}"
+          description: "Swap usage on {{ $labels.instance }} has exceeded 80% ({{ $value | printf \"%.1f\" }}%)."
+
+      - alert: HostNetworkReceiveErrors
+        expr: rate(node_network_receive_errs_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Network receive errors on {{ $labels.host }}"
+          description: "Network interface {{ $labels.device }} on {{ $labels.instance }} is receiving errors."
+
+      - alert: HostClockSkew
+        expr: abs(node_timex_offset_seconds) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Clock skew detected on {{ $labels.host }}"
+          description: "System clock on {{ $labels.instance }} is drifting by {{ $value | printf \"%.3f\" }}s."
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container OOM killed on {{ $labels.host }}"
+          description: "Container {{ $labels.name }} on {{ $labels.instance }} was OOM killed."
+
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total{name!=""}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container high CPU: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} on {{ $labels.instance }} is using {{ $value | printf \"%.1f\" }}% CPU."

@@ -35,15 +35,22 @@ from audit_result_store import (  # pylint: disable=import-error,wrong-import-po
 # ---------------------------------------------------------------------------
 # Cluster definition — alias (used from localhost) + IP (used for node↔node)
 # ---------------------------------------------------------------------------
+
+# Proxmox gateway aliases — declared as constants because they are referenced
+# multiple times: once in CLUSTER and once per LXC they host in PROXIED_NODES.
+HZ_215 = "hz.215"
+HZ_223 = "hz.223"
+
 CLUSTER: list[tuple[str, str]] = [
+    ("orchestrator", "77.42.76.185"),
     ("hz.62", "95.216.66.62"),
     ("hz.113", "49.13.97.113"),
     ("hz.118", "95.216.72.118"),
     ("hz.123", "94.130.68.123"),
     ("hz.157", "95.216.225.157"),
     ("hz.164", "135.181.183.164"),
-    ("hz.215", "95.216.36.215"),
-    ("hz.223", "95.217.32.223"),
+    (HZ_215, "95.216.36.215"),
+    (HZ_223, "95.217.32.223"),
     ("hz.247", "95.216.68.247"),
 ]
 
@@ -97,6 +104,20 @@ def build_compute_ssh_config(alias: str, ip: str) -> str:
     )
 
 
+def build_proxied_ssh_config(alias: str, ip: str, gateway: str) -> str:
+    return (
+        f"Host {alias}\n"
+        f"    HostName {ip}\n"
+        "    User root\n"
+        f"    ProxyJump {gateway}\n"
+        "    IdentityFile /root/.ssh/id_ed25519_production\n"
+        "    IdentityFile /root/.ssh/id_ed25519\n"
+        "    IdentityFile /root/.ssh/id_rsa\n"
+        "    IdentitiesOnly yes\n"
+        "    StrictHostKeyChecking no"
+    )
+
+
 COMPUTE_SSH_CONFIG: dict[str, str] = {
     alias: build_compute_ssh_config(alias, ip) for alias, ip in CLUSTER
 }
@@ -104,28 +125,64 @@ COMPUTE_SSH_CONFIG: dict[str, str] = {
 # LXC containers — reachable only via their gateway (Proxmox host).
 # From the gateway, id_ed25519_production is already authorized on each LXC.
 # Format: (alias, ip, gateway_alias)
-# NOTE: cerniq LXCs (10.10.1.x) are on an isolated VLAN not routable from any
-# hz.* node directly — excluded until a reachable gateway is confirmed.
+#
+# LXC placement (verified 2026-03-23):
+#   hz.247 (NewCluster Node 2): LXC 107 (postgres-main)
+#   hz.215 (NewCluster Node 3): LXC 105 (wapp-pro-app), 111 (neanelu-prod), 112 (neanelu-staging), 115 (llm-guard)
+#   hz.223 (NewCluster Node 4): LXC 108 (CI-worker), 109 (prod-cerniq), 110 (staging-cerniq)
+#   hz.118 standalone "proxmox2": LXC 100-103 — public IPs, no ProxyJump needed
+#   hz.157 standalone "proxmox" (PVE 7.4): LXC 100, 102 — public IPs, no ProxyJump needed
+#   hz.164 is bare-metal Ubuntu 24.04, NOT a Proxmox node.
 PROXIED_NODES: list[tuple[str, str, str]] = [
-    ("postgres-main", "10.0.1.107", "hz.164"),  # on hz.164's private network
-    ("neanelu-prod", "10.0.1.111", "hz.164"),
-    ("neanelu-staging", "10.0.1.112", "hz.164"),
-    ("neanelu-ci", "10.0.1.108", "hz.164"),
-    ("staging-cerniq", "10.0.1.110", "hz.164"),
-    ("prod-cerniq", "10.0.1.109", "hz.164"),
+    ("postgres-main", "10.0.1.107", "hz.247"),
+    ("neanelu-prod", "10.0.1.111", HZ_215),
+    ("neanelu-staging", "10.0.1.112", HZ_215),
+    ("neanelu-ci", "10.0.1.108", HZ_223),
+    ("staging-cerniq", "10.0.1.110", HZ_223),
+    ("prod-cerniq", "10.0.1.109", HZ_223),
+    ("llm-guard", "10.0.1.115", HZ_215),
+    ("wapp-pro-app", "10.0.1.105", HZ_215),
 ]
 
+PROXIED_SSH_CONFIG: dict[str, str] = {
+    alias: build_proxied_ssh_config(alias, ip, gateway)
+    for alias, ip, gateway in PROXIED_NODES
+}
+
+# SSH option string constants — used in both list-form (subprocess.run argv)
+# and inline-string form (nested shell commands built as f-strings).
+# Single source of truth eliminates duplication across _SSH_OPTS, storage-box
+# subprocess calls, ssh_via_gateway, and verify_pair.
+_OPT_BATCH_MODE = "BatchMode=yes"
+_OPT_STRICT_HOST_KEY_CHECKING = "StrictHostKeyChecking=accept-new"
+_OPT_USER_KNOWN_HOSTS_FILE = "UserKnownHostsFile=/dev/null"
+_OPT_LOG_LEVEL = "LogLevel=ERROR"
+
+# Options list for compute-node subprocess calls (includes ConnectTimeout).
 _SSH_OPTS = [
     "-o",
-    "BatchMode=yes",
+    _OPT_BATCH_MODE,
     "-o",
     "ConnectTimeout=8",
     "-o",
-    "StrictHostKeyChecking=accept-new",
+    _OPT_STRICT_HOST_KEY_CHECKING,
     "-o",
-    "UserKnownHostsFile=/dev/null",
+    _OPT_USER_KNOWN_HOSTS_FILE,
     "-o",
-    "LogLevel=ERROR",
+    _OPT_LOG_LEVEL,
+]
+
+# Options list for storage-box subprocess calls (port 23; no ConnectTimeout
+# override — storage boxes use a different transport profile).
+_SSH_STORAGEBOX_OPTS = [
+    "-o",
+    _OPT_BATCH_MODE,
+    "-o",
+    _OPT_STRICT_HOST_KEY_CHECKING,
+    "-o",
+    _OPT_USER_KNOWN_HOSTS_FILE,
+    "-o",
+    _OPT_LOG_LEVEL,
 ]
 
 SSH_TIMEOUT_EXIT_CODE = 124
@@ -154,9 +211,9 @@ def ssh_via_gateway(
 ) -> tuple[int, str, str]:
     """Run a command on a proxied node (LXC) via its gateway using the gateway's production key."""
     inner = (
-        f"ssh -o BatchMode=yes -o ConnectTimeout=8"
-        f" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null"
-        f" -o LogLevel=ERROR"
+        f"ssh -o {_OPT_BATCH_MODE} -o ConnectTimeout=8"
+        f" -o {_OPT_STRICT_HOST_KEY_CHECKING} -o {_OPT_USER_KNOWN_HOSTS_FILE}"
+        f" -o {_OPT_LOG_LEVEL}"
         f" -i /root/.ssh/id_ed25519_production"
         f" root@{target_ip} {command!r}"
     )
@@ -287,7 +344,7 @@ def propagate_ssh_config_all(
     action = "Simulating SSH config propagation" if dry_run else "Propagating SSH config"
     print_phase_header(f"PHASE 0 - {action} (compute + storage aliases) to compute nodes")
 
-    config_blocks = {**COMPUTE_SSH_CONFIG, **STORAGE_BOX_SSH_CONFIG}
+    config_blocks = {**COMPUTE_SSH_CONFIG, **PROXIED_SSH_CONFIG, **STORAGE_BOX_SSH_CONFIG}
 
     results: list[ConfigPropagateResult] = []
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -394,6 +451,64 @@ def install_keys_on_host(
     return result
 
 
+def _download_and_parse_authorized_keys(
+    alias: str, local_ak: str
+) -> tuple[list[str], set[str]]:
+    """Download and parse an existing authorized_keys file from a storage box via SCP.
+
+    Returns ``(existing_lines, existing_key_bodies)``.  Both collections are
+    empty when the remote file does not exist or the download fails — callers
+    treat this as a clean slate and proceed to upload.
+    """
+    subprocess.run(
+        ["scp", "-P", "23", *_SSH_STORAGEBOX_OPTS, f"{alias}:.ssh/authorized_keys", local_ak],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    existing_lines: list[str] = []
+    existing_bodies: set[str] = set()
+    if not os.path.exists(local_ak):
+        return existing_lines, existing_bodies
+    with open(local_ak, encoding="utf-8") as fh:
+        for raw_line in fh:
+            line = raw_line.strip()
+            if not line:
+                continue
+            existing_lines.append(line)
+            parts = line.split()
+            if len(parts) >= SSH_KEY_MIN_PARTS:
+                existing_bodies.add(parts[1])
+    return existing_lines, existing_bodies
+
+
+def _merge_authorized_keys(
+    all_keys: list[str],
+    existing_lines: list[str],
+    existing_bodies: set[str],
+) -> tuple[list[str], int, int]:
+    """Idempotently merge *all_keys* into *existing_lines*.
+
+    Returns ``(merged_lines, added_count, skipped_count)``.  Deduplication
+    is performed by comparing base64 key bodies — stable across comment edits.
+    """
+    merged = list(existing_lines)
+    added = 0
+    skipped = 0
+    for key in all_keys:
+        parts = key.split()
+        if len(parts) < SSH_KEY_MIN_PARTS:
+            continue
+        if parts[1] not in existing_bodies:
+            merged.append(key)
+            existing_bodies.add(parts[1])
+            added += 1
+        else:
+            skipped += 1
+    return merged, added, skipped
+
+
 def install_keys_on_storagebox(alias: str, all_keys: list[str], dry_run: bool) -> DistributeResult:
     """Distribute keys to a Hetzner Storage Box via SCP.
 
@@ -402,6 +517,10 @@ def install_keys_on_storagebox(alias: str, all_keys: list[str], dry_run: bool) -
       1. Download the current authorized_keys (if it exists) via SCP.
       2. Merge new keys (idempotent dedup by base64 body).
       3. Upload the merged file back via SCP.
+
+    Complexity is intentionally split across three private helpers:
+      - :func:`_download_and_parse_authorized_keys`
+      - :func:`_merge_authorized_keys`
     """
     result = DistributeResult(alias=alias)
 
@@ -412,99 +531,28 @@ def install_keys_on_storagebox(alias: str, all_keys: list[str], dry_run: bool) -
     with tempfile.TemporaryDirectory() as tmpdir:
         local_ak = os.path.join(tmpdir, "authorized_keys")
 
-        # Step 1 — download existing authorized_keys (ignore error if absent)
-        dl = subprocess.run(
-            [
-                "scp",
-                "-P",
-                "23",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "StrictHostKeyChecking=accept-new",
-                "-o",
-                "UserKnownHostsFile=/dev/null",
-                "-o",
-                "LogLevel=ERROR",
-                f"{alias}:.ssh/authorized_keys",
-                local_ak,
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=20,
+        existing_lines, existing_bodies = _download_and_parse_authorized_keys(alias, local_ak)
+        merged, result.added, result.skipped = _merge_authorized_keys(
+            all_keys, existing_lines, existing_bodies
         )
-        existing_bodies: set[str] = set()
-        existing_lines: list[str] = []
-        if dl.returncode == 0 and os.path.exists(local_ak):
-            with open(local_ak, encoding="utf-8") as fh:
-                for raw_line in fh:
-                    line = raw_line.strip()
-                    if not line:
-                        continue
-                    existing_lines.append(line)
-                    parts = line.split()
-                    if len(parts) >= SSH_KEY_MIN_PARTS:
-                        existing_bodies.add(parts[1])
-
-        # Step 2 — merge, deduplicate
-        merged = list(existing_lines)
-        for key in all_keys:
-            parts = key.split()
-            if len(parts) < SSH_KEY_MIN_PARTS:
-                continue
-            if parts[1] not in existing_bodies:
-                merged.append(key)
-                existing_bodies.add(parts[1])
-                result.added += 1
-            else:
-                result.skipped += 1
 
         if result.added == 0:
-            return result  # nothing new, skip upload
+            return result  # nothing new — skip upload
 
         with open(local_ak, "w", encoding="utf-8") as fh:
             fh.write("\n".join(merged) + "\n")
 
-        # Step 3 — ensure .ssh dir exists, then upload
+        # Ensure .ssh directory exists; ignore rc — it may already be present.
         subprocess.run(
-            [
-                "ssh",
-                "-p",
-                "23",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "StrictHostKeyChecking=accept-new",
-                "-o",
-                "UserKnownHostsFile=/dev/null",
-                "-o",
-                "LogLevel=ERROR",
-                alias,
-                "mkdir .ssh",
-            ],
+            ["ssh", "-p", "23", *_SSH_STORAGEBOX_OPTS, alias, "mkdir .ssh"],
             capture_output=True,
             text=True,
             timeout=10,
             check=False,
-        )  # ignore rc — dir may already exist
+        )
 
         ul = subprocess.run(
-            [
-                "scp",
-                "-P",
-                "23",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "StrictHostKeyChecking=accept-new",
-                "-o",
-                "UserKnownHostsFile=/dev/null",
-                "-o",
-                "LogLevel=ERROR",
-                local_ak,
-                f"{alias}:.ssh/authorized_keys",
-            ],
+            ["scp", "-P", "23", *_SSH_STORAGEBOX_OPTS, local_ak, f"{alias}:.ssh/authorized_keys"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -534,9 +582,9 @@ class VerifyResult:
 
 def verify_pair(src_alias: str, dst_alias: str, dst_ip: str, timeout: int = 8) -> VerifyResult:
     cmd = (
-        f"ssh -o BatchMode=yes -o NumberOfPasswordPrompts=0 -o ConnectTimeout={timeout}"
-        f" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null"
-        f" -o LogLevel=ERROR {dst_alias} 'echo __MESH_OK__' 2>&1"
+        f"ssh -o {_OPT_BATCH_MODE} -o NumberOfPasswordPrompts=0 -o ConnectTimeout={timeout}"
+        f" -o {_OPT_STRICT_HOST_KEY_CHECKING} -o {_OPT_USER_KNOWN_HOSTS_FILE}"
+        f" -o {_OPT_LOG_LEVEL} {dst_alias} 'echo __MESH_OK__' 2>&1"
     )
     last_detail = "unknown error"
 

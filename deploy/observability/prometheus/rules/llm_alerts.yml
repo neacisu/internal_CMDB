@@ -2,13 +2,31 @@ groups:
   - name: llm_alerts
     rules:
       - alert: LLMEndpointDown
-        expr: probe_success{job="blackbox-http"} == 0
+        expr: probe_success{job="blackbox-http", service=~"vllm-.*|llm-.*|ollama-.*"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "LLM endpoint unreachable: {{ $labels.instance }}"
-          description: "Blackbox probe for {{ $labels.instance }} has failed for more than 1 minute."
+          summary: "LLM endpoint unreachable: {{ $labels.service }}"
+          description: "Blackbox HTTP probe for {{ $labels.service }} ({{ $labels.instance }}) has failed for more than 1 minute."
+
+      - alert: CMDBEndpointDown
+        expr: probe_success{job="blackbox-http", service="internalcmdb-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "InternalCMDB API unreachable"
+          description: "Blackbox HTTP probe for InternalCMDB API ({{ $labels.instance }}) has failed for more than 1 minute."
+
+      - alert: InternalServiceDown
+        expr: probe_success{job="blackbox-tcp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Internal service unreachable: {{ $labels.service }}"
+          description: "TCP probe for {{ $labels.service }} ({{ $labels.instance }}) has failed for more than 2 minutes."
 
       - alert: LLMQueueDepth
         expr: vllm:num_requests_waiting > 10
@@ -27,3 +45,12 @@ groups:
         annotations:
           summary: "LLM p99 latency high on {{ $labels.instance }}"
           description: "vLLM instance {{ $labels.instance }} p99 latency is {{ $value | printf \"%.1f\" }}s (threshold: 30s)."
+
+      - alert: LLMGPUCacheUtilizationHigh
+        expr: vllm:gpu_cache_usage_perc > 0.95
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vLLM GPU KV cache near capacity on {{ $labels.instance }}"
+          description: "vLLM GPU KV cache utilization is at {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }}."

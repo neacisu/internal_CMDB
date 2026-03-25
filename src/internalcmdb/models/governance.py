@@ -1,17 +1,43 @@
-"""Schema: governance — policy, approval and change audit trail."""
+"""Schema: governance — policy, approval, change log, and audit trail."""
 
 from __future__ import annotations
 
 import uuid
 from typing import Any, ClassVar
 
-from sqlalchemy import Boolean, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
 
 _SERVER_NOW = "now()"
+
+
+class AuditEvent(Base):
+    """HTTP request audit event recorded by AuditMiddleware."""
+
+    __tablename__ = "audit_event"
+    __table_args__ = (
+        Index("ix_audit_event_created", "created_at"),
+        Index("ix_audit_event_actor", "actor"),
+        Index("ix_audit_event_status", "status"),
+        {"schema": "governance"},
+    )
+
+    audit_event_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False, default="http_request")
+    actor: Mapped[str | None] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    target_entity: Mapped[str | None] = mapped_column(Text)
+    correlation_id: Mapped[str | None] = mapped_column(Text)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str | None] = mapped_column(Text)
+    ip_address: Mapped[str | None] = mapped_column(Text)
+    risk_level: Mapped[str | None] = mapped_column(Text, default="low")
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
+    )
 
 
 class PolicyRecord(Base):

@@ -288,7 +288,7 @@ http:
     llm-api-guard-svc:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:8000"
+          - url: "http://10.0.1.115:8000"
         healthCheck:
           path: "/healthz"
           interval: "30s"

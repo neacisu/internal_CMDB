@@ -215,27 +215,59 @@ def get_trends(db: Annotated[Session, Depends(get_db)]) -> list[TrendSeries]:
 # ---------------------------------------------------------------------------
 
 
+def _agent_entry(
+    agent: object | None,
+    host_code: str,
+    hostname: str,
+) -> dict[str, object]:
+    if agent is None:
+        return {
+            "agent_id": None,
+            "host_code": host_code,
+            "hostname": hostname,
+            "status": "offline",
+            "agent_version": None,
+            "last_heartbeat_at": None,
+            "enrolled_at": None,
+            "has_agent": False,
+        }
+    return {
+        "agent_id": str(agent.agent_id),  # type: ignore[union-attr]
+        "host_code": host_code,
+        "hostname": hostname,
+        "status": derive_agent_status(agent),
+        "agent_version": agent.agent_version,  # type: ignore[union-attr]
+        "last_heartbeat_at": agent.last_heartbeat_at,  # type: ignore[union-attr]
+        "enrolled_at": agent.enrolled_at,  # type: ignore[union-attr]
+        "has_agent": True,
+    }
+
+
 @router.get("/fleet-health")
 def fleet_health_dashboard(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict[str, object]]:
-    """All agents with status, last heartbeat, staleness info."""
+    """All agents with status, last heartbeat, staleness info.
+
+    Includes both registry-linked hosts AND orphan agents (LXC, external).
+    """
     fleet_state = build_fleet_state(db)
     result: list[dict[str, object]] = []
+    seen_agent_ids: set[str] = set()
+
     for host in fleet_state.hosts:
         agent = fleet_state.agents_by_host_id.get(host.host_id)
-        result.append(
-            {
-                "agent_id": str(agent.agent_id) if agent else None,
-                "host_code": host.host_code,
-                "hostname": host.hostname,
-                "status": derive_agent_status(agent) if agent else "offline",
-                "agent_version": agent.agent_version if agent else None,
-                "last_heartbeat_at": agent.last_heartbeat_at if agent else None,
-                "enrolled_at": agent.enrolled_at if agent else None,
-                "has_agent": agent is not None,
-            }
-        )
+        if agent:
+            seen_agent_ids.add(str(agent.agent_id))
+        result.append(_agent_entry(agent, host.host_code, host.hostname))
+
+    for agent in fleet_state.unassigned_agents:
+        aid = str(agent.agent_id)
+        if aid in seen_agent_ids:
+            continue
+        seen_agent_ids.add(aid)
+        result.append(_agent_entry(agent, agent.host_code, agent.host_code))
+
     return result
 
 
@@ -243,20 +275,132 @@ def fleet_health_dashboard(
 def fleet_health_summary(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
-    """Fleet health summary counts."""
+    """Fleet health summary counts (all agents, not just registry hosts)."""
     fleet_state = build_fleet_state(db)
-    counts = {"online": 0, "degraded": 0, "offline": 0}
+    counts: dict[str, int] = {"online": 0, "degraded": 0, "offline": 0}
+
     for host in fleet_state.hosts:
         agent = fleet_state.agents_by_host_id.get(host.host_id)
         status_name = derive_agent_status(agent) if agent else "offline"
         counts[status_name] = counts.get(status_name, 0) + 1
 
+    for agent in fleet_state.unassigned_agents:
+        status_name = derive_agent_status(agent)
+        counts[status_name] = counts.get(status_name, 0) + 1
+
+    total = len(fleet_state.hosts) + len(fleet_state.unassigned_agents)
     return {
         "online": counts.get("online", 0),
         "degraded": counts.get("degraded", 0),
         "offline": counts.get("offline", 0),
-        "total": len(fleet_state.hosts),
+        "total": total,
     }
+
+
+def _parse_vitals_mem(sv: dict) -> tuple[float | None, float | None]:
+    """Return (mem_pct, mem_total_gb) from a system_vitals payload."""
+    mem = sv.get("memory_kb") or {}
+    mem_total = mem.get("MemTotal", 0)
+    mem_avail = mem.get("MemAvailable", 0)
+    mem_pct = round((1 - mem_avail / mem_total) * 100, 1) if mem_total > 0 else None
+    mem_total_gb = round(mem_total / (1024 * 1024), 1) if mem_total else None
+    return mem_pct, mem_total_gb
+
+
+def _parse_disk_root_pct(disk_snap: object) -> float | None:
+    """Return root-partition used_pct from a disk_state payload."""
+    disk_data = disk_snap or {}
+    if not isinstance(disk_data, dict):
+        return None
+    disks = disk_data.get("disks", disk_data.get("filesystems", []))
+    root_fs = next(
+        (fs for fs in disks if fs.get("mountpoint", fs.get("mount")) == "/"),
+        None,
+    )
+    if root_fs is None:
+        return None
+    raw = root_fs.get("used_pct", root_fs.get("use_pct"))
+    if isinstance(raw, str):
+        return float(raw.rstrip("%"))
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    return None
+
+
+def _parse_docker_counts(docker_snap: object) -> tuple[int, int]:
+    """Return (total, running) container counts from a docker_state payload."""
+    docker_data = docker_snap or {}
+    if not isinstance(docker_data, dict):
+        return 0, 0
+    containers_list = docker_data.get("containers", [])
+    running = sum(
+        1 for c in containers_list
+        if isinstance(c, dict) and "Up" in str(c.get("status", ""))
+    )
+    return docker_data.get("total", 0), running
+
+
+def _latest_snapshot(db: Session, agent_id: object, kind: str) -> object:
+    return db.execute(
+        select(CollectorSnapshot.payload_jsonb)
+        .where(
+            CollectorSnapshot.agent_id == agent_id,
+            CollectorSnapshot.snapshot_kind == kind,
+        )
+        .order_by(CollectorSnapshot.collected_at.desc())
+        .limit(1)
+    ).scalar()
+
+
+@router.get("/fleet-vitals")
+def fleet_vitals(
+    db: Annotated[Session, Depends(get_db)],
+) -> list[dict[str, object]]:
+    """Latest system vitals per active agent — CPU, RAM, disk, network from snapshots."""
+    from internalcmdb.models.collectors import CollectorAgent
+
+    agents = db.scalars(
+        select(CollectorAgent).where(
+            CollectorAgent.is_active.is_(True),
+            CollectorAgent.status != "retired",
+        )
+    ).all()
+
+    result: list[dict[str, object]] = []
+    for agent in agents:
+        vitals_snap = db.execute(
+            select(CollectorSnapshot.payload_jsonb, CollectorSnapshot.collected_at)
+            .where(
+                CollectorSnapshot.agent_id == agent.agent_id,
+                CollectorSnapshot.snapshot_kind == "system_vitals",
+            )
+            .order_by(CollectorSnapshot.collected_at.desc())
+            .limit(1)
+        ).first()
+
+        sv = vitals_snap[0] if vitals_snap else {}
+        mem_pct, mem_total_gb = _parse_vitals_mem(sv or {})
+        disk_pct = _parse_disk_root_pct(_latest_snapshot(db, agent.agent_id, "disk_state"))
+        container_count, running_count = _parse_docker_counts(
+            _latest_snapshot(db, agent.agent_id, "docker_state"),
+        )
+
+        result.append({
+            "agent_id": str(agent.agent_id),
+            "host_code": agent.host_code,
+            "status": derive_agent_status(agent),
+            "last_heartbeat_at": agent.last_heartbeat_at,
+            "load_avg": sv.get("load_avg", []) if sv else [],
+            "memory_pct": mem_pct,
+            "memory_total_gb": mem_total_gb,
+            "disk_root_pct": disk_pct,
+            "containers_running": running_count,
+            "containers_total": container_count,
+            "vitals_at": str(vitals_snap[1]) if vitals_snap else None,
+        })
+
+    result.sort(key=lambda x: str(x.get("host_code", "")))
+    return result
 
 
 @router.get("/fleet-health/{host_code}/timeline")

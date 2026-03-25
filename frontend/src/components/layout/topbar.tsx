@@ -8,11 +8,16 @@ const pageTitles: Record<string, string> = {
   "/hosts": "Hosts",
   "/gpu": "GPU Devices",
   "/services": "Services",
+  "/metrics": "Live Metrics",
   "/workers": "Workers",
   "/discovery": "Discovery",
   "/results": "Results",
   "/documents": "Documents",
   "/settings": "Settings",
+  "/cognitive": "Cognitive",
+  "/hitl": "HITL",
+  "/audit": "Audit",
+  "/debug": "Debug",
 };
 
 export default function Topbar() {

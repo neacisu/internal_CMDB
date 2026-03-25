@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import socket
 import ssl
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 DEFAULT_ENDPOINTS: list[dict[str, Any]] = [
@@ -46,10 +46,8 @@ def _check_cert(host: str, port: int = 443, timeout: float = 5.0) -> dict[str, A
     ctx.verify_mode = ssl.CERT_REQUIRED
 
     try:
-        with (
-            socket.create_connection((host, port), timeout=timeout) as sock,
-            ctx.wrap_socket(sock, server_hostname=host) as ssock,
-        ):
+        with socket.create_connection((host, port), timeout=timeout) as sock, \
+             ctx.wrap_socket(sock, server_hostname=host) as ssock:
             cert = ssock.getpeercert(binary_form=False)
             der = ssock.getpeercert(binary_form=True)
             chain_depth = _verified_chain_depth(ssock, bool(der))
@@ -73,9 +71,9 @@ def _check_cert(host: str, port: int = 443, timeout: float = 5.0) -> dict[str, A
             if not_after_str:
                 try:
                     expiry_dt = datetime.strptime(not_after_str, "%b %d %H:%M:%S %Y %Z").replace(
-                        tzinfo=UTC
+                        tzinfo=timezone.utc
                     )
-                    days_until_expiry = (expiry_dt - datetime.now(UTC)).days
+                    days_until_expiry = (expiry_dt - datetime.now(timezone.utc)).days
                 except ValueError:
                     pass
 

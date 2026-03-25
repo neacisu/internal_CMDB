@@ -19,7 +19,7 @@ def _ip_addr() -> list[dict[str, Any]]:
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)  # type: ignore[no-any-return]
-    except FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError:
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
         pass
     return []
 
@@ -36,7 +36,7 @@ def _ip_route() -> list[dict[str, Any]]:
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)  # type: ignore[no-any-return]
-    except FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError:
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
         pass
     return []
 

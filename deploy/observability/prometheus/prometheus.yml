@@ -1,5 +1,24 @@
 # ============================================================================
 # Prometheus — scrape configuration for InternalCMDB infrastructure
+# All hosts, all services, all exporters.
+#
+# NETWORKING CONTEXT (2026-03-23):
+#   Prometheus runs on the "observability" Docker network (172.19.0.0/16).
+#   Local exporters on the same network are addressed by container name.
+#   Host-network services use host.docker.internal (maps to host gateway).
+#   Remote vSwitch targets route via Docker default gateway → host → vSwitch.
+#
+# vSwitch IP mapping:
+#   orchestrator:      10.0.1.18  (77.42.76.185)
+#   hz.113:            10.0.1.13  (49.13.97.113)  — GPU inference
+#   hz.62:             10.0.1.62  (95.216.66.62)  — GPU embedding
+#   hz.215:            10.0.1.9   (95.216.36.215)
+#   hz.223:            10.0.1.8   (95.217.32.223)
+#   hz.247:            10.0.1.7   (95.216.68.247)
+#   lxc-llm-guard:     10.0.1.115 (LXC 115 on hz.215, LLM Guard)
+#   lxc-wapp-pro-app:  10.0.1.105 (LXC 105 on hz.215, WAPP Pro — eth0 internal)
+#                      95.216.36.226 (eth1 public, MAC 00:50:56:01:1F:F0, Hetzner dedicated)
+#   VIP:               10.0.1.10  (HAProxy LLM proxy)
 # ============================================================================
 
 global:
@@ -17,60 +36,111 @@ alerting:
   alertmanagers:
     - static_configs:
         - targets:
-            - "127.0.0.1:9093"
+            - "alertmanager:9093"
 
 scrape_configs:
   # ── Prometheus self-monitoring ───────────────────────────────────────────
   - job_name: "prometheus"
     static_configs:
-      - targets: ["127.0.0.1:9090"]
+      - targets: ["localhost:9090"]
 
-  # ── Node exporter (host metrics) ────────────────────────────────────────
+  # ── Node exporter (host metrics) ───────────────────────────────────────
   - job_name: "node-exporter"
     static_configs:
-      - targets:
-          - "10.0.1.1:9100"
-          - "10.0.1.10:9100"
+      - targets: ["node-exporter:9100"]
         labels:
           env: "production"
+          host: "orchestrator"
+      - targets: ["10.0.1.9:9100"]
+        labels:
+          env: "production"
+          host: "hz.215"
+      - targets: ["10.0.1.8:9100"]
+        labels:
+          env: "production"
+          host: "hz.223"
+      - targets: ["10.0.1.7:9100"]
+        labels:
+          env: "production"
+          host: "hz.247"
+      - targets: ["10.0.1.115:9100"]
+        labels:
+          env: "production"
+          host: "lxc-llm-guard"
+      - targets: ["10.0.1.105:9100"]
+        labels:
+          env: "production"
+          host: "lxc-wapp-pro-app"
 
-  # ── cAdvisor (container metrics) ────────────────────────────────────────
+  # ── cAdvisor (container metrics) ───────────────────────────────────────
   - job_name: "cadvisor"
     static_configs:
-      - targets:
-          - "10.0.1.1:8080"
-          - "10.0.1.10:8080"
+      - targets: ["cadvisor:8080"]
+        labels:
+          host: "orchestrator"
 
   # ── PostgreSQL exporter ─────────────────────────────────────────────────
   - job_name: "postgres-exporter"
     static_configs:
-      - targets: ["127.0.0.1:9187"]
+      - targets: ["postgres-exporter:9187"]
 
-  # ── NVIDIA GPU metrics (DCGM exporter) ─────────────────────────────────
-  - job_name: "dcgm-exporter"
-    static_configs:
-      - targets: ["10.0.1.10:9400"]
+  # ── NVIDIA GPU metrics (DCGM exporter) — GPU hosts ─────────────────────
+  # TODO: deploy dcgm-exporter on hz.113 (requires NVIDIA Container Toolkit)
+  # - job_name: "dcgm-exporter"
+  #   static_configs:
+  #     - targets: ["10.0.1.13:9400"]
+  #       labels:
+  #         host: "hz.113"
+  #         gpu_model: "RTX 6000 Ada"
 
-  # ── vLLM model servers ──────────────────────────────────────────────────
+  # ── nvidia-smi exporter — secondary GPU host ────────────────────────────
+  # TODO: deploy nvidia-smi-exporter on hz.62
+  # - job_name: "nvidia-smi-exporter"
+  #   static_configs:
+  #     - targets: ["10.0.1.62:9835"]
+  #       labels:
+  #         host: "hz.62"
+  #         gpu_model: "GTX 1080"
+
+  # ── vLLM model servers (via HAProxy VIP) ────────────────────────────────
   - job_name: "vllm"
     metrics_path: "/metrics"
     static_configs:
-      - targets:
-          - "10.0.1.10:49001"
-          - "10.0.1.10:49002"
+      - targets: ["10.0.1.10:49001"]
+        labels:
+          model: "QwQ-32B-AWQ"
+          host: "hz.113"
+      - targets: ["10.0.1.10:49002"]
+        labels:
+          model: "Qwen2.5-14B-AWQ"
+          host: "hz.113"
 
-  # ── InternalCMDB FastAPI ────────────────────────────────────────────────
+  # ── InternalCMDB FastAPI (host network, via gateway) ───────────────────
+  # FastAPI application metrics via prometheus_client
   - job_name: "internalcmdb"
     metrics_path: "/metrics"
     static_configs:
-      - targets: ["127.0.0.1:4444"]
+      - targets: ["host.docker.internal:4444"]
 
-  # ── Redis exporter ────────────────────────────────────────────────────
+  # ── Redis exporter ──────────────────────────────────────────────────────
   - job_name: "redis-exporter"
     static_configs:
-      - targets: ["127.0.0.1:9121"]
+      - targets: ["redis-exporter:9121"]
 
-  # ── Blackbox exporter (endpoint probes) ─────────────────────────────────
+  # ── PVE exporter (Proxmox) ──────────────────────────────────────────────
+  # Real PVE infrastructure:
+  #   Cluster "NewCluster" (PVE 9.1.5): orchestrator + hz.215 + hz.223 + hz.247
+  #   Standalone "proxmox2" (PVE 9.1.5): hz.118 (10.0.1.4)
+  #   Standalone "proxmox" (PVE 7.4-17): hz.157
+  # NOTE: hz.164 is NOT a PVE node — it is bare-metal Ubuntu 24.04.
+  - job_name: "pve-exporter"
+    static_configs:
+      - targets: ["pve-exporter:9221"]
+        labels:
+          host: "orchestrator"
+          pve_cluster: "NewCluster"
+
+  # ── Blackbox exporter — HTTP probes ─────────────────────────────────────
   - job_name: "blackbox-http"
     metrics_path: "/probe"
     params:
@@ -78,13 +148,98 @@ scrape_configs:
     static_configs:
       - targets:
           - "https://infraq.app/health"
+        labels:
+          service: "internalcmdb-api"
+      - targets:
           - "https://infraq.app/llm/v1/reasoning/health"
+        labels:
+          service: "vllm-reasoning-32b"
+      - targets:
           - "https://infraq.app/llm/v1/fast/health"
+        labels:
+          service: "vllm-fast-14b"
+      - targets:
           - "https://infraq.app/llm/v1/guard/healthz"
+        labels:
+          service: "llm-guard"
+      - targets:
+          - "http://10.0.1.115:8000/healthz"
+        labels:
+          service: "llm-guard-direct"
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
       - source_labels: [__param_target]
         target_label: instance
       - target_label: __address__
-        replacement: "127.0.0.1:9115"
+        replacement: "blackbox-exporter:9115"
+
+  # ── Blackbox exporter — TCP probes (internal services) ──────────────────
+  - job_name: "blackbox-tcp"
+    metrics_path: "/probe"
+    params:
+      module: ["tcp_connect"]
+    static_configs:
+      - targets:
+          - "host.docker.internal:5433"
+        labels:
+          service: "postgresql"
+      - targets:
+          - "10.0.1.10:49001"
+        labels:
+          service: "vllm-reasoning"
+      - targets:
+          - "10.0.1.10:49002"
+        labels:
+          service: "vllm-fast"
+      - targets:
+          - "10.0.1.10:49003"
+        labels:
+          service: "ollama-embed"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: "blackbox-exporter:9115"
+
+  # ── Blackbox exporter — ICMP probes (host reachability) ─────────────────
+  - job_name: "blackbox-icmp"
+    metrics_path: "/probe"
+    params:
+      module: ["icmp"]
+    static_configs:
+      - targets:
+          - "10.0.1.18"
+          - "10.0.1.13"
+          - "10.0.1.62"
+          - "10.0.1.9"
+          - "10.0.1.8"
+          - "10.0.1.7"
+          - "10.0.1.115"
+          - "10.0.1.105"
+          - "95.216.36.226"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: "blackbox-exporter:9115"
+
+  # ── WAPP Pro (HAProxy VIP → wapp-pro-app) ────────────────────────────────
+  - job_name: "evo-wapp-gateway"
+    metrics_path: /internal/metrics
+    static_configs:
+      - targets: ["10.0.1.10:26010"]
+
+  - job_name: "evo-wapp-workers"
+    metrics_path: /health
+    static_configs:
+      - targets: ["10.0.1.10:26013"]
+
+  - job_name: "evo-wapp-core"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["10.0.1.10:26012"]

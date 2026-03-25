@@ -4,7 +4,7 @@ Backends (HAProxy VIP 10.0.1.10):
     * reasoning  — vLLM  QwQ-32B-AWQ          :49001
     * fast       — vLLM  Qwen2.5-14B-AWQ      :49002
     * embed      — Ollama Qwen3-Embedding-8B   :49003
-    * guard      — LLM Guard (orchestrator)    :8000
+    * guard      — LLM Guard (LXC 115 / hz.215) :8000
 
 API formats follow LLM-005 Portable Model Registry.
 
@@ -121,7 +121,7 @@ class LLMClient:
         reasoning_url: str = "http://10.0.1.10:49001",
         fast_url: str = "http://10.0.1.10:49002",
         embed_url: str = "http://10.0.1.10:49003",
-        guard_url: str = "http://127.0.0.1:8000",
+        guard_url: str = "http://10.0.1.115:8000",
         *,
         guard_token: str = "",
     ) -> None:

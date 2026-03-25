@@ -5,13 +5,13 @@ Each function follows the ``async fn(ctx) -> dict`` signature
 expected by the worker system.
 
 All tasks are registered in :data:`COGNITIVE_TASKS` for scheduler
-discovery.  Implementations are placeholders that log start/end;
-real logic will be filled in subsequent phases.
+discovery.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any
@@ -204,14 +204,270 @@ async def guard_audit(ctx: _Ctx) -> dict[str, Any]:
 
 @_task_wrapper("self_heal_check")
 async def self_heal_check(ctx: _Ctx) -> dict[str, Any]:
-    """Evaluate self-healing candidates.
+    """Evaluate self-healing candidates and execute safe remediations.
 
-    Identifies entities with degraded health that match
-    known playbook patterns and proposes remediation plans.
+    Pipeline:
+      1. Query latest ``disk_state`` snapshots from all hosts.
+      2. Identify hosts whose root filesystem exceeds the threshold.
+      3. Skip hosts that were already healed in the last hour.
+      4. For the orchestrator (local Docker socket): execute Docker cleanup.
+      5. For other hosts: create an insight for manual review.
+      6. Record self-heal actions in ``cognitive.self_heal_action``.
     """
     await _check_database(ctx)
-    logger.debug("Evaluating self-healing candidates.")
-    return {"candidates_evaluated": 0, "plans_proposed": 0}
+
+    host_data, recently_healed = await asyncio.to_thread(
+        _query_disk_health, ctx
+    )
+
+    candidates_evaluated = 0
+    plans_proposed = 0
+    plans_executed = 0
+
+    for hd in host_data:
+        candidates_evaluated += 1
+        host_code = hd["host_code"]
+        host_id = str(hd["host_id"])
+        disk_pct = _extract_root_disk_pct(hd.get("disk_payload") or {})
+
+        if disk_pct < _DISK_HEAL_THRESHOLD:
+            continue
+
+        if host_id in recently_healed:
+            logger.info(
+                "Host %s (%.1f%% disk) was healed <1 h ago — skipping.",
+                host_code,
+                disk_pct,
+            )
+            continue
+
+        logger.warning(
+            "Host %s disk at %.1f%% (threshold %d%%) — evaluating.",
+            host_code,
+            disk_pct,
+            _DISK_HEAL_THRESHOLD,
+        )
+        plans_proposed += 1
+
+        if host_code == "orchestrator":
+            ok = await _auto_heal_disk(ctx, host_id, host_code, disk_pct)
+            if ok:
+                plans_executed += 1
+        else:
+            await _persist_disk_insight(
+                ctx, host_id, host_code, disk_pct, auto_healed=False
+            )
+
+    return {
+        "candidates_evaluated": candidates_evaluated,
+        "plans_proposed": plans_proposed,
+        "plans_executed": plans_executed,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Self-heal: disk cleanup internals
+# ---------------------------------------------------------------------------
+
+_DISK_HEAL_THRESHOLD = 85  # percent root usage
+
+
+def _get_engine(ctx: _Ctx):  # noqa: ANN202
+    """Create a disposable SQLAlchemy engine from the task context."""
+    from internalcmdb.api.config import get_settings  # noqa: PLC0415
+    from sqlalchemy import create_engine  # noqa: PLC0415
+
+    settings = get_settings()
+    url = str(ctx.get("database_url") or settings.database_url)
+    return create_engine(url, pool_pre_ping=True)
+
+
+def _query_disk_health(ctx: _Ctx) -> tuple[list[dict[str, Any]], set[str]]:
+    """Return (host_disk_rows, recently_healed_host_ids)."""
+    from sqlalchemy import text  # noqa: PLC0415
+
+    engine = _get_engine(ctx)
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                    SELECT DISTINCT ON (h.host_code)
+                           h.host_id, h.host_code,
+                           cs.payload_jsonb AS disk_payload
+                    FROM registry.host h
+                    JOIN discovery.collector_agent ca ON ca.host_id = h.host_id
+                    JOIN discovery.collector_snapshot cs
+                         ON cs.agent_id = ca.agent_id
+                    WHERE cs.snapshot_kind = 'disk_state'
+                      AND cs.collected_at > NOW() - INTERVAL '2 hours'
+                    ORDER BY h.host_code, cs.collected_at DESC
+                """)
+            ).fetchall()
+
+            recent = conn.execute(
+                text("""
+                    SELECT entity_id FROM cognitive.self_heal_action
+                    WHERE executed_at > NOW() - INTERVAL '1 hour'
+                      AND playbook_name = 'clear_disk_space'
+                """)
+            ).fetchall()
+    finally:
+        engine.dispose()
+
+    host_data = [dict(r._mapping) for r in rows]
+    healed_ids = {str(r[0]) for r in recent if r[0]}
+    return host_data, healed_ids
+
+
+def _extract_root_disk_pct(disk_payload: dict[str, Any]) -> float:
+    """Parse root filesystem usage percentage from a disk_state snapshot."""
+    for d in disk_payload.get("disks") or []:
+        if d.get("mountpoint") == "/":
+            raw = str(d.get("used_pct", "0")).replace("%", "")
+            try:
+                return float(raw)
+            except ValueError:
+                pass
+            break
+    return 0.0
+
+
+async def _auto_heal_disk(
+    ctx: _Ctx,
+    host_id: str,
+    host_code: str,
+    disk_pct: float,
+) -> bool:
+    """Execute Docker cleanup on a host with a local Docker socket."""
+    from internalcmdb.cognitive.self_heal_disk import docker_socket_available  # noqa: PLC0415
+
+    if not docker_socket_available():
+        logger.info("Docker socket unavailable — creating manual insight for %s.", host_code)
+        await _persist_disk_insight(ctx, host_id, host_code, disk_pct, auto_healed=False)
+        return False
+
+    from internalcmdb.motor.playbooks import PlaybookExecutor  # noqa: PLC0415
+
+    executor = PlaybookExecutor()
+    pb_result = await executor.execute(
+        "clear_disk_space",
+        {"host": host_code, "host_id": host_id, "disk_pct": disk_pct, "threshold_pct": _DISK_HEAL_THRESHOLD},
+    )
+
+    pre_check = pb_result.output.get("pre_check") or {}
+    if pre_check.get("pre_check") == "skipped":
+        logger.info("Cleanup skipped on %s: %s", host_code, pre_check.get("reason", ""))
+        return False
+
+    freed_mb = 0.0
+    exec_out = pb_result.output.get("execute") or {}
+    freed_mb = exec_out.get("freed_mb", 0.0)
+
+    await _persist_disk_insight(
+        ctx,
+        host_id,
+        host_code,
+        disk_pct,
+        auto_healed=pb_result.success,
+        freed_mb=freed_mb,
+    )
+    await _persist_self_heal_action(ctx, host_id, host_code, pb_result, freed_mb)
+    return pb_result.success
+
+
+async def _persist_disk_insight(
+    ctx: _Ctx,
+    host_id: str,
+    host_code: str,
+    disk_pct: float,
+    *,
+    auto_healed: bool = False,
+    freed_mb: float = 0.0,
+) -> None:
+    """Insert a cognitive insight for a high-disk-usage event."""
+
+    def _insert() -> None:
+        from sqlalchemy import text  # noqa: PLC0415
+
+        engine = _get_engine(ctx)
+        severity = "critical" if disk_pct >= 90 else "warning"
+        status = "acknowledged" if auto_healed else "active"
+        title = f"High disk usage on {host_code}: {disk_pct:.1f}%"
+        explanation = f"Root filesystem on {host_code} is at {disk_pct:.1f}% capacity."
+        if auto_healed:
+            explanation += f" Auto-heal freed {freed_mb:.1f} MB via Docker cleanup."
+
+        evidence = json.dumps([{
+            "metric": "disk_usage_pct",
+            "value": round(disk_pct, 1),
+            "threshold": _DISK_HEAL_THRESHOLD,
+            "auto_healed": auto_healed,
+            "freed_mb": round(freed_mb, 1),
+        }])
+
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO cognitive.insight
+                            (entity_id, entity_type, severity, category,
+                             title, explanation, status, confidence, evidence)
+                        VALUES
+                            (:eid, 'host', :sev, 'capacity', :title,
+                             :expl, :status, 0.95, :evidence::jsonb)
+                    """),
+                    {
+                        "eid": host_id,
+                        "sev": severity,
+                        "title": title,
+                        "expl": explanation,
+                        "status": status,
+                        "evidence": evidence,
+                    },
+                )
+                conn.commit()
+        finally:
+            engine.dispose()
+
+    await asyncio.to_thread(_insert)
+
+
+async def _persist_self_heal_action(
+    ctx: _Ctx,
+    host_id: str,
+    host_code: str,
+    pb_result: Any,
+    freed_mb: float,
+) -> None:
+    """Record an executed self-heal action for the audit trail."""
+
+    def _insert() -> None:
+        from sqlalchemy import text  # noqa: PLC0415
+
+        engine = _get_engine(ctx)
+        status = "completed" if pb_result.success else "failed"
+        summary = f"Docker cleanup on {host_code}: {freed_mb:.1f} MB freed"
+        if not pb_result.success:
+            summary += f" (error: {pb_result.error})"
+
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO cognitive.self_heal_action
+                            (playbook_name, entity_id, status,
+                             result_summary, executed_by)
+                        VALUES
+                            ('clear_disk_space', :eid, :status,
+                             :summary, 'cognitive_self_heal')
+                    """),
+                    {"eid": host_id, "status": status, "summary": summary},
+                )
+                conn.commit()
+        finally:
+            engine.dispose()
+
+    await asyncio.to_thread(_insert)
 
 
 @_task_wrapper("hitl_escalation")

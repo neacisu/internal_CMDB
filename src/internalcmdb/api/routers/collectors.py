@@ -8,8 +8,11 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from internalcmdb.collectors.fleet_health import (
@@ -49,7 +52,10 @@ from ..schemas.collectors import (
 
 router = APIRouter(prefix="/collectors", tags=["collectors"])
 
+logger = logging.getLogger(__name__)
+
 _AGENT_NOT_FOUND_DETAIL = "Agent not found"
+_DISK_HEAL_THRESHOLD_PCT = 85
 
 
 # ---------------------------------------------------------------------------
@@ -99,14 +105,67 @@ def verify_agent_token(
     return agent_id
 
 
+def _lock_agent(db: Session, agent_id: uuid.UUID) -> CollectorAgent | None:
+    """Fetch and lock the agent row (SELECT FOR UPDATE).
+
+    Serialises concurrent heartbeat / ingest requests for the same agent,
+    preventing both deadlocks and snapshot-version collisions.
+    """
+    return db.execute(
+        select(CollectorAgent)
+        .where(CollectorAgent.agent_id == agent_id)
+        .with_for_update()
+    ).scalar_one_or_none()
+
+
 def _next_snapshot_version(db: Session, agent_id: uuid.UUID) -> int:
-    """Return the next monotonic snapshot version for a given agent."""
+    """Return the next monotonic snapshot version for a given agent.
+
+    MUST be called while the agent row is locked (see _lock_agent).
+    """
     current_max = db.scalar(
         select(func.max(CollectorSnapshot.snapshot_version)).where(
             CollectorSnapshot.agent_id == agent_id
         )
     )
     return (current_max or 0) + 1
+
+
+def _insert_snapshot_safe(
+    db: Session,
+    agent_id: uuid.UUID,
+    *,
+    snapshot_kind: str,
+    payload_jsonb: dict,
+    payload_hash: str,
+    collected_at: str,
+    tier_code: str,
+    max_retries: int = 3,
+) -> CollectorSnapshot | None:
+    """Insert a snapshot with retry on version conflict.
+
+    Uses SAVEPOINTs so a conflict does not abort the outer transaction.
+    """
+    for _ in range(max_retries):
+        version = _next_snapshot_version(db, agent_id)
+        snapshot = CollectorSnapshot(
+            snapshot_id=uuid.uuid4(),
+            agent_id=agent_id,
+            snapshot_version=version,
+            snapshot_kind=snapshot_kind,
+            payload_jsonb=payload_jsonb,
+            payload_hash=payload_hash,
+            collected_at=collected_at,
+            tier_code=tier_code,
+        )
+        nested = db.begin_nested()
+        try:
+            db.add(snapshot)
+            db.flush()
+            return snapshot
+        except IntegrityError:
+            nested.rollback()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +326,85 @@ def retire_agent(
 
 
 # ---------------------------------------------------------------------------
+# Cognitive reactive evaluation
+# ---------------------------------------------------------------------------
+
+
+def _extract_root_usage(disk_payload: dict[str, Any]) -> float:
+    """Parse root filesystem usage percentage from a disk_state snapshot payload."""
+    for d in disk_payload.get("disks") or []:
+        if d.get("mountpoint") == "/":
+            raw = str(d.get("used_pct", "0")).replace("%", "")
+            try:
+                return float(raw)
+            except ValueError:
+                pass
+            break
+    return 0.0
+
+
+def _trigger_cognitive_reactions(
+    background_tasks: BackgroundTasks,
+    body: IngestRequest,
+    agent: CollectorAgent,
+) -> None:
+    """Evaluate incoming snapshots for cognitive self-heal triggers.
+
+    Called after each successful ingest commit.  When a ``disk_state``
+    snapshot exceeds the threshold, a background task enqueues the
+    ``self_heal_check`` ARQ job so the worker reacts in near-real-time.
+    """
+    for item in body.snapshots:
+        if item.snapshot_kind != "disk_state":
+            continue
+        payload = item.payload or {}
+        root_pct = _extract_root_usage(payload)
+        if root_pct >= _DISK_HEAL_THRESHOLD_PCT:
+            host_code = agent.host_code or str(body.agent_id)
+            background_tasks.add_task(
+                _enqueue_cognitive_self_heal, host_code, root_pct
+            )
+            break
+
+
+def _enqueue_cognitive_self_heal(host_code: str, disk_pct: float) -> None:
+    """Enqueue ``self_heal_check`` via ARQ when disk threshold is breached.
+
+    Runs as a FastAPI background task (sync thread) after the ingest
+    response is already sent to the agent — zero latency impact on
+    the ingestion path.
+    """
+    import asyncio  # noqa: PLC0415
+
+    async def _enqueue() -> None:
+        from arq import create_pool as arq_create_pool  # noqa: PLC0415
+        from arq.connections import RedisSettings  # noqa: PLC0415
+
+        settings = get_settings()
+        redis_settings = RedisSettings.from_dsn(settings.redis_url)
+        pool = await arq_create_pool(redis_settings)
+        await pool.enqueue_job("self_heal_check")
+        await pool.close()
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_enqueue())
+        logger.info(
+            "Cognitive reaction: enqueued self_heal_check for %s (disk %.1f%%)",
+            host_code,
+            disk_pct,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to enqueue cognitive self-heal for %s",
+            host_code,
+            exc_info=True,
+        )
+    finally:
+        loop.close()
+
+
+# ---------------------------------------------------------------------------
 # Telemetry ingestion
 # ---------------------------------------------------------------------------
 
@@ -278,6 +416,7 @@ def ingest_snapshots(
     body: IngestRequest,
     db: Annotated[Session, Depends(get_db)],
     authenticated_agent_id: Annotated[uuid.UUID, Depends(verify_agent_token)],
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> IngestResponse:
     """Receive a batch of snapshots from an agent."""
     if body.agent_id != authenticated_agent_id:
@@ -286,7 +425,7 @@ def ingest_snapshots(
             detail="Token agent ID does not match request body agent_id",
         )
 
-    agent = db.get(CollectorAgent, body.agent_id)
+    agent = _lock_agent(db, body.agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
 
@@ -295,7 +434,6 @@ def ingest_snapshots(
     errors: list[str] = []
 
     for item in body.snapshots:
-        # Check for dedup — same agent + kind + hash
         existing = db.execute(
             select(CollectorSnapshot.snapshot_id)
             .where(
@@ -311,21 +449,19 @@ def ingest_snapshots(
             deduplicated += 1
             continue
 
-        version = _next_snapshot_version(db, body.agent_id)
-        snapshot = CollectorSnapshot(
-            snapshot_id=uuid.uuid4(),
-            agent_id=body.agent_id,
-            snapshot_version=version,
+        snapshot = _insert_snapshot_safe(
+            db,
+            body.agent_id,
             snapshot_kind=item.snapshot_kind,
             payload_jsonb=item.payload,
             payload_hash=item.payload_hash,
             collected_at=item.collected_at,
             tier_code=item.tier_code,
         )
-        db.add(snapshot)
-        db.flush()
+        if snapshot is None:
+            errors.append(f"Failed to insert snapshot kind={item.snapshot_kind}")
+            continue
 
-        # Generate diff against previous snapshot of same kind
         prev = db.execute(
             select(CollectorSnapshot)
             .where(
@@ -350,7 +486,6 @@ def ingest_snapshots(
 
         accepted += 1
 
-    # Update heartbeat timestamp
     agent.last_heartbeat_at = str(datetime.now(UTC))
     agent.status = "online"
     db.commit()
@@ -363,6 +498,8 @@ def ingest_snapshots(
             COLLECTOR_INGEST_TOTAL.labels(host=host_code, kind=item.snapshot_kind).inc()
     except Exception:
         pass
+
+    _trigger_cognitive_reactions(background_tasks, body, agent)
 
     return IngestResponse(accepted=accepted, deduplicated=deduplicated, errors=errors)
 
@@ -380,7 +517,7 @@ def heartbeat(
             detail="Token agent ID does not match request body agent_id",
         )
 
-    agent = db.get(CollectorAgent, body.agent_id)
+    agent = _lock_agent(db, body.agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
 
@@ -388,7 +525,6 @@ def heartbeat(
     agent.agent_version = body.agent_version
     agent.status = "online"
 
-    # Store heartbeat as a snapshot
     payload = {
         "uptime_seconds": body.uptime_seconds,
         "load_avg": body.load_avg,
@@ -397,7 +533,6 @@ def heartbeat(
     payload_bytes = str(sorted(payload.items())).encode()
     payload_hash = hashlib.sha256(payload_bytes).hexdigest()
 
-    # Dedup heartbeat
     existing = db.execute(
         select(CollectorSnapshot.snapshot_id)
         .where(
@@ -410,18 +545,15 @@ def heartbeat(
     ).first()
 
     if not existing:
-        version = _next_snapshot_version(db, body.agent_id)
-        snapshot = CollectorSnapshot(
-            snapshot_id=uuid.uuid4(),
-            agent_id=body.agent_id,
-            snapshot_version=version,
+        _insert_snapshot_safe(
+            db,
+            body.agent_id,
             snapshot_kind="heartbeat",
             payload_jsonb=payload,
             payload_hash=payload_hash,
             collected_at=str(datetime.now(UTC)),
             tier_code="5s",
         )
-        db.add(snapshot)
 
     db.commit()
 
@@ -444,22 +576,29 @@ def heartbeat(
 
 @router.get("/health", response_model=FleetHealthSummary)
 def fleet_health(db: Annotated[Session, Depends(get_db)]) -> FleetHealthSummary:
-    """Aggregate live health across all known hosts in the registry."""
+    """Aggregate live health across all agents (registry + orphan)."""
     fleet_state = build_fleet_state(db)
-    counts = {"online": 0, "degraded": 0, "offline": 0, "retired": 0}
+    counts: dict[str, int] = {"online": 0, "degraded": 0, "offline": 0, "retired": 0}
 
     for host in fleet_state.hosts:
         agent = fleet_state.agents_by_host_id.get(host.host_id)
         status_name = derive_agent_status(agent) if agent else "offline"
         counts[status_name] = counts.get(status_name, 0) + 1
 
+    for agent in fleet_state.unassigned_agents:
+        status_name = derive_agent_status(agent)
+        counts[status_name] = counts.get(status_name, 0) + 1
+
+    total_entities = len(fleet_state.hosts) + len(fleet_state.unassigned_agents)
+    total_agents = len(fleet_state.agents_by_host_id) + len(fleet_state.unassigned_agents)
+
     return FleetHealthSummary(
         online=counts.get("online", 0),
         degraded=counts.get("degraded", 0),
         offline=counts.get("offline", 0),
         retired=counts.get("retired", 0),
-        total=len(fleet_state.hosts),
-        registered_agents=len(fleet_state.agents_by_host_id),
+        total=total_entities,
+        registered_agents=total_agents,
         expected_hosts=len(fleet_state.hosts),
         unassigned_agents=len(fleet_state.unassigned_agents),
     )
