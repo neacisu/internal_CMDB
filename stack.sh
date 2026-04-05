@@ -16,8 +16,7 @@ VENV="$ROOT/.venv"
 FRONTEND="$ROOT/frontend"
 LOG_DIR="$ROOT/.stack/logs"
 PID_DIR="$ROOT/.stack/pids"
-COMPOSE_FILE="$ROOT/docker-compose.dev.yml"
-REDIS_PORT="6379"
+# Local Redis via compose: use `make dev-up` (docker-compose.dev.yml); stack.sh uses REDIS_URL from .env.
 
 API_HOST="0.0.0.0"
 API_PORT="4444"

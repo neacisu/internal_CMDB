@@ -52,3 +52,17 @@ subprojects/**/results/
 pgdata/
 postgres-data/
 alembic.ini.local
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+frontend/.pnpm-store/
+frontend/.next/
+frontend/coverage/
+frontend/.turbo/
+frontend/out/
+frontend/dist/
+.pnpm-store/
+
+# Research / design assets (not source code)
+Research/

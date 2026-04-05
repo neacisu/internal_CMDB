@@ -46,10 +46,60 @@ jobs:
       - name: Build
         run: make build
 
+      - name: YAML lint (deploy + workflows)
+        run: make yaml-lint
+
+      - name: Subprojects tests
+        run: make subprojects-test
+
       - name: Upload Coverage Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-xml
           path: coverage.xml
+          if-no-files-found: ignore
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run shellcheck
+        run: make shellcheck
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install and run actionlint
+        run: |
+          set -euo pipefail
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color .github/workflows/
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install and test
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec vitest run --coverage
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
           if-no-files-found: ignore

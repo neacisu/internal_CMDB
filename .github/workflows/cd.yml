@@ -55,6 +55,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # API image is built on GH Actions and pushed to GHCR.
+      # The orchestrator pulls it at deploy time.
       - name: Build API image
         run: |
           DOCKER_BUILDKIT=1 docker build \
@@ -63,13 +65,9 @@ jobs:
             -t ghcr.io/alexneacsu/internalcmdb-api:latest \
             .
 
-      - name: Build Frontend image
-        run: |
-          DOCKER_BUILDKIT=1 docker build \
-            -f Dockerfile.frontend \
-            -t ghcr.io/alexneacsu/internalcmdb-frontend:${{ github.sha }} \
-            -t ghcr.io/alexneacsu/internalcmdb-frontend:latest \
-            .
+      # Frontend runs as next dev (hot-reload) on the orchestrator.
+      # The dev image (node_modules pre-installed, source bind-mounted) is built
+      # locally on the orchestrator — no GHCR push needed for frontend.
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -78,12 +76,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push images
+      - name: Push API image
         run: |
           docker push ghcr.io/alexneacsu/internalcmdb-api:${{ github.sha }}
           docker push ghcr.io/alexneacsu/internalcmdb-api:latest
-          docker push ghcr.io/alexneacsu/internalcmdb-frontend:${{ github.sha }}
-          docker push ghcr.io/alexneacsu/internalcmdb-frontend:latest
 
       - name: Deploy to orchestrator
         uses: appleboy/ssh-action@v1
@@ -100,13 +96,17 @@ jobs:
             make migrate-check
             alembic -c alembic.ini upgrade head
 
-            # Pull latest images
+            # Pull latest API image
             docker pull ghcr.io/alexneacsu/internalcmdb-api:latest
-            docker pull ghcr.io/alexneacsu/internalcmdb-frontend:latest
+
+            # Rebuild frontend dev image locally (only deps layer; source is bind-mounted)
+            DOCKER_BUILDKIT=1 docker build \
+              -f Dockerfile.frontend.dev \
+              -t internalcmdb-frontend:dev \
+              .
 
             # Deploy with rollback capability
             PREV_API=$(docker inspect --format='{{.Image}}' internalcmdb-api 2>/dev/null || echo "none")
-            PREV_FE=$(docker inspect --format='{{.Image}}' internalcmdb-frontend 2>/dev/null || echo "none")
 
             docker compose -f ${{ env.COMPOSE_FILE }} up -d
 
@@ -124,9 +124,11 @@ jobs:
             alembic -c alembic.ini downgrade -1 || echo "WARNING: migration downgrade failed"
             if [ "$PREV_API" != "none" ]; then
               docker tag "$PREV_API" ghcr.io/alexneacsu/internalcmdb-api:latest
-              docker tag "$PREV_FE" ghcr.io/alexneacsu/internalcmdb-frontend:latest
-              docker compose -f ${{ env.COMPOSE_FILE }} up -d
+              docker compose -f ${{ env.COMPOSE_FILE }} up -d --no-deps internalcmdb-api internalcmdb-worker
             fi
+            # Frontend rollback: git reset to previous commit restores source on bind-mount;
+            # next dev picks up changes immediately without container restart.
+            git reset --hard HEAD~1
             exit 1
 
       - name: Post-deploy health verification

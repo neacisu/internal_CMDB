@@ -31,6 +31,7 @@ from .routers import (
     registry,
     results,
     retrieval,
+    settings as settings_router,
     slo,
     workers,
 )
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
         openapi_tags=[
+            {"name": "settings", "description": "Runtime configuration management — LLM backends, budgets, guard, HITL, retention, observability, notifications, user preferences"},
             {"name": "cognitive", "description": "Cognitive brain — NL queries, insights, health scores, drift, reports"},
             {"name": "hitl", "description": "Human-In-The-Loop review queue, decisions, accuracy"},
             {"name": "metrics", "description": "Live fleet metrics and Prometheus exposition"},
@@ -202,6 +204,7 @@ def create_app() -> FastAPI:
 
     fapp.include_router(graph.router, prefix=prefix)
     fapp.include_router(slo.router, prefix=prefix)
+    fapp.include_router(settings_router.router, prefix=prefix)
 
     # Real-time WebSocket + SSE (mounted at /api/v1/ for consistency)
     fapp.include_router(realtime.router, prefix=prefix)

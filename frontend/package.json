@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -43,6 +44,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.1",
     "@vitejs/plugin-react": "^6.0.1",
     "jsdom": "^29.0.1",
     "tailwindcss": "^4",

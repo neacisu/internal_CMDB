@@ -23,11 +23,30 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Logging security helpers
+# ---------------------------------------------------------------------------
+
+_LOG_CTL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_log(value: object, max_len: int = 200) -> str:
+    """Sanitize user-controlled values before logging to prevent log injection (S5145).
+
+    Replaces ASCII control characters (including newlines and carriage returns) with '?'
+    and truncates to ``max_len`` characters to prevent log flooding.
+    """
+    sanitized = _LOG_CTL_RE.sub("?", str(value))
+    if len(sanitized) > max_len:
+        sanitized = sanitized[:max_len] + "...[truncated]"
+    return sanitized
 
 _WEBHOOK_URL = os.getenv("HITL_WEBHOOK_URL", "")
 _SLACK_WEBHOOK_URL = os.getenv("HITL_SLACK_WEBHOOK_URL", "")
@@ -59,7 +78,7 @@ async def notify_hitl_event(
 
     logger.info(
         "HITL notification: event=%s item=%s risk=%s priority=%s",
-        event_type, item_id, risk_class, priority,
+        _sanitize_log(event_type), _sanitize_log(item_id), _sanitize_log(risk_class), _sanitize_log(priority),
     )
 
     if _WEBHOOK_URL:
@@ -82,15 +101,15 @@ async def _send_webhook(event_type: str, payload: dict[str, Any]) -> None:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 resp = await client.post(_WEBHOOK_URL, json=body)
                 resp.raise_for_status()
-                logger.debug("Webhook delivered: %s (attempt %d)", event_type, attempt)
+                logger.debug("Webhook delivered: %s (attempt %d)", _sanitize_log(event_type), attempt)
                 return
         except Exception:
             logger.warning(
                 "Webhook delivery failed (attempt %d/%d) for event=%s",
-                attempt, _RETRIES, event_type,
+                attempt, _RETRIES, _sanitize_log(event_type),
                 exc_info=True,
             )
-    logger.error("Webhook delivery exhausted all %d retries for event=%s", _RETRIES, event_type)
+    logger.error("Webhook delivery exhausted all %d retries for event=%s", _RETRIES, _sanitize_log(event_type))
 
 
 async def _send_slack(event_type: str, payload: dict[str, Any]) -> None:
@@ -121,12 +140,12 @@ async def _send_slack(event_type: str, payload: dict[str, Any]) -> None:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 resp = await client.post(_SLACK_WEBHOOK_URL, json=slack_body)
                 resp.raise_for_status()
-                logger.debug("Slack notification sent: %s (attempt %d)", event_type, attempt)
+                logger.debug("Slack notification sent: %s (attempt %d)", _sanitize_log(event_type), attempt)
                 return
         except Exception:
             logger.warning(
                 "Slack delivery failed (attempt %d/%d) for event=%s",
-                attempt, _RETRIES, event_type,
+                attempt, _RETRIES, _sanitize_log(event_type),
                 exc_info=True,
             )
-    logger.error("Slack delivery exhausted all %d retries for event=%s", _RETRIES, event_type)
+    logger.error("Slack delivery exhausted all %d retries for event=%s", _RETRIES, _sanitize_log(event_type))

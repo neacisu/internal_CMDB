@@ -60,6 +60,8 @@ _LLM_GUARD_FAIL_CLOSED = os.getenv("LLM_GUARD_FAIL_CLOSED", "true").lower() in (
 # ---------------------------------------------------------------------------
 # Gate decision
 # ---------------------------------------------------------------------------
+# Gate decision
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -92,23 +94,44 @@ _LLM_GUARD_URL = os.getenv("LLM_GUARD_URL", "http://10.0.1.115:8000")
 _LLM_GUARD_TIMEOUT = float(os.getenv("LLM_GUARD_TIMEOUT", "5"))
 
 
+async def _get_guard_runtime_config() -> tuple[str, float, bool]:
+    """Fetch guard URL, timeout and fail_closed from SettingsStore at call time.
+
+    Falls back to module-level env-var defaults if the store is unavailable.
+    This allows operators to change guard config via /api/v1/settings/guard
+    without restarting the API process.
+    """
+    try:
+        from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+        store = get_settings_store()
+        url = await store.get("llm.guard.url") or _LLM_GUARD_URL
+        timeout = await store.get("guard.timeout_s") or _LLM_GUARD_TIMEOUT
+        fail_closed_val = await store.get("guard.fail_closed")
+        fail_closed = fail_closed_val if fail_closed_val is not None else _LLM_GUARD_FAIL_CLOSED
+        return str(url), float(timeout), bool(fail_closed)
+    except Exception:  # noqa: BLE001
+        return _LLM_GUARD_URL, _LLM_GUARD_TIMEOUT, _LLM_GUARD_FAIL_CLOSED
+
+
 async def _llm_guard_scan(payload: dict[str, Any]) -> tuple[bool, str]:
     """Call the external LLM Guard API for prompt-injection / toxicity scan.
 
     Behaviour on failure is controlled by ``LLM_GUARD_FAIL_CLOSED`` (default
     ``true``).  When fail-closed, an unreachable guard blocks the action.
     """
-    if not _LLM_GUARD_URL:
-        if _LLM_GUARD_FAIL_CLOSED:
+    guard_url, guard_timeout, fail_closed = await _get_guard_runtime_config()
+
+    if not guard_url:
+        if fail_closed:
             logger.warning("LLM Guard URL not configured — FAIL-CLOSED: blocking action")
             return False, "llm-guard-not-configured-fail-closed"
         logger.warning("LLM Guard URL not configured — fail-open (set LLM_GUARD_FAIL_CLOSED=true)")
         return True, "llm-guard-not-configured"
 
     try:
-        async with httpx.AsyncClient(timeout=_LLM_GUARD_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=guard_timeout) as client:
             resp = await client.post(
-                f"{_LLM_GUARD_URL}/scan",
+                f"{guard_url}/scan",
                 json=payload,
             )
             resp.raise_for_status()
@@ -117,7 +140,7 @@ async def _llm_guard_scan(payload: dict[str, Any]) -> tuple[bool, str]:
             detail: str = body.get("detail", "")
             return safe, detail
     except Exception:
-        if _LLM_GUARD_FAIL_CLOSED:
+        if fail_closed:
             logger.error("LLM Guard scan failed — FAIL-CLOSED: blocking action", exc_info=True)
             return False, "llm-guard-unavailable-fail-closed"
         logger.warning("LLM Guard scan failed — fail-open", exc_info=True)

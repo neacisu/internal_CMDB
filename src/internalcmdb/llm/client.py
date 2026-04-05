@@ -166,6 +166,31 @@ class LLMClient:
         )
 
     # ------------------------------------------------------------------
+    # Factory — build from SettingsStore
+    # ------------------------------------------------------------------
+
+    @classmethod
+    async def from_settings(cls) -> LLMClient:
+        """Create an LLMClient using URLs and tokens from the DB SettingsStore.
+
+        Falls back to the hardcoded defaults when the store returns None
+        (e.g. before seed migration runs).
+        """
+        try:
+            from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+            store = get_settings_store()
+            return cls(
+                reasoning_url=await store.get("llm.reasoning.url") or "http://10.0.1.10:49001",
+                fast_url=await store.get("llm.fast.url") or "http://10.0.1.10:49002",
+                embed_url=await store.get("llm.embed.url") or "http://10.0.1.10:49003",
+                guard_url=await store.get("llm.guard.url") or "http://10.0.1.115:8000",
+                guard_token=await store.get_raw_secret("llm.guard.token") or "",
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("from_settings: SettingsStore unavailable, using default URLs")
+            return cls()
+
+    # ------------------------------------------------------------------
     # Context manager
     # ------------------------------------------------------------------
 

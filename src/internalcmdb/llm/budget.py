@@ -87,6 +87,30 @@ class TokenBudgetManager:
         self._budgets: dict[str, _BudgetEntry] = {}
         self._lock = asyncio.Lock()
 
+    async def reload_from_settings(self) -> None:
+        """Reload per-caller limits from SettingsStore.
+
+        Existing in-flight usage counters are preserved; only the *limit*
+        field is updated so the next window picks up the new cap.
+        """
+        try:
+            from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+            store = get_settings_store()
+            callers = list(self.CUSTOM_BUDGETS) + ["default"]
+            async with self._lock:
+                for caller in callers:
+                    key = f"budget.{caller.replace('-', '_')}"
+                    val = await store.get(key)
+                    if val is not None:
+                        new_limit = int(val)
+                        self.CUSTOM_BUDGETS[caller] = new_limit
+                        entry = self._budgets.get(caller)
+                        if entry is not None:
+                            entry.limit = new_limit
+            logger.debug("TokenBudgetManager: reloaded limits from SettingsStore")
+        except Exception:  # noqa: BLE001
+            logger.warning("TokenBudgetManager: reload_from_settings failed; keeping existing limits")
+
     def _get_or_create(self, caller: str) -> _BudgetEntry:
         """Get or create a budget entry for the given caller."""
         now = time.monotonic()

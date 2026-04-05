@@ -15,6 +15,7 @@ CONFIG_DIR="$REPO_ROOT/deploy/configs/agents"
 REMOTE_CONFIG="/etc/internalcmdb/agent.toml"
 
 # Host code → SSH alias mapping (matches deploy_agent.sh)
+# Keys = basename of deploy/configs/agents/<name>.toml (no hz-164.toml — use proxmox for hz.164)
 declare -A HOST_MAP=(
     [orchestrator]="orchestrator"
     [postgres-main]="postgres-main"
@@ -24,7 +25,6 @@ declare -A HOST_MAP=(
     [hz-118]="hz.118"
     [hz-123]="hz.123"
     [hz-157]="hz.157"
-    [hz-164]="hz.164"
     [hz-215]="hz.215"
     [hz-223]="hz.223"
     [hz-247]="hz.247"

@@ -216,6 +216,8 @@ async def self_heal_check(ctx: _Ctx) -> dict[str, Any]:
     """
     await _check_database(ctx)
 
+    disk_threshold, _log_auto, _log_hitl = await _get_self_heal_config()
+
     host_data, recently_healed = await asyncio.to_thread(
         _query_disk_health, ctx
     )
@@ -230,7 +232,7 @@ async def self_heal_check(ctx: _Ctx) -> dict[str, Any]:
         host_id = str(hd["host_id"])
         disk_pct = _extract_root_disk_pct(hd.get("disk_payload") or {})
 
-        if disk_pct < _DISK_HEAL_THRESHOLD:
+        if disk_pct < disk_threshold:
             continue
 
         if host_id in recently_healed:
@@ -245,7 +247,7 @@ async def self_heal_check(ctx: _Ctx) -> dict[str, Any]:
             "Host %s disk at %.1f%% (threshold %d%%) — evaluating.",
             host_code,
             disk_pct,
-            _DISK_HEAL_THRESHOLD,
+            disk_threshold,
         )
         plans_proposed += 1
 
@@ -270,6 +272,23 @@ async def self_heal_check(ctx: _Ctx) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _DISK_HEAL_THRESHOLD = 85  # percent root usage
+
+
+async def _get_self_heal_config() -> tuple[int, int, int]:
+    """Load disk and log thresholds from SettingsStore at task start.
+
+    Returns (disk_threshold_pct, log_auto_truncate_bytes, log_hitl_bytes).
+    Falls back to module-level constants if the store is unavailable.
+    """
+    try:
+        from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+        store = get_settings_store()
+        disk = await store.get("self_heal.disk_threshold_pct") or _DISK_HEAL_THRESHOLD
+        log_auto = await store.get("self_heal.log_auto_truncate_bytes") or _LOG_AUTO_TRUNCATE_BYTES
+        log_hitl = await store.get("self_heal.log_hitl_bytes") or _LOG_HITL_THRESHOLD_BYTES
+        return int(disk), int(log_auto), int(log_hitl)
+    except Exception:  # noqa: BLE001
+        return _DISK_HEAL_THRESHOLD, _LOG_AUTO_TRUNCATE_BYTES, _LOG_HITL_THRESHOLD_BYTES
 
 
 def _get_engine(ctx: _Ctx):  # noqa: ANN202
@@ -470,6 +489,272 @@ async def _persist_self_heal_action(
     await asyncio.to_thread(_insert)
 
 
+# ---------------------------------------------------------------------------
+# Container log audit — constants and helpers
+# ---------------------------------------------------------------------------
+
+_LOG_AUTO_TRUNCATE_BYTES: int = 2 * 1024 * 1024 * 1024   # 2 GB — auto-truncate, no HITL
+_LOG_HITL_THRESHOLD_BYTES: int = 500 * 1024 * 1024         # 500 MB — create HITL review item
+_DOCKER_DAEMON_JSON: str = "/etc/docker/daemon.json"
+_DOCKER_DATA_ROOT_DEFAULT: str = "/mnt/HC_Volume_105014654/docker"
+
+
+def _get_docker_data_root() -> str:
+    """Read Docker data-root from daemon.json; fall back to HC_Volume default."""
+    try:
+        with open(_DOCKER_DAEMON_JSON) as fh:
+            cfg = json.load(fh)
+        return str(cfg.get("data-root", _DOCKER_DATA_ROOT_DEFAULT))
+    except (OSError, json.JSONDecodeError):
+        return _DOCKER_DATA_ROOT_DEFAULT
+
+
+def _scan_container_logs(data_root: str) -> list[dict[str, Any]]:
+    """Walk Docker containers dir and return entries at or above the HITL threshold.
+
+    Returns a list of dicts: {container_id, container_name, log_path, size_bytes}.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    containers_dir = Path(data_root) / "containers"
+    if not containers_dir.is_dir():
+        return []
+
+    results: list[dict[str, Any]] = []
+    for container_dir in containers_dir.iterdir():
+        if not container_dir.is_dir():
+            continue
+        container_id = container_dir.name
+        for log_file in container_dir.glob("*-json.log"):
+            try:
+                size = log_file.stat().st_size
+            except OSError:
+                continue
+            if size >= _LOG_HITL_THRESHOLD_BYTES:
+                results.append({
+                    "container_id": container_id,
+                    "container_name": container_id[:12],  # enriched below
+                    "log_path": str(log_file),
+                    "size_bytes": size,
+                    "data_root": data_root,
+                })
+    return results
+
+
+def _enrich_container_names(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attempt to resolve human-readable container names via Docker socket.
+
+    Failures are silently swallowed — container names are informational only.
+    """
+    import http.client  # noqa: PLC0415
+    import socket as _socket  # noqa: PLC0415
+
+    class _DockConn(http.client.HTTPConnection):
+        def connect(self) -> None:
+            self.sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            self.sock.connect("/var/run/docker.sock")
+
+    try:
+        conn = _DockConn("localhost")
+        conn.request("GET", "/containers/json?all=1")
+        resp = conn.getresponse()
+        if resp.status == 200:
+            containers: list[dict[str, Any]] = json.loads(resp.read())
+            id_to_name: dict[str, str] = {
+                c["Id"]: (c.get("Names") or [c["Id"][:12]])[0].lstrip("/")
+                for c in containers
+                if c.get("Id")
+            }
+            for entry in entries:
+                full_id = entry["container_id"]
+                if full_id in id_to_name:
+                    entry["container_name"] = id_to_name[full_id]
+        conn.close()
+    except Exception:
+        pass  # Names are informational — never fail the audit on resolution errors
+    return entries
+
+
+async def _persist_log_insight(
+    ctx: _Ctx,
+    entry: dict[str, Any],
+    *,
+    auto_truncated: bool = False,
+) -> None:
+    """Insert a cognitive insight for a runaway container log file."""
+
+    def _insert() -> None:
+        from sqlalchemy import text  # noqa: PLC0415
+
+        engine = _get_engine(ctx)
+        size_gb = entry["size_bytes"] / (1024 ** 3)
+        name = entry["container_name"]
+        severity = "critical" if entry["size_bytes"] >= _LOG_AUTO_TRUNCATE_BYTES else "warning"
+        status = "acknowledged" if auto_truncated else "active"
+        title = f"Runaway container log on {name}: {size_gb:.2f} GB"
+        explanation = (
+            f"Container '{name}' log file is {size_gb:.2f} GB"
+            f" ({entry['log_path']})."
+        )
+        if auto_truncated:
+            explanation += " Log was automatically truncated (no HITL required — size exceeded 2 GB)."
+        else:
+            explanation += " HITL review item created — operator approval required before truncation."
+
+        evidence = json.dumps([{
+            "metric": "container_log_size_bytes",
+            "value": entry["size_bytes"],
+            "log_path": entry["log_path"],
+            "auto_truncated": auto_truncated,
+        }])
+
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO cognitive.insight
+                            (entity_id, entity_type, severity, category,
+                             title, explanation, status, confidence, evidence)
+                        VALUES
+                            (gen_random_uuid(), 'container', :sev, 'capacity',
+                             :title, :expl, :status, 0.98, :evidence::jsonb)
+                    """),
+                    {
+                        "sev": severity,
+                        "title": title,
+                        "expl": explanation,
+                        "status": status,
+                        "evidence": evidence,
+                    },
+                )
+                conn.commit()
+        finally:
+            engine.dispose()
+
+    await asyncio.to_thread(_insert)
+
+
+async def _submit_log_hitl(ctx: _Ctx, entry: dict[str, Any]) -> None:
+    """Insert a HITL review item for a container log requiring operator approval."""
+
+    def _insert() -> None:
+        import uuid as _uuid  # noqa: PLC0415
+
+        from sqlalchemy import text  # noqa: PLC0415
+
+        engine = _get_engine(ctx)
+        item_id = str(_uuid.uuid4())
+        size_mb = entry["size_bytes"] / (1024 ** 2)
+        name = entry["container_name"]
+        context = json.dumps({
+            "container_id": entry["container_id"],
+            "container_name": name,
+            "log_path": entry["log_path"],
+            "size_bytes": entry["size_bytes"],
+            "size_mb": round(size_mb, 1),
+            "recommended_action": "truncate_log",
+            "playbook": "truncate_container_log",
+        })
+        suggestion = json.dumps({
+            "action": "truncate_container_log",
+            "params": {
+                "log_path": entry["log_path"],
+                "container_name": name,
+                "container_id": entry["container_id"],
+                "data_root": entry["data_root"],
+                "size_bytes": entry["size_bytes"],
+            },
+        })
+
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO governance.hitl_item
+                            (item_id, item_type, risk_class, priority, status,
+                             context_jsonb, llm_suggestion, llm_confidence,
+                             llm_model_used, expires_at)
+                        VALUES
+                            (:item_id, 'container_log_truncate', 'RC-2', 'medium',
+                             'pending', :context::jsonb, :suggestion::jsonb, 0.97,
+                             'cognitive_task', now() + interval '4 hours')
+                    """),
+                    {
+                        "item_id": item_id,
+                        "context": context,
+                        "suggestion": suggestion,
+                    },
+                )
+                conn.commit()
+        finally:
+            engine.dispose()
+
+    await asyncio.to_thread(_insert)
+
+
+@_task_wrapper("container_log_audit")
+async def container_log_audit(ctx: _Ctx) -> dict[str, Any]:
+    """Scan Docker container JSON log files for runaway growth and auto-heal.
+
+    Pipeline:
+      1. Read Docker data-root from /etc/docker/daemon.json.
+      2. Walk all container log files, filter those >= 500 MB.
+      3. Enrich entries with container names via Docker socket.
+      4. AUTO-truncate any log exceeding 2 GB (critical — executes immediately,
+         no HITL required; uses the ``truncate_container_log`` playbook).
+      5. For logs between 500 MB and 2 GB: create a HITL review item requesting
+         operator approval before truncation.
+      6. Record a cognitive insight for every flagged container.
+    """
+    await _check_database(ctx)
+
+    _disk_threshold, log_auto_truncate_bytes, log_hitl_bytes = await _get_self_heal_config()
+    data_root = await asyncio.to_thread(_get_docker_data_root)
+    raw_entries = await asyncio.to_thread(_scan_container_logs, data_root)
+    entries = await asyncio.to_thread(_enrich_container_names, raw_entries)
+
+    # Re-filter to use live thresholds (scan uses module const; re-apply here)
+    entries = [e for e in entries if e["size_bytes"] >= log_hitl_bytes]
+
+    auto_truncated = 0
+    hitl_created = 0
+
+    from internalcmdb.motor.playbooks import PlaybookExecutor  # noqa: PLC0415
+
+    executor = PlaybookExecutor()
+
+    for entry in entries:
+        if entry["size_bytes"] >= log_auto_truncate_bytes:
+            logger.warning(
+                "Container log auto-truncate: %s (%s) at %.2f GB.",
+                entry["container_name"],
+                entry["log_path"],
+                entry["size_bytes"] / (1024 ** 3),
+            )
+            pb_result = await executor.execute("truncate_container_log", entry)
+            if pb_result.success:
+                auto_truncated += 1
+            await _persist_log_insight(ctx, entry, auto_truncated=pb_result.success)
+
+        else:
+            logger.warning(
+                "Container log HITL review: %s (%s) at %.0f MB.",
+                entry["container_name"],
+                entry["log_path"],
+                entry["size_bytes"] / (1024 ** 2),
+            )
+            await _submit_log_hitl(ctx, entry)
+            await _persist_log_insight(ctx, entry, auto_truncated=False)
+            hitl_created += 1
+
+    return {
+        "data_root": data_root,
+        "logs_scanned": len(entries),
+        "auto_truncated": auto_truncated,
+        "hitl_items_created": hitl_created,
+    }
+
+
 @_task_wrapper("hitl_escalation")
 async def hitl_escalation(ctx: _Ctx) -> dict[str, Any]:
     """Escalate stale human-in-the-loop items.
@@ -507,6 +792,7 @@ COGNITIVE_TASKS: dict[str, Any] = {
     "embedding_sync": embedding_sync,
     "guard_audit": guard_audit,
     "self_heal_check": self_heal_check,
+    "container_log_audit": container_log_audit,
     "hitl_escalation": hitl_escalation,
     "accuracy_eval": accuracy_eval,
 }

@@ -1,0 +1,194 @@
+# ============================================================================
+# InternalCMDB — Traefik dynamic routing config (UI + API + HMR)
+# Target on orchestrator: /opt/traefik/dynamic/internalcmdb.yml
+#
+# Deploy:
+#   cp deploy/orchestrator/internalcmdb.yml /opt/traefik/dynamic/internalcmdb.yml
+#   (Traefik watches /etc/traefik/dynamic/ — auto-reload, zero downtime)
+#
+# Routers (by priority):
+#   300  /health          → internalcmdb-api-svc (FastAPI :4444)
+#   200  /api/*           → internalcmdb-api-svc (FastAPI :4444)
+#   170  /_next/webpack-hmr        → internalcmdb-ui-hmr-svc (HMR WebSocket)
+#   160  /__nextjs*                → internalcmdb-ui-dev-svc (error overlay)
+#   130  /_next/*                  → internalcmdb-ui-dev-svc (Turbopack chunks)
+#   100  *                         → internalcmdb-ui-svc (Next.js pages)
+#
+# Why NO compress on /_next/* and /__nextjs* routes?
+#   Traefik compress re-encodes Turbopack streaming chunk bodies.
+#   For large JS files (recharts 2MB+, tanstack-devtools 5MB+) this produces
+#   malformed HTTP/2 DATA frames → browser reports ERR_HTTP2_PROTOCOL_ERROR 200.
+#   Turbopack dev server manages its own encoding; proxy-level compression
+#   is unnecessary and harmful for development chunk serving.
+#
+# Why separate HMR, dev-overlay, and dev-assets routers?
+#   chain-ui includes both circuit-breaker and compress middleware.
+#   See above for compress.  The circuit-breaker trips when slow Turbopack
+#   compilation causes health-check timeouts, returning 503 for ALL requests
+#   including the HMR WebSocket and the Next.js error overlay.
+# ============================================================================
+http:
+  # ---------------------------------------------------------------------------
+  # Server transports — extended timeouts for Next.js Turbopack dev server.
+  # Turbopack compiles chunks on-demand; first-load can take up to 60-120 s
+  # for heavy packages like @tanstack/query-devtools.
+  # idleConnTimeout is extended to keep HMR WebSocket sessions alive throughout
+  # a full development session without forced reconnects.
+  # ---------------------------------------------------------------------------
+  serversTransports:
+    ui-dev-transport:
+      forwardingTimeouts:
+        dialTimeout: 5s
+        responseHeaderTimeout: 120s
+        idleConnTimeout: 600s
+
+  routers:
+    # -------------------------------------------------------------------------
+    # HMR WebSocket — MUST be routed independently.
+    # chain-ui contains `compress` (buffers frames) and `circuit-breaker`
+    # (trips on compilation timeouts and blocks WebSocket upgrades).
+    # Only `security-headers` is safe for WebSocket connections.
+    # -------------------------------------------------------------------------
+    internalcmdb-ui-hmr:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && Path(`/_next/webpack-hmr`)"
+      priority: 170
+      service: internalcmdb-ui-hmr-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+      tls:
+        certResolver: cloudflare
+
+    # -------------------------------------------------------------------------
+    # Next.js dev overlay internal endpoints (/__nextjs_*)
+    # Source mapping, stack frames, error overlay — Next.js dev tooling.
+    # Must bypass circuit-breaker (chain-ui) because these endpoints are hit
+    # AFTER a page error; if circuit-breaker is active the overlay never loads.
+    # Must bypass compress: these are JSON/text endpoints, compress causes
+    # identical HTTP/2 framing issues as with chunk files.
+    # Priority 160: above dev-assets (130) to give exact-prefix precedence.
+    # -------------------------------------------------------------------------
+    internalcmdb-ui-nextjs-internal:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/__nextjs`)"
+      priority: 160
+      service: internalcmdb-ui-dev-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+        - rate-limit-ui
+      tls:
+        certResolver: cloudflare
+
+    # -------------------------------------------------------------------------
+    # Next.js dev static assets (Turbopack lazy chunks, /_next/static/*, etc.)
+    #
+    # CRITICAL: compress middleware MUST NOT be applied here.
+    # Turbopack serves large JS chunks (recharts 2MB+, tanstack-devtools 5MB+)
+    # as streaming HTTP/1.1 responses.  When Traefik's compress middleware
+    # re-encodes these bodies before forwarding over HTTP/2, the resulting
+    # DATA frames violate the HTTP/2 content-length contract, causing the
+    # browser to receive "ERR_HTTP2_PROTOCOL_ERROR 200 (OK)" — the 200 headers
+    # arrive but the body transfer resets the stream.
+    #
+    # No circuit-breaker: a slow chunk compilation must not trip the breaker
+    # for the whole domain and must not cause retries (double compilation cost).
+    # Uses ui-dev-transport for 120 s response-header timeout.
+    # -------------------------------------------------------------------------
+    internalcmdb-ui-dev-assets:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/_next/`)"
+      priority: 130
+      service: internalcmdb-ui-dev-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+        - rate-limit-ui
+      tls:
+        certResolver: cloudflare
+
+    internalcmdb-api:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api`)"
+      priority: 200
+      service: internalcmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-api
+      tls:
+        certResolver: cloudflare
+
+    internalcmdb-health:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && Path(`/health`)"
+      priority: 300
+      service: internalcmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+      tls:
+        certResolver: cloudflare
+
+    internalcmdb-ui:
+      rule: "Host(`infraq.app`) || Host(`www.infraq.app`)"
+      priority: 100
+      service: internalcmdb-ui-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-ui
+      tls:
+        certResolver: cloudflare
+        domains:
+          - main: "infraq.app"
+            sans:
+              - "*.infraq.app"
+
+  services:
+    internalcmdb-api-svc:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:4444
+        healthCheck:
+          path: /health
+          interval: 30s
+          timeout: 10s
+
+    # Regular page navigation — chain-ui middleware (with circuit-breaker) applies.
+    # healthCheck timeout raised to 30 s: Turbopack first-paint takes 3-20 s
+    # depending on page complexity; a 10 s health-check timeout caused false
+    # unhealthy marks that activated the circuit-breaker for all downstream requests.
+    internalcmdb-ui-svc:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:3333
+        healthCheck:
+          path: /
+          interval: 30s
+          timeout: 30s
+
+    # Dedicated service for /_next/ dev assets with extended compilation timeout.
+    # Separate from internalcmdb-ui-svc so that slow chunk compilation does NOT
+    # affect the circuit-breaker health-tracking of the main UI service.
+    internalcmdb-ui-dev-svc:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:3333
+        serversTransport: ui-dev-transport
+        healthCheck:
+          path: /
+          interval: 30s
+          timeout: 30s
+
+    # Dedicated service for HMR WebSocket — same transport, no health check
+    # path reuse (health check on / is sufficient; HMR has its own keep-alive).
+    internalcmdb-ui-hmr-svc:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:3333
+        serversTransport: ui-dev-transport
+        healthCheck:
+          path: /
+          interval: 30s
+          timeout: 30s

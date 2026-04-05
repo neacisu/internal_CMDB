@@ -1,12 +1,17 @@
-# internalCMDB — orchestrator production stack
+# internalCMDB — orchestrator stack (hot-reload enabled)
 #
 # Deploy:
 #   docker compose -f deploy/orchestrator/docker-compose.internalcmdb.yml \
 #     --env-file /opt/stacks/internalcmdb/.env up -d
 #
-# Both the API and worker use network_mode: host so Traefik (also on host
-# network) can reach them at 127.0.0.1:4444 and the frontend can proxy
-# API requests to localhost:4444 without any Docker-network plumbing.
+# Hot-reload:
+#   API    — uvicorn --reload watches /app/src (source mounted from host)
+#   Worker — watchfiles reruns worker on any .py change in /app/src
+#   Frontend — next dev watches /app (source mounted from host);
+#              node_modules pre-installed in image, preserved via named volume
+#
+# To rebuild the frontend dev image (only when package.json / lock file change):
+#   make build-frontend-dev
 
 services:
   internalcmdb-api:
@@ -16,19 +21,32 @@ services:
     network_mode: host
     mem_limit: 1g
     memswap_limit: 1g
+    user: "0:0"
     env_file: /opt/stacks/internalcmdb/.env
     environment:
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=DEBUG
       - CORS_ORIGINS=https://infraq.app,http://localhost:3333
+      - PYTHONPATH=/app/src
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    # Source mounted — uvicorn reloads automatically on any .py save
     volumes:
-      - /opt/stacks/internalcmdb/docs:/app/docs:ro
-      - /opt/stacks/internalcmdb/subprojects:/app/subprojects:ro
+      - /mnt/HC_Volume_105014654/stacks/internalcmdb/src:/app/src:rw
+      - /mnt/HC_Volume_105014654/stacks/internalcmdb/docs:/app/docs:ro
+      - /mnt/HC_Volume_105014654/stacks/internalcmdb/subprojects:/app/subprojects:ro
+    command: >
+      uvicorn internalcmdb.api.main:app
+        --reload
+        --reload-dir /app/src
+        --host 0.0.0.0
+        --port 4444
+        --log-level debug
     healthcheck:
       test: ["CMD", "python3", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:4444/health', timeout=5)"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 20s
     logging:
       driver: json-file
@@ -45,8 +63,19 @@ services:
     memswap_limit: 512m
     user: "0:0"
     env_file: /opt/stacks/internalcmdb/.env
-    command: ["python3", "-m", "internalcmdb.workers.run"]
+    environment:
+      - PYTHONPATH=/app/src
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    # watchfiles reruns the worker process on any .py change in /app/src
+    command: >
+      python3 -m watchfiles
+        --filter python
+        --target-type command
+        "python3 -m internalcmdb.workers.run"
+        /app/src
     volumes:
+      - /mnt/HC_Volume_105014654/stacks/internalcmdb/src:/app/src:rw
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       internalcmdb-api:
@@ -58,25 +87,40 @@ services:
         max-file: "3"
 
   internalcmdb-frontend:
-    image: ghcr.io/alexneacsu/internalcmdb-frontend:latest
+    # Dev image: node_modules pre-installed, source mounted at runtime
+    # Build: make build-frontend-dev
+    image: internalcmdb-frontend:dev
     container_name: internalcmdb-frontend
     restart: unless-stopped
     network_mode: host
-    mem_limit: 512m
-    memswap_limit: 512m
+    mem_limit: 2g
+    memswap_limit: 2g
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - PORT=3333
       - HOSTNAME=0.0.0.0
       - BACKEND_URL=http://127.0.0.1:4444
+      - NEXT_TELEMETRY_DISABLED=1
+      - NODE_OPTIONS=--max-old-space-size=1536
+    # Source mounted — next dev watches all files and reloads on save.
+    # node_modules volume is populated from the image on first start (no pnpm install at runtime).
+    volumes:
+      - /mnt/HC_Volume_105014654/stacks/internalcmdb/frontend:/app:rw
+      - internalcmdb_frontend_nm:/app/node_modules
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3333/"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 90s
     logging:
       driver: json-file
       options:
-        max-size: "10m"
+        max-size: "20m"
         max-file: "3"
+
+volumes:
+  # node_modules are seeded from the internalcmdb-frontend:dev image on first run.
+  # Rebuild the image (make build-frontend-dev) when package.json / pnpm-lock.yaml change.
+  internalcmdb_frontend_nm:
+    driver: local

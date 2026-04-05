@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+# ── internalCMDB Frontend — hot-reload dev image ──────────────────────────────
+#
+# Source code is NOT baked in — mount frontend/ at /app at runtime.
+# node_modules are pre-installed here and preserved via a named Docker volume
+# so pnpm install never runs inside a running container (fast startup <5s).
+#
+# Build (once, or when package.json / pnpm-lock.yaml change):
+#   docker build -f Dockerfile.frontend.dev -t internalcmdb-frontend:dev \
+#     -f Dockerfile.frontend.dev .
+#
+# docker-compose mounts:
+#   - /mnt/.../frontend:/app:rw              ← live source
+#   - internalcmdb_frontend_nm:/app/node_modules  ← populated from this image
+
+ARG NODE_VERSION=25.8.1
+
+FROM node:${NODE_VERSION}-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat && \
+    npm install -g pnpm@10.32.1 --silent
+
+# Only copy manifests — this layer is cached until the lock file changes.
+# Source code is intentionally NOT copied; it is bind-mounted at runtime.
+COPY frontend/package.json \
+     frontend/pnpm-lock.yaml \
+     frontend/pnpm-workspace.yaml ./
+
+# Install all deps (including devDependencies required by next dev / HMR).
+# The resulting node_modules live in this image layer and are seeded into the
+# named volume on first container start (Docker's volume-init behavior).
+RUN pnpm install --frozen-lockfile
+
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3333
+ENV HOSTNAME=0.0.0.0
+ENV BACKEND_URL=http://127.0.0.1:4444
+
+EXPOSE 3333
+
+# Use the binary directly — no pnpm wrapper needed at runtime.
+CMD ["node_modules/.bin/next", "dev", "--port", "3333"]

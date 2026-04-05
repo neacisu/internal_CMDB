@@ -8,7 +8,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 
 from internalcmdb.api.config import get_settings
-from internalcmdb.workers.cognitive_tasks import COGNITIVE_TASKS, self_heal_check
+from internalcmdb.workers.cognitive_tasks import COGNITIVE_TASKS, container_log_audit, self_heal_check
 from internalcmdb.workers.retention import data_retention_job
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ class WorkerSettings:
     functions = [_noop, _health_check, data_retention_job, *COGNITIVE_TASKS.values()]  # noqa: RUF012
     cron_jobs = [  # noqa: RUF012
         cron(self_heal_check, minute={0, 15, 30, 45}),
+        cron(container_log_audit, hour={0, 6, 12, 18}, minute={5}),
     ]
     queue_name = "infraq:arq:queue"
     max_jobs = _MAX_JOBS

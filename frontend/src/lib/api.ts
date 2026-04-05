@@ -550,3 +550,180 @@ export const getDocumentContent = async (path: string): Promise<string> => {
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.text();
 };
+
+// ── Settings ────────────────────────────────────────────────────────────────
+
+export interface AppSetting {
+  setting_key: string;
+  setting_group: string;
+  value: unknown;
+  default: unknown;
+  type_hint: string;
+  description: string | null;
+  is_secret: boolean;
+  requires_restart: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export interface SettingGroupOut { group: string; settings: AppSetting[] }
+
+export interface LLMModelConfig { url: string; model_id: string; timeout_s: number }
+
+export interface LLMConfig {
+  reasoning: LLMModelConfig;
+  fast: LLMModelConfig;
+  embed: LLMModelConfig;
+  guard: LLMModelConfig;
+  guard_token_set: boolean;
+  circuit_breaker_threshold: number;
+  circuit_breaker_cooldown_s: number;
+  max_connections: number;
+  max_keepalive: number;
+  max_retries: number;
+}
+
+export interface TokenBudgetConfig { caller: string; tokens_per_hour: number; spike_multiplier: number }
+
+export interface GuardConfig {
+  fail_closed: boolean;
+  guard_url: string;
+  timeout_s: number;
+  tool_allowlist: string[];
+  max_actions_per_session: Record<string, number>;
+}
+
+export interface HITLConfig {
+  rc4_escalation_minutes: number;
+  rc3_escalation_minutes: number;
+  rc2_escalation_hours: number;
+  max_escalations: number;
+}
+
+export interface SelfHealConfig {
+  disk_threshold_pct: number;
+  log_auto_truncate_bytes: number;
+  log_hitl_bytes: number;
+}
+
+export interface RetentionConfig {
+  job_history_days: number;
+  audit_events_days: number;
+  snapshots_days: number;
+  llm_calls_days: number;
+  metric_points_days: number;
+  insights_days: number;
+}
+
+export interface ObservabilityConfig {
+  otlp_endpoint: string;
+  otlp_protocol: string;
+  otlp_insecure: boolean;
+  sample_rate: number;
+  log_level: string;
+  debug_enabled: boolean;
+  cors_origins: string[];
+}
+
+export interface NotificationChannel {
+  channel_id: string;
+  name: string;
+  channel_type: string;
+  target_url: string | null;
+  events: string[];
+  is_active: boolean;
+  hmac_configured: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface NotificationChannelCreate {
+  name: string;
+  target_url: string;
+  hmac_secret?: string;
+  events: string[];
+  is_active: boolean;
+}
+
+export interface TestNotificationResult {
+  success: boolean;
+  status_code?: number;
+  latency_ms?: number;
+  error?: string;
+}
+
+export interface UserPreference { preference_key: string; value: unknown; updated_at: string | null }
+
+export interface LLMBackendStatus {
+  name: string;
+  model: string;
+  url: string;
+  reachable: boolean;
+  response_ms?: number;
+  error?: string;
+}
+
+export interface SystemInfo {
+  app_version: string;
+  python_version: string;
+  db_host: string;
+  db_port: number;
+  db_name: string;
+  db_ssl_mode: string;
+  redis_url_host: string;
+  llm_backends: LLMBackendStatus[];
+  cognitive_tasks: string[];
+  cron_jobs: string[];
+  debug_enabled: boolean;
+}
+
+export const getSettingsAllGroups = () => apiFetch<SettingGroupOut[]>("/settings");
+export const getLLMConfig = () => apiFetch<LLMConfig>("/settings/llm");
+export const updateLLMConfig = (body: Partial<LLMConfig & {
+  reasoning_url?: string; fast_url?: string; embed_url?: string; guard_url?: string;
+  guard_token?: string; reasoning_model_id?: string; fast_model_id?: string;
+  embed_model_id?: string; guard_model_id?: string; reasoning_timeout_s?: number; fast_timeout_s?: number;
+  embed_timeout_s?: number; guard_timeout_s?: number;
+}>) => apiFetch<LLMConfig>("/settings/llm", { method: "PUT", body: JSON.stringify(body) });
+
+export const getTokenBudgets = () => apiFetch<TokenBudgetConfig[]>("/settings/token-budgets");
+export const updateTokenBudget = (caller: string, body: { tokens_per_hour: number }) =>
+  apiFetch<TokenBudgetConfig>(`/settings/token-budgets/${caller}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const getGuardConfig = () => apiFetch<GuardConfig>("/settings/guard");
+export const updateGuardConfig = (body: Partial<{ fail_closed: boolean; timeout_s: number }>) =>
+  apiFetch<GuardConfig>("/settings/guard", { method: "PUT", body: JSON.stringify(body) });
+
+export const getHITLConfig = () => apiFetch<HITLConfig>("/settings/hitl");
+export const updateHITLConfig = (body: Partial<HITLConfig>) =>
+  apiFetch<HITLConfig>("/settings/hitl", { method: "PUT", body: JSON.stringify(body) });
+
+export const getSelfHealConfig = () => apiFetch<SelfHealConfig>("/settings/self-heal");
+export const updateSelfHealConfig = (body: Partial<SelfHealConfig>) =>
+  apiFetch<SelfHealConfig>("/settings/self-heal", { method: "PUT", body: JSON.stringify(body) });
+
+export const getRetentionConfig = () => apiFetch<RetentionConfig>("/settings/retention");
+export const updateRetentionConfig = (body: Partial<RetentionConfig>) =>
+  apiFetch<RetentionConfig>("/settings/retention", { method: "PUT", body: JSON.stringify(body) });
+
+export const getObservabilityConfig = () => apiFetch<ObservabilityConfig>("/settings/observability");
+export const updateObservabilityConfig = (body: Partial<ObservabilityConfig>) =>
+  apiFetch<ObservabilityConfig>("/settings/observability", { method: "PUT", body: JSON.stringify(body) });
+
+export const getNotificationChannels = () => apiFetch<NotificationChannel[]>("/settings/notifications");
+export const createNotificationChannel = (body: NotificationChannelCreate) =>
+  apiFetch<NotificationChannel>("/settings/notifications", { method: "POST", body: JSON.stringify(body) });
+export const updateNotificationChannel = (id: string, body: Partial<NotificationChannelCreate>) =>
+  apiFetch<NotificationChannel>(`/settings/notifications/${id}`, { method: "PUT", body: JSON.stringify(body) });
+export const deleteNotificationChannel = (id: string) =>
+  apiFetch<void>(`/settings/notifications/${id}`, { method: "DELETE" });
+export const testNotificationChannel = (id: string) =>
+  apiFetch<TestNotificationResult>(`/settings/notifications/${id}/test`, { method: "POST" });
+
+export const getUserPreferences = () => apiFetch<UserPreference[]>("/settings/preferences");
+export const updateUserPreference = (key: string, value: unknown) =>
+  apiFetch<UserPreference>(`/settings/preferences/${key}`, { method: "PUT", body: JSON.stringify({ value }) });
+export const deleteUserPreference = (key: string) =>
+  apiFetch<void>(`/settings/preferences/${key}`, { method: "DELETE" });
+
+export const getSystemInfo = () => apiFetch<SystemInfo>("/settings/system-info");

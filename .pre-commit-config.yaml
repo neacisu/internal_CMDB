@@ -6,12 +6,22 @@ repos:
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.12
     hooks:
       - id: ruff-check
         args: ["--fix"]
       - id: ruff-format
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        name: shellcheck (bash scripts)
+        args: ["-S", "error", "-x"]
+        files: \.(sh)$
+
   - repo: local
     hooks:
       - id: mypy
@@ -21,8 +31,40 @@ repos:
         args: ["src", "tests", "--config-file", "pyproject.toml"]
         pass_filenames: false
         types: [python]
+
+      - id: bandit
+        name: bandit (security scan)
+        language: system
+        entry: .venv/bin/bandit
+        args: ["-c", "pyproject.toml", "-r", "src", "-q"]
+        pass_filenames: false
+        types: [python]
+
+      - id: yamllint
+        name: yamllint (deploy + workflows)
+        language: system
+        entry: .venv/bin/yamllint
+        args: ["-c", ".yamllint", "deploy", ".github/workflows"]
+        pass_filenames: false
+        always_run: true
+
   - repo: local
     hooks:
+      - id: pytest-unit
+        name: pytest (unit — exclude integration & slow)
+        language: system
+        entry: .venv/bin/pytest
+        args:
+          - "-m"
+          - "not integration and not slow"
+          - "-q"
+          - "--no-cov"
+          - "--tb=short"
+          - "-x"
+        pass_filenames: false
+        types: [python]
+        stages: [pre-push]
+
       - id: gitleaks-pre-push
         name: gitleaks pre-push
         entry: bash -c 'command -v gitleaks >/dev/null 2>&1 || { echo "gitleaks is required in PATH for pre-push secret scanning."; exit 1; }; for d in src tests scripts subprojects; do [ -d "$d" ] && gitleaks dir "$d" --no-banner --redact --config .gitleaks.toml || exit 1; done'

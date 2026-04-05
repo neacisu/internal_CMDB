@@ -24,6 +24,7 @@ Public surface::
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -32,6 +33,24 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Logging security helpers
+# ---------------------------------------------------------------------------
+
+_LOG_CTL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_log(value: object, max_len: int = 200) -> str:
+    """Sanitize user-controlled values before logging to prevent log injection (S5145).
+
+    Replaces ASCII control characters (including newlines and carriage returns) with '?'
+    and truncates to ``max_len`` characters to prevent log flooding.
+    """
+    sanitized = _LOG_CTL_RE.sub("?", str(value))
+    if len(sanitized) > max_len:
+        sanitized = sanitized[:max_len] + "...[truncated]"
+    return sanitized
 
 # ---------------------------------------------------------------------------
 # Escalation configuration
@@ -51,6 +70,29 @@ _PRIORITY_MAP: dict[str, str] = {
     "RC-2": "medium",
     "RC-1": "low",
 }
+
+
+async def _get_escalation_config() -> tuple[dict[str, timedelta], int]:
+    """Load escalation thresholds and max escalations from SettingsStore at runtime.
+
+    Falls back to module-level defaults if the store is unavailable.
+    Allows operators to tune HITL SLAs via /api/v1/settings/hitl.
+    """
+    try:
+        from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+        store = get_settings_store()
+        rc4_m = await store.get("hitl.rc4.escalation_minutes") or 15
+        rc3_m = await store.get("hitl.rc3.escalation_minutes") or 60
+        rc2_h = await store.get("hitl.rc2.escalation_hours") or 4
+        max_esc = await store.get("hitl.max_escalations") or 3
+        thresholds = {
+            "RC-4": timedelta(minutes=int(rc4_m)),
+            "RC-3": timedelta(minutes=int(rc3_m)),
+            "RC-2": timedelta(hours=int(rc2_h)),
+        }
+        return thresholds, int(max_esc)
+    except Exception:  # noqa: BLE001
+        return _ESCALATION_THRESHOLDS, _MAX_ESCALATIONS
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +148,7 @@ class HITLWorkflow:
             },
         )
         await self._session.commit()
-        logger.info("HITL item submitted: %s (%s / %s)", item_id, risk_class, priority)
+        logger.info("HITL item submitted: %s (%s / %s)", item_id, _sanitize_log(risk_class), priority)
 
         await _notify("submitted", {
             "item_id": item_id,
@@ -168,7 +210,7 @@ class HITLWorkflow:
         esc_count, new_status, risk_class = row
         logger.info(
             "HITL item escalated: %s (count=%d, status=%s, risk=%s)",
-            item_id, esc_count, new_status, risk_class,
+            _sanitize_log(item_id), esc_count, _sanitize_log(new_status), _sanitize_log(risk_class),
         )
 
         await _notify(new_status, {
@@ -189,7 +231,8 @@ class HITLWorkflow:
         """
         total_escalated = 0
 
-        for risk_class, threshold in _ESCALATION_THRESHOLDS.items():
+        escalation_thresholds, max_escalations = await _get_escalation_config()
+        for risk_class, threshold in escalation_thresholds.items():
             cutoff = datetime.now(tz=UTC) - threshold
             result = await self._session.execute(
                 text("""
@@ -204,7 +247,7 @@ class HITLWorkflow:
                        AND created_at <= :cutoff
                        AND escalation_count < :max_esc
                 """),
-                {"rc": risk_class, "cutoff": cutoff, "max_esc": _MAX_ESCALATIONS},
+                {"rc": risk_class, "cutoff": cutoff, "max_esc": max_escalations},
             )
             total_escalated += result.rowcount  # type: ignore[operator]
 
@@ -235,7 +278,7 @@ class HITLWorkflow:
         decision_jsonb: dict[str, Any] | None = None,
     ) -> bool:
         if decision not in self._VALID_DECISIONS:
-            logger.warning("Invalid decision value: %s", decision)
+            logger.warning("Invalid decision value: %s", _sanitize_log(decision))
             return False
 
         result = await self._session.execute(
@@ -266,9 +309,9 @@ class HITLWorkflow:
         try:
             await self._record_feedback(item_id, decided_by, decision)
         except Exception:
-            logger.error("Failed to record feedback for %s — decision still saved", item_id, exc_info=True)
+            logger.error("Failed to record feedback for %s — decision still saved", _sanitize_log(item_id), exc_info=True)
         await self._session.commit()
-        logger.info("HITL item %s: %s by %s", decision, item_id, decided_by)
+        logger.info("HITL item %s: %s by %s", _sanitize_log(decision), _sanitize_log(item_id), _sanitize_log(decided_by))
         return True
 
     async def _record_feedback(

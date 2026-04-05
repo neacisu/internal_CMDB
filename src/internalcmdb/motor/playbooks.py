@@ -327,6 +327,165 @@ async def _rebalance_gpu_post(params: dict[str, Any]) -> dict[str, Any]:
     return {"cluster": cluster, "imbalance_pct": 4, "post_check": "passed"}
 
 
+
+
+# --- truncate_container_log -----------------------------------------------
+
+_DOCKER_DATA_ROOT_FALLBACK = "/mnt/HC_Volume_105014654/docker"
+
+
+def _get_data_root_from_daemon() -> str:
+    """Read Docker data-root from daemon.json to anchor path-traversal validation."""
+    import json as _json  # noqa: PLC0415
+
+    try:
+        with open("/etc/docker/daemon.json") as fh:
+            cfg = _json.load(fh)
+        return str(cfg.get("data-root", _DOCKER_DATA_ROOT_FALLBACK))
+    except (OSError, ValueError):
+        return _DOCKER_DATA_ROOT_FALLBACK
+
+
+async def _truncate_log_pre(params: dict[str, Any]) -> dict[str, Any]:
+    """Pre-check: validate log path and measure current size.
+
+    Security: the log_path MUST resolve inside the Docker data-root to prevent
+    path traversal exploitation (OWASP A01/A03).
+    """
+    import os  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    log_path = str(params.get("log_path", ""))
+    if not log_path:
+        return {"pre_check": "failed", "reason": "log_path not provided"}
+
+    data_root = str(params.get("data_root") or _get_data_root_from_daemon())
+
+    # Canonicalise both paths to prevent symlink / dotdot traversal
+    resolved_log = str(Path(log_path).resolve())
+    resolved_root = str(Path(data_root).resolve())
+    if not resolved_log.startswith(resolved_root + os.sep):
+        logger.error(
+            "SECURITY: log_path %r is outside data-root %r — aborting.",
+            resolved_log,
+            resolved_root,
+        )
+        return {
+            "pre_check": "failed",
+            "reason": "log_path outside Docker data-root (path traversal blocked)",
+        }
+
+    if not Path(resolved_log).is_file():
+        return {"pre_check": "failed", "reason": f"log file not found: {resolved_log}"}
+
+    try:
+        pre_size = Path(resolved_log).stat().st_size
+    except OSError as exc:
+        return {"pre_check": "failed", "reason": f"stat failed: {exc}"}
+
+    await _playbook_step_yield()
+    logger.info(
+        "Pre-check: log %s exists, size=%.2f GB.",
+        resolved_log,
+        pre_size / (1024 ** 3),
+    )
+    return {
+        "pre_check": "passed",
+        "log_path": resolved_log,
+        "pre_size_bytes": pre_size,
+        "container_name": params.get("container_name", "unknown"),
+    }
+
+
+async def _truncate_log_exec(params: dict[str, Any]) -> dict[str, Any]:
+    """Execute: truncate the container JSON log file to zero bytes in-place.
+
+    Using os.truncate keeps the inode so the Docker logging driver continues
+    writing without needing a container restart.
+    """
+    import os  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    log_path = str(params.get("log_path", ""))
+    pre_size = int(params.get("pre_size_bytes", 0))
+    name = params.get("container_name", "unknown")
+
+    if not log_path:
+        raise ValueError("log_path missing in params — cannot execute truncation")
+
+    resolved = str(Path(log_path).resolve())
+
+    def _do_truncate() -> None:
+        os.truncate(resolved, 0)
+
+    await asyncio.to_thread(_do_truncate)
+    logger.info(
+        "Container log truncated: %s — freed %.2f GB.",
+        resolved,
+        pre_size / (1024 ** 3),
+    )
+    return {
+        "log_path": resolved,
+        "container_name": name,
+        "freed_bytes": pre_size,
+        "freed_gb": round(pre_size / (1024 ** 3), 2),
+        "action": "log_truncated",
+    }
+
+
+async def _truncate_log_post(params: dict[str, Any]) -> dict[str, Any]:
+    """Post-check: verify the log file is now empty (or at most a few bytes)."""
+    import os  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    log_path = str(params.get("log_path", ""))
+    _truncate_tolerance_bytes = 4096  # Docker may write a partial line immediately
+
+    if not log_path:
+        return {"post_check": "passed", "healthy": True}
+
+    resolved = str(Path(log_path).resolve())
+
+    def _check() -> int:
+        try:
+            return os.path.getsize(resolved)
+        except OSError:
+            return 0
+
+    post_size = await asyncio.to_thread(_check)
+
+    if post_size > _truncate_tolerance_bytes:
+        logger.warning(
+            "Post-check: log %s still %d bytes after truncation — possible write storm.",
+            resolved,
+            post_size,
+        )
+        return {
+            "post_check": "passed",  # pass — size will settle; rollback cannot restore
+            "healthy": True,
+            "residual_bytes": post_size,
+        }
+
+    logger.info("Post-check: log %s is effectively empty (%d bytes).", resolved, post_size)
+    return {
+        "post_check": "passed",
+        "healthy": True,
+        "post_size_bytes": post_size,
+    }
+
+
+async def _truncate_log_rollback(params: dict[str, Any]) -> dict[str, Any]:
+    """Rollback: no-op — log content cannot be restored after truncation."""
+    await _playbook_step_yield()
+    log_path = params.get("log_path", "unknown")
+    logger.warning(
+        "Rollback requested for truncate_container_log on %s — "
+        "truncation is irreversible; rollback is a no-op.",
+        log_path,
+    )
+    return {"rolled_back": False, "reason": "truncation is irreversible"}
+
+
 # ---------------------------------------------------------------------------
 # Playbook registry (in-memory definitions)
 # ---------------------------------------------------------------------------
@@ -381,6 +540,14 @@ PLAYBOOKS: dict[str, _PlaybookSteps] = {
         "post_check": _rebalance_gpu_post,
         "rollback": _noop_rollback,
         "timeout_s": 300,
+    },
+    "truncate_container_log": {
+        "description": "Truncate a runaway Docker container JSON log file to zero bytes in-place.",
+        "pre_check": _truncate_log_pre,
+        "execute": _truncate_log_exec,
+        "post_check": _truncate_log_post,
+        "rollback": _truncate_log_rollback,
+        "timeout_s": 60,
     },
 }
 

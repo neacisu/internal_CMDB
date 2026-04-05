@@ -71,5 +71,11 @@
     "sonarlint.connectedMode.project": {
         "connectionId": "neacisu",
         "projectKey": "neacisu_internal_CMDB"
-    }
+    },
+    // Limită heap JVM pentru SonarLint Language Server.
+    // Implicit: nebounded (auto-sizing pe 15GB RAM → poate lua ~1GB+).
+    // 512m este suficient pentru analiza Python + TypeScript în acest proiect.
+    "sonarlint.ls.vmargs": "-Xmx512m -Xms64m",
+    "codeQL.createQuery.qlPackLocation": "/opt/stacks/internalcmdb",
+    "semgrep.scan.onlyGitDirty": false
 }

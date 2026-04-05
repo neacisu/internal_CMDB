@@ -2,14 +2,54 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncGenerator, Generator
 from functools import lru_cache
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import Settings, get_settings
+
+
+# ---------------------------------------------------------------------------
+# URL normalisation
+# ---------------------------------------------------------------------------
+
+
+def _normalize_pg_url(url: str, *, driver: str | None = None) -> str:
+    """Return a copy of *url* safe for direct server-side use.
+
+    1. Optionally swaps the driver prefix (e.g. ``psycopg`` → ``asyncpg``).
+    2. Replaces host/port with ``POSTGRES_SYNC_HOST``/``POSTGRES_SYNC_PORT``
+       when those env vars are set (bypasses Traefik TCP/SNI which requires TLS).
+    3. Forces ``sslmode=disable`` — SSL at the DB level is unnecessary on this
+       host; TLS for external clients is handled by the Traefik proxy layer.
+    """
+    if driver:
+        url = url.replace("postgresql+psycopg", f"postgresql+{driver}", 1)
+
+    parts = urlsplit(url)
+    params = parse_qs(parts.query, keep_blank_values=True)
+    params.pop("sslmode", None)
+    params["sslmode"] = ["disable"]
+
+    sync_host = os.environ.get("POSTGRES_SYNC_HOST", "").strip()
+    sync_port = os.environ.get("POSTGRES_SYNC_PORT", "").strip()
+    netloc = parts.netloc
+    if sync_host or sync_port:
+        at = netloc.rfind("@")
+        userinfo = netloc[: at + 1] if at != -1 else ""
+        hostport = netloc[at + 1 :]
+        host_only = hostport.rsplit(":", 1)[0] if ":" in hostport else hostport
+        new_host = sync_host if sync_host else host_only
+        existing_port = hostport.rsplit(":", 1)[1] if ":" in hostport else "5432"
+        new_port = sync_port if sync_port else existing_port
+        netloc = f"{userinfo}{new_host}:{new_port}"
+
+    return urlunsplit(parts._replace(netloc=netloc, query=urlencode(params, doseq=True)))
 
 
 # ---------------------------------------------------------------------------
@@ -24,7 +64,7 @@ _async_engine = None
 def _make_sessionmaker(settings: Settings) -> sessionmaker[Session]:
     global _sync_engine  # noqa: PLW0603
     _sync_engine = create_engine(
-        settings.database_url,
+        _normalize_pg_url(settings.database_url),
         pool_pre_ping=True,
         pool_size=5,
         max_overflow=10,
@@ -55,15 +95,8 @@ def get_db() -> Generator[Session]:
 
 def _make_async_sessionmaker(settings: Settings) -> async_sessionmaker[AsyncSession]:
     global _async_engine  # noqa: PLW0603
-    url = settings.database_url.replace("postgresql+psycopg", "postgresql+asyncpg", 1)
-    from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit  # noqa: PLC0415
-    parts = urlsplit(url)
-    params = parse_qs(parts.query)
-    params.pop("sslmode", None)
-    clean_query = urlencode(params, doseq=True)
-    url = urlunsplit(parts._replace(query=clean_query))
     _async_engine = create_async_engine(
-        url,
+        _normalize_pg_url(settings.database_url, driver="asyncpg"),
         pool_pre_ping=True,
         pool_size=20,
         max_overflow=30,
