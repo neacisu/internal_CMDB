@@ -112,7 +112,13 @@
         "**/dist-packages/**",
         "**/typeshed-fallback/**",
         "/root/.vscode-server-insiders/**",
-        "/root/.vscode-server/**"
+        "/root/.vscode-server/**",
+        // .semgrep/registry-ide/ contains Semgrep auto-generated YAML detection rules
+        // (regex patterns for finding hardcoded credentials). SonarLint S2068 fires
+        // on the pattern strings themselves — these are NOT hardcoded credentials.
+        // The entire .semgrep/ tree is tool configuration, not application source code.
+        "**/.semgrep/**",
+        ".semgrep/**"
     ],
     // Limită heap JVM pentru SonarLint Language Server.
     // Implicit: nebounded (auto-sizing pe 15GB RAM → poate lua ~1GB+).
