@@ -47,21 +47,23 @@ DOCKER_SOCKET = "/var/run/docker.sock"
 DISK_THRESHOLD_WARNING = 80
 DISK_THRESHOLD_CRITICAL = 90
 
-PROTECTED_IMAGE_SUBSTRINGS: frozenset[str] = frozenset({
-    "internalcmdb",
-    "postgres",
-    "redis",
-    "prometheus",
-    "grafana",
-    "node-exporter",
-    "node_exporter",
-    "cadvisor",
-    "alertmanager",
-    "loki",
-    "promtail",
-    "blackbox",
-    "nginx",
-})
+PROTECTED_IMAGE_SUBSTRINGS: frozenset[str] = frozenset(
+    {
+        "internalcmdb",
+        "postgres",
+        "redis",
+        "prometheus",
+        "grafana",
+        "node-exporter",
+        "node_exporter",
+        "cadvisor",
+        "alertmanager",
+        "loki",
+        "promtail",
+        "blackbox",
+        "nginx",
+    }
+)
 
 _MINIMUM_RECLAIMABLE_MB = 50
 
@@ -127,10 +129,10 @@ def docker_socket_available() -> bool:
 
 def format_bytes(n: int | float) -> str:
     """Human-friendly byte representation."""
-    if n >= 1024 ** 3:
-        return f"{n / 1024 ** 3:.2f} GB"
-    if n >= 1024 ** 2:
-        return f"{n / 1024 ** 2:.1f} MB"
+    if n >= 1024**3:
+        return f"{n / 1024**3:.2f} GB"
+    if n >= 1024**2:
+        return f"{n / 1024**2:.1f} MB"
     return f"{n / 1024:.0f} KB"
 
 
@@ -162,7 +164,7 @@ class SafeDockerCleaner:
 
     def _get_json(self, path: str) -> Any:
         status, body = self._request("GET", path)
-        if status != 200:
+        if status != 200:  # noqa: PLR2004
             raise RuntimeError(f"Docker GET {path} → {status}: {body[:300]}")
         return json.loads(body)
 
@@ -275,7 +277,7 @@ class SafeDockerCleaner:
     def _prune_build_cache(self, result: CleanupResult) -> None:
         try:
             status, body = self._request("POST", "/build/prune")
-            if status == 200:
+            if status == 200:  # noqa: PLR2004
                 data = json.loads(body) if body else {}
                 freed = data.get("SpaceReclaimed", 0)
                 result.build_cache_freed_bytes = freed
@@ -295,7 +297,7 @@ class SafeDockerCleaner:
         try:
             flt = urllib.parse.quote('{"dangling":["true"]}')
             status, body = self._request("POST", f"/images/prune?filters={flt}")
-            if status == 200:
+            if status == 200:  # noqa: PLR2004
                 data = json.loads(body) if body else {}
                 freed = data.get("SpaceReclaimed", 0)
                 n_del = len(data.get("ImagesDeleted") or [])
@@ -345,9 +347,7 @@ class SafeDockerCleaner:
 
         tags_str = ", ".join(tags)
         try:
-            del_status, _ = self._request(
-                "DELETE", f"/images/{img_id}?force=false&noprune=false"
-            )
+            del_status, _ = self._request("DELETE", f"/images/{img_id}?force=false&noprune=false")
             if del_status in (200, 204):
                 result.unused_images_removed.append(tags_str)
                 result.unused_images_freed_bytes += size

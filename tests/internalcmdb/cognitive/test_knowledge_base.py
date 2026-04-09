@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from internalcmdb.cognitive.knowledge_base import KnowledgeBase
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -87,9 +85,7 @@ class TestEmbedDocument:
         session = _make_session()
         llm = _make_llm(fail=True)
         kb = KnowledgeBase(session, llm)
-        with patch.object(
-            kb._chunker, "chunk", return_value=_make_chunker_text(1)
-        ):
+        with patch.object(kb._chunker, "chunk", return_value=_make_chunker_text(1)):
             result = await kb.embed_document("some content", {})
         assert result == []
 
@@ -98,9 +94,7 @@ class TestEmbedDocument:
         session = _make_session(existing_chunk=True)
         llm = _make_llm()
         kb = KnowledgeBase(session, llm)
-        with patch.object(
-            kb._chunker, "chunk", return_value=_make_chunker_text(1)
-        ):
+        with patch.object(kb._chunker, "chunk", return_value=_make_chunker_text(1)):
             result = await kb.embed_document("some content", {})
         assert result == []
 
@@ -109,9 +103,7 @@ class TestEmbedDocument:
         session = _make_session(existing_chunk=False)
         llm = _make_llm(vectors=[[0.1] * 4096, [0.2] * 4096])
         kb = KnowledgeBase(session, llm)
-        with patch.object(
-            kb._chunker, "chunk", return_value=_make_chunker_text(2)
-        ):
+        with patch.object(kb._chunker, "chunk", return_value=_make_chunker_text(2)):
             result = await kb.embed_document("doc content", {"source": "test"})
         assert len(result) == 2
         session.commit.assert_called_once()
@@ -122,9 +114,7 @@ class TestEmbedDocument:
         llm = _make_llm()
         kb = KnowledgeBase(session, llm)
         dvid = uuid.uuid4()
-        with patch.object(
-            kb._chunker, "chunk", return_value=_make_chunker_text(1)
-        ):
+        with patch.object(kb._chunker, "chunk", return_value=_make_chunker_text(1)):
             result = await kb.embed_document("content", {}, document_version_id=dvid)
         assert isinstance(result, list)
 
@@ -165,9 +155,9 @@ class TestSearch:
         session = MagicMock()
         session.commit = AsyncMock()
         row = MagicMock()
-        row.__getitem__ = lambda self, i: [
-            "chunk-id-1", "content text", "section/path", {}, 0.85
-        ][i]
+        row.__getitem__ = lambda self, i: ["chunk-id-1", "content text", "section/path", {}, 0.85][
+            i
+        ]
         db_result = MagicMock()
         db_result.fetchall.return_value = [row]
         session.execute = AsyncMock(return_value=db_result)
@@ -190,9 +180,7 @@ class TestReembedDocument:
         llm = _make_llm()
         kb = KnowledgeBase(session, llm)
         dvid = uuid.uuid4()
-        with patch.object(
-            kb._chunker, "chunk", return_value=_make_chunker_text(1)
-        ):
+        with patch.object(kb._chunker, "chunk", return_value=_make_chunker_text(1)):
             await kb.reembed_document(dvid, "new content", {"src": "updated"})
 
         assert session.commit.called

@@ -97,8 +97,8 @@ class DataQualityReport:
     accuracy: float = 0.0
     consistency: float = 0.0
     overall: float = 0.0
-    issues: list[str] = field(default_factory=list)
-    details: dict[str, Any] = field(default_factory=dict)
+    issues: list[str] = field(default_factory=list[str])
+    details: dict[str, Any] = field(default_factory=dict[str, Any])
     scored_at: str = ""
     host_count: int = 0
 
@@ -198,11 +198,15 @@ class DataQualityScorer:
         for f, count in sorted(missing_fields_summary.items(), key=lambda x: -x[1]):
             issues.append(f"Completeness: {count}/{total} hosts missing '{f}'")
 
-        return score, issues, {
-            "total_hosts": total,
-            "complete_hosts": complete_count,
-            "missing_fields": missing_fields_summary,
-        }
+        return (
+            score,
+            issues,
+            {
+                "total_hosts": total,
+                "complete_hosts": complete_count,
+                "missing_fields": missing_fields_summary,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Freshness: % of hosts with data updated in last 24h
@@ -237,11 +241,15 @@ class DataQualityScorer:
                 f"{'...' if len(stale_hosts) > _FRESHNESS_STALE_PREVIEW_COUNT else ''}"
             )
 
-        return score, issues, {
-            "total_hosts": total,
-            "fresh_hosts": fresh_count,
-            "stale_hosts": stale_hosts[:20],
-        }
+        return (
+            score,
+            issues,
+            {
+                "total_hosts": total,
+                "fresh_hosts": fresh_count,
+                "stale_hosts": stale_hosts[:20],
+            },
+        )
 
     # ------------------------------------------------------------------
     # Accuracy: % of facts matching canonical docs
@@ -264,12 +272,14 @@ class DataQualityScorer:
             if fact.get("verified", True):
                 verified_count += 1
             else:
-                discrepancies.append({
-                    "entity_id": fact.get("entity_id", "?"),
-                    "fact_key": fact.get("fact_key", "?"),
-                    "expected": fact.get("expected", "?"),
-                    "observed": fact.get("observed", "?"),
-                })
+                discrepancies.append(
+                    {
+                        "entity_id": fact.get("entity_id", "?"),
+                        "fact_key": fact.get("fact_key", "?"),
+                        "expected": fact.get("expected", "?"),
+                        "observed": fact.get("observed", "?"),
+                    }
+                )
 
         total = len(facts)
         score = verified_count / total if total else 1.0
@@ -281,11 +291,15 @@ class DataQualityScorer:
                 f"expected={d['expected']}, observed={d['observed']}"
             )
 
-        return score, issues, {
-            "facts_checked": total,
-            "verified": verified_count,
-            "discrepancies": discrepancies[:10],
-        }
+        return (
+            score,
+            issues,
+            {
+                "facts_checked": total,
+                "verified": verified_count,
+                "discrepancies": discrepancies[:10],
+            },
+        )
 
     # ------------------------------------------------------------------
     # Consistency: % of cross-references that resolve
@@ -310,12 +324,14 @@ class DataQualityScorer:
             if ref.get("resolves", True):
                 valid_count += 1
             else:
-                broken.append({
-                    "source_table": ref.get("source_table", "?"),
-                    "source_id": ref.get("source_id", "?"),
-                    "target_table": ref.get("target_table", "?"),
-                    "target_id": ref.get("target_id", "?"),
-                })
+                broken.append(
+                    {
+                        "source_table": ref.get("source_table", "?"),
+                        "source_id": ref.get("source_id", "?"),
+                        "target_table": ref.get("target_table", "?"),
+                        "target_id": ref.get("target_id", "?"),
+                    }
+                )
 
         total = len(refs)
         score = valid_count / total if total else 1.0
@@ -327,11 +343,15 @@ class DataQualityScorer:
                 f"{b['target_table']}.{b['target_id']}"
             )
 
-        return score, issues, {
-            "references_checked": total,
-            "valid": valid_count,
-            "broken": broken[:10],
-        }
+        return (
+            score,
+            issues,
+            {
+                "references_checked": total,
+                "valid": valid_count,
+                "broken": broken[:10],
+            },
+        )
 
     # ------------------------------------------------------------------
     # Data access stubs (replaced by DB queries in production)
@@ -345,16 +365,21 @@ class DataQualityScorer:
         if self._session is not None:
             try:
                 from sqlalchemy import text as sa_text  # noqa: PLC0415
+
                 result = await self._session.execute(
                     sa_text("SELECT * FROM registry.host LIMIT 500")
                 )
                 rows = result.fetchall()
                 return [dict(r._mapping) for r in rows]
             except Exception:
-                pass
+                logger.warning("DB host fetch failed, using fallback sample data", exc_info=True)
 
         return [
             {
+                # SONAR-HOTSPOT REVIEWED: S1075 — these are STATIC FALLBACK FIXTURE IPs
+                # for the seed/test dataset when the database is unavailable.
+                # They represent known prod-gpu hosts on the private Proxmox cluster LAN.
+                # Never used in real network calls; only for DataQualityEngine bootstrapping.
                 "host_code": "prod-gpu-01",
                 "hostname": "prod-gpu-01.internal",
                 "os_family_term_id": "linux",

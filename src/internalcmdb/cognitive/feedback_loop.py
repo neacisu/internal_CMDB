@@ -28,7 +28,10 @@ _PII_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("email", re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")),
     ("ip_address", re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")),
     ("ssh_key", re.compile(r"(ssh-rsa|ssh-ed25519|ecdsa-sha2)\s+[A-Za-z0-9+/=]+")),
-    ("password_field", re.compile(r'"(password|passwd|secret|token|api_key)"\s*:\s*"[^"]*"', re.IGNORECASE)),
+    (
+        "password_field",
+        re.compile(r'"(password|passwd|secret|token|api_key)"\s*:\s*"[^"]*"', re.IGNORECASE),
+    ),
 ]
 
 _REQUIRED_FEEDBACK_KEYS = {"decision"}
@@ -41,9 +44,11 @@ def _redact_pii(obj: Any) -> Any:
             obj = pattern.sub(f"[REDACTED:{label}]", obj)
         return obj
     if isinstance(obj, dict):
-        return {k: _redact_pii(v) for k, v in obj.items()}
+        d: dict[str, Any] = obj
+        return {str(k): _redact_pii(v) for k, v in d.items()}
     if isinstance(obj, list):
-        return [_redact_pii(item) for item in obj]
+        lst: list[Any] = obj
+        return [_redact_pii(item) for item in lst]
     return obj
 
 
@@ -86,7 +91,9 @@ class FeedbackLoop:
 
         llm_decision = llm_suggestion.get("decision")
         human_decision_val = human_decision.get("decision")
-        agreement = llm_decision == human_decision_val if llm_decision and human_decision_val else None
+        agreement = (
+            llm_decision == human_decision_val if llm_decision and human_decision_val else None
+        )
 
         correction_type: str | None = None
         if agreement is False:
@@ -104,7 +111,8 @@ class FeedbackLoop:
         if existing is not None:
             logger.info(
                 "Duplicate feedback suppressed for item %s (existing=%s)",
-                hitl_item_id, existing[0],
+                hitl_item_id,
+                existing[0],
             )
             return str(existing[0])
 
@@ -132,14 +140,16 @@ class FeedbackLoop:
         await self._session.commit()
         logger.info(
             "Feedback recorded: item=%s agreement=%s correction=%s",
-            hitl_item_id, agreement, correction_type,
+            hitl_item_id,
+            agreement,
+            correction_type,
         )
         return feedback_id
 
     @staticmethod
     def _validate_feedback_input(
-        llm_suggestion: dict[str, Any],
-        human_decision: dict[str, Any],
+        llm_suggestion: Any,
+        human_decision: Any,
     ) -> None:
         """Validate that feedback dicts contain the minimum required keys."""
         if not isinstance(llm_suggestion, dict):
@@ -170,42 +180,45 @@ class FeedbackLoop:
             params["model"] = model
 
         result = await self._session.execute(
-            text(f"""
-                SELECT
-                    COUNT(*)                                          AS total,
-                    COUNT(*) FILTER (WHERE agreement = true)          AS agreed,
-                    COUNT(*) FILTER (WHERE agreement = false)         AS disagreed,
-                    COUNT(*) FILTER (WHERE agreement IS NULL)         AS unknown,
-                    CASE WHEN COUNT(*) FILTER (WHERE agreement IS NOT NULL) > 0
-                         THEN ROUND(
-                             COUNT(*) FILTER (WHERE agreement = true)::numeric
-                             / COUNT(*) FILTER (WHERE agreement IS NOT NULL)::numeric, 4
-                         )
-                         ELSE NULL
-                    END                                               AS agreement_rate
-                FROM governance.hitl_feedback
-                WHERE 1=1 {model_filter}
-            """),
+            text(
+                "SELECT COUNT(*) AS total,"
+                "       COUNT(*) FILTER (WHERE agreement = true) AS agreed,"
+                "       COUNT(*) FILTER (WHERE agreement = false) AS disagreed,"
+                "       COUNT(*) FILTER (WHERE agreement IS NULL) AS unknown,"
+                "       CASE WHEN COUNT(*) FILTER (WHERE agreement IS NOT NULL) > 0"
+                "            THEN ROUND("
+                "                COUNT(*) FILTER (WHERE agreement = true)::numeric"
+                "                / COUNT(*) FILTER (WHERE agreement IS NOT NULL)::numeric, 4)"
+                "            ELSE NULL END AS agreement_rate"
+                "  FROM governance.hitl_feedback"
+                "  WHERE 1=1 " + model_filter
+            ),
             params,
         )
         row = result.fetchone()
-        stats: dict[str, Any] = dict(row._mapping) if row else {
-            "total": 0, "agreed": 0, "disagreed": 0, "unknown": 0, "agreement_rate": None,
-        }
+        stats: dict[str, Any] = (
+            dict(row._mapping)
+            if row
+            else {
+                "total": 0,
+                "agreed": 0,
+                "disagreed": 0,
+                "unknown": 0,
+                "agreement_rate": None,
+            }
+        )
 
         correction_result = await self._session.execute(
-            text(f"""
-                SELECT correction_type, COUNT(*) AS cnt
-                  FROM governance.hitl_feedback
-                 WHERE correction_type IS NOT NULL {model_filter}
-                 GROUP BY correction_type
-                 ORDER BY cnt DESC
-            """),
+            text(
+                "SELECT correction_type, COUNT(*) AS cnt"
+                "  FROM governance.hitl_feedback"
+                " WHERE correction_type IS NOT NULL "
+                + model_filter
+                + " GROUP BY correction_type ORDER BY cnt DESC"
+            ),
             params,
         )
-        stats["correction_types"] = {
-            r[0]: int(r[1]) for r in correction_result.fetchall()
-        }
+        stats["correction_types"] = {r[0]: int(r[1]) for r in correction_result.fetchall()}
 
         for key in ("total", "agreed", "disagreed", "unknown"):
             if key in stats and stats[key] is not None:

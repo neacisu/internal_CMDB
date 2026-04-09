@@ -1,7 +1,11 @@
 """Tests for motor.execution_lock — ExecutionLock."""
+
 from __future__ import annotations
+
 from unittest.mock import AsyncMock, patch
+
 import pytest
+
 from internalcmdb.motor.execution_lock import ExecutionLock
 
 

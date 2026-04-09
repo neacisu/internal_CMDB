@@ -74,7 +74,7 @@ def test_dashboard_summary_counts() -> None:
     # host=5, cluster=2, service=3, service_instance=10,
     # gpu_capable=1, docker=1, runs_24h=7,
     # ram_bytes=8 GiB, vram_mb=4096
-    ram_bytes = 8 * (1024 ** 3)
+    ram_bytes = 8 * (1024**3)
     vram_mb = 4096
     values: list[object] = [5, 2, 3, 10, 1, 1, 7, ram_bytes, vram_mb]
     app.dependency_overrides[get_db] = lambda: _summary_db_mock(values)

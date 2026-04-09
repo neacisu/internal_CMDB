@@ -185,8 +185,7 @@ SCRIPTS: dict[str, ScriptDef] = {
             task_name="setup_firewall",
             display_name="Setup Firewall (UFW)",
             description=(
-                "Idempotent UFW setup on a node: allows SSH, exporters,"
-                " and inter-cluster traffic."
+                "Idempotent UFW setup on a node: allows SSH, exporters, and inter-cluster traffic."
             ),
             category="security",
             script_path="scripts/setup_firewall.sh",

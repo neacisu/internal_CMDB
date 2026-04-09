@@ -19,7 +19,7 @@ def _lscpu() -> dict[str, str]:
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)  # type: ignore[no-any-return]
-    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
+    except FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError:
         pass
     return {}
 
@@ -37,9 +37,29 @@ def _lsblk() -> list[dict[str, Any]]:
         if result.returncode == 0 and result.stdout.strip():
             data = json.loads(result.stdout)
             return data.get("blockdevices", [])  # type: ignore[no-any-return]
-    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
+    except FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError:
         pass
     return []
+
+
+def _parse_dmidecode_line(
+    line: str,
+    current: dict[str, str],
+) -> dict[str, str] | None:
+    """Process one dmidecode memory line and update *current* module dict.
+
+    Returns the completed module dict when the ``Speed`` sentinel is encountered
+    (which signals the end of a module block), otherwise returns ``None``.
+    The caller must reset *current* when a non-None value is returned.
+    """
+    if line.startswith("Size:") and "No Module" not in line:
+        current["size"] = line.split(":", 1)[1].strip()
+    elif line.startswith("Type:"):
+        current["type"] = line.split(":", 1)[1].strip()
+    elif line.startswith("Speed:"):
+        current["speed"] = line.split(":", 1)[1].strip()
+        return dict(current)  # flush completed module
+    return None
 
 
 def _dmidecode_memory() -> list[dict[str, str]]:
@@ -55,17 +75,12 @@ def _dmidecode_memory() -> list[dict[str, str]]:
         modules: list[dict[str, str]] = []
         current: dict[str, str] = {}
         for raw_line in result.stdout.splitlines():
-            line = raw_line.strip()
-            if line.startswith("Size:") and "No Module" not in line:
-                current["size"] = line.split(":", 1)[1].strip()
-            elif line.startswith("Type:"):
-                current["type"] = line.split(":", 1)[1].strip()
-            elif line.startswith("Speed:"):
-                current["speed"] = line.split(":", 1)[1].strip()
-                modules.append(current)
+            completed = _parse_dmidecode_line(raw_line.strip(), current)
+            if completed is not None:
+                modules.append(completed)
                 current = {}
         return modules
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except FileNotFoundError, subprocess.TimeoutExpired:
         return []
 
 

@@ -14,7 +14,6 @@ import asyncio
 import hashlib
 import os
 import tempfile
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,7 +21,6 @@ import pytest
 from internalcmdb.collectors.agent.updater import (
     AgentUpdater,
     UpdateInfo,
-    _UPDATE_LOCK_PATH,
 )
 
 
@@ -120,7 +118,7 @@ class TestCheckUpdate:
 
     @pytest.mark.asyncio
     async def test_http_error_returns_none(self, updater: AgentUpdater) -> None:
-        import httpx
+        import httpx  # noqa: PLC0415
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
@@ -168,13 +166,18 @@ class TestApplyUpdateAsyncIO:
         to_thread_calls: list[str] = []
         original_to_thread = asyncio.to_thread
 
-        async def tracking_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        async def tracking_to_thread(fn, *args, **kwargs):
             to_thread_calls.append(fn.__name__ if hasattr(fn, "__name__") else str(fn))
             return await original_to_thread(fn, *args, **kwargs)
 
         with (
-            patch.object(updater, "_download", new_callable=AsyncMock, side_effect=RuntimeError("skip")),
-            patch("internalcmdb.collectors.agent.updater.asyncio.to_thread", side_effect=tracking_to_thread),
+            patch.object(
+                updater, "_download", new_callable=AsyncMock, side_effect=RuntimeError("skip")
+            ),
+            patch(
+                "internalcmdb.collectors.agent.updater.asyncio.to_thread",
+                side_effect=tracking_to_thread,
+            ),
         ):
             result = await updater.apply_update(sample_update_info)
 

@@ -28,7 +28,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class TokenBudgetManager:
     budget (default 100k tokens).
     """
 
-    CUSTOM_BUDGETS: dict[str, int] = {
+    CUSTOM_BUDGETS: ClassVar[dict[str, int]] = {
         "agent-audit": 200_000,
         "agent-capacity": 150_000,
         "agent-security": 100_000,
@@ -87,6 +87,19 @@ class TokenBudgetManager:
         self._budgets: dict[str, _BudgetEntry] = {}
         self._lock = asyncio.Lock()
 
+    def _apply_caller_limit(self, caller: str, val: str) -> None:
+        """Apply a new budget limit for *caller* fetched from SettingsStore.
+
+        Updates both :attr:`CUSTOM_BUDGETS` (used for new windows) and the
+        live *entry.limit* if the caller already has an active budget entry.
+        Must be called while holding ``self._lock``.
+        """
+        new_limit = int(val)
+        self.CUSTOM_BUDGETS[caller] = new_limit
+        entry = self._budgets.get(caller)
+        if entry is not None:
+            entry.limit = new_limit
+
     async def reload_from_settings(self) -> None:
         """Reload per-caller limits from SettingsStore.
 
@@ -95,21 +108,20 @@ class TokenBudgetManager:
         """
         try:
             from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+
             store = get_settings_store()
-            callers = list(self.CUSTOM_BUDGETS) + ["default"]
+            callers = [*list(self.CUSTOM_BUDGETS), "default"]
             async with self._lock:
                 for caller in callers:
                     key = f"budget.{caller.replace('-', '_')}"
                     val = await store.get(key)
                     if val is not None:
-                        new_limit = int(val)
-                        self.CUSTOM_BUDGETS[caller] = new_limit
-                        entry = self._budgets.get(caller)
-                        if entry is not None:
-                            entry.limit = new_limit
+                        self._apply_caller_limit(caller, val)
             logger.debug("TokenBudgetManager: reloaded limits from SettingsStore")
-        except Exception:  # noqa: BLE001
-            logger.warning("TokenBudgetManager: reload_from_settings failed; keeping existing limits")
+        except Exception:
+            logger.warning(
+                "TokenBudgetManager: reload_from_settings failed; keeping existing limits"
+            )
 
     def _get_or_create(self, caller: str) -> _BudgetEntry:
         """Get or create a budget entry for the given caller."""
@@ -176,15 +188,10 @@ class TokenBudgetManager:
     # Spike detection
     # ------------------------------------------------------------------
 
-    def _check_spike(
-        self, caller: str, entry: _BudgetEntry, current_tokens: int
-    ) -> None:
+    def _check_spike(self, caller: str, entry: _BudgetEntry, current_tokens: int) -> None:
         """Alert if the current usage is > 3x the rolling average."""
         now = time.monotonic()
-        recent = [
-            r for r in entry.history
-            if now - r.timestamp <= _WINDOW_SECONDS
-        ]
+        recent = [r for r in entry.history if now - r.timestamp <= _WINDOW_SECONDS]
 
         if len(recent) < _SPIKE_MIN_SAMPLES:
             return
@@ -228,9 +235,7 @@ class TokenBudgetManager:
                     "window_age_seconds": round(window_age),
                     "requests_in_window": len(recent),
                     "tokens_in_window": recent_total,
-                    "avg_tokens_per_request": (
-                        round(recent_total / len(recent)) if recent else 0
-                    ),
+                    "avg_tokens_per_request": (round(recent_total / len(recent)) if recent else 0),
                 }
 
             return stats

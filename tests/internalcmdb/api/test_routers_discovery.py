@@ -1,9 +1,13 @@
 """Tests for /discovery router — sync DB endpoints."""
+
 from __future__ import annotations
+
 import uuid
 from unittest.mock import MagicMock
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from internalcmdb.api.deps import get_db
 from internalcmdb.api.routers.discovery import router
 

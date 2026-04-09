@@ -47,22 +47,13 @@ def upgrade() -> None:
     )
 
     op.execute(
-        sa.text(
-            f"CREATE INDEX idx_ci_rel_source "
-            f"ON {_REGISTRY}.ci_relationship (source_entity_id)"
-        )
+        sa.text(f"CREATE INDEX idx_ci_rel_source ON {_REGISTRY}.ci_relationship (source_entity_id)")
     )
     op.execute(
-        sa.text(
-            f"CREATE INDEX idx_ci_rel_target "
-            f"ON {_REGISTRY}.ci_relationship (target_entity_id)"
-        )
+        sa.text(f"CREATE INDEX idx_ci_rel_target ON {_REGISTRY}.ci_relationship (target_entity_id)")
     )
     op.execute(
-        sa.text(
-            f"CREATE INDEX idx_ci_rel_type "
-            f"ON {_REGISTRY}.ci_relationship (relationship_type)"
-        )
+        sa.text(f"CREATE INDEX idx_ci_rel_type ON {_REGISTRY}.ci_relationship (relationship_type)")
     )
     op.execute(
         sa.text(

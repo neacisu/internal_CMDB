@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from internalcmdb.nervous.event_bus import Event, EventBus
-
 
 # ---------------------------------------------------------------------------
 # Event dataclass
@@ -91,9 +90,7 @@ class TestEventBus:
         mock_redis.xadd.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_subscribe_returns_events(
-        self, bus: EventBus, mock_redis: MagicMock
-    ) -> None:
+    async def test_subscribe_returns_events(self, bus: EventBus, mock_redis: MagicMock) -> None:
         mock_redis.xreadgroup.return_value = [
             (
                 "sensor:ingest",

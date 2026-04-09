@@ -26,16 +26,13 @@ def _add_staleness(metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
         collected = m.get("collected_at")
         if collected:
             try:
-                if isinstance(collected, str):
-                    dt = datetime.fromisoformat(collected)
-                else:
-                    dt = collected
+                dt = datetime.fromisoformat(collected) if isinstance(collected, str) else collected
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=UTC)
                 age = (now - dt).total_seconds()
                 m["age_seconds"] = round(age, 1)
-                m["stale"] = age > 300
-            except (ValueError, TypeError):
+                m["stale"] = age > 300  # noqa: PLR2004
+            except ValueError, TypeError:
                 m["age_seconds"] = None
                 m["stale"] = True
     return metrics
@@ -82,7 +79,9 @@ async def host_metrics_series(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     metric_name: str = Query(..., description="Metric name to query"),
     limit: int = Query(500, ge=1, le=5000),
-    before: str | None = Query(None, description="Cursor: return points collected before this ISO timestamp"),
+    before: str | None = Query(
+        None, description="Cursor: return points collected before this ISO timestamp"
+    ),
 ) -> dict[str, Any]:
     """Time series data for a specific metric on a host (cursor-paginated)."""
     result = await session.execute(
@@ -106,8 +105,10 @@ async def host_metrics_series(
              LIMIT :limit
         """)
         params: dict[str, Any] = {
-            "host_id": str(host_id), "metric_name": metric_name,
-            "limit": limit, "before": before,
+            "host_id": str(host_id),
+            "metric_name": metric_name,
+            "limit": limit,
+            "before": before,
         }
     else:
         query = text("""
@@ -125,8 +126,10 @@ async def host_metrics_series(
 
     next_cursor = points[-1]["collected_at"] if points else None
     return {
-        "host_code": code, "metric_name": metric_name,
-        "points": points, "next_before": next_cursor,
+        "host_code": code,
+        "metric_name": metric_name,
+        "points": points,
+        "next_before": next_cursor,
     }
 
 

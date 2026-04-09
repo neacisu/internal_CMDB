@@ -5,16 +5,20 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import Row, text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_async_session
-from ..middleware.rate_limit import limiter
+from ..middleware.rate_limit import rate_limit
 from ..middleware.rbac import require_role
+
+if TYPE_CHECKING:
+    from internalcmdb.cognitive.analyzer import AnalysisResult
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +77,7 @@ class InsightOut(BaseModel):
     remediation: str | None = None
     status: str = "active"
     confidence: float = 0.0
-    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    evidence: list[dict[str, Any]] = []  # Pydantic v2 copies mutable defaults safely
     created_at: str | None = None
     acknowledged_by: str | None = None
     dismissed_reason: str | None = None
@@ -182,7 +186,7 @@ def _now_iso() -> str:
     response_model=NLQueryResponse,
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
-@limiter.limit("10/minute")
+@rate_limit("10/minute")
 async def cognitive_query(
     request: Request,
     body: NLQueryRequest,
@@ -190,8 +194,8 @@ async def cognitive_query(
 ) -> NLQueryResponse:
     """Natural language query with RAG over the InternalCMDB knowledge base."""
     try:
-        from internalcmdb.cognitive.query_engine import QueryEngine
-        from internalcmdb.llm.client import LLMClient
+        from internalcmdb.cognitive.query_engine import QueryEngine  # noqa: PLC0415
+        from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
 
         llm = LLMClient()
         engine = QueryEngine(llm, session, top_k=body.top_k)
@@ -246,22 +250,26 @@ async def analyze_host(
     facts = result.fetchall()
 
     try:
-        from internalcmdb.cognitive.analyzer import FactAnalyzer
+        from internalcmdb.cognitive.analyzer import FactAnalyzer  # noqa: PLC0415
 
         analyzer = FactAnalyzer(session)
-        anomalies = []
+        anomalies: list[AnalysisResult] = []
         for f in facts:
             m = f._mapping
-            ar = await analyzer.analyze_fact({
-                "entity_id": str(m["entity_id"]),
-                "fact_namespace": m["fact_namespace"],
-                "fact_key": m["fact_key"],
-                "fact_value_jsonb": m["fact_value_jsonb"],
-            })
+            ar = await analyzer.analyze_fact(
+                {
+                    "entity_id": str(m["entity_id"]),
+                    "fact_namespace": m["fact_namespace"],
+                    "fact_key": m["fact_key"],
+                    "fact_value_jsonb": m["fact_value_jsonb"],
+                }
+            )
             if ar.is_anomaly:
                 anomalies.append(ar)
 
-        worst = max(anomalies, key=lambda a: a.confidence) if anomalies else None
+        worst: AnalysisResult | None = (
+            max(anomalies, key=lambda a: a.confidence) if anomalies else None
+        )
 
         return AnalysisOut(
             entity_id=str(host_id),
@@ -305,7 +313,9 @@ async def analyze_service(
     )
     instances = result.fetchall()
 
-    unhealthy = [r for r in instances if r._mapping.get("status_text") not in ("running", "active", None)]
+    unhealthy = [
+        r for r in instances if r._mapping.get("status_text") not in ("running", "active", None)
+    ]
     n_inst = len(instances)
     n_unhealthy = len(unhealthy)
     if n_unhealthy > n_inst / 2:
@@ -409,8 +419,8 @@ async def get_insight(
         return _row_to_dict(row)
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=404, detail="Insight not found")
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Insight not found") from exc
 
 
 class InsightActionResponse(BaseModel):
@@ -429,13 +439,16 @@ async def acknowledge_insight(
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> InsightActionResponse:
     """Acknowledge an active insight."""
-    result = await session.execute(
-        text("""
-            UPDATE cognitive.insight
-            SET status = 'acknowledged', acknowledged_by = :by, updated_at = NOW()
-            WHERE insight_id = :iid AND status = 'active'
-        """),
-        {"iid": insight_id, "by": body.acknowledged_by},
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            text("""
+                UPDATE cognitive.insight
+                SET status = 'acknowledged', acknowledged_by = :by, updated_at = NOW()
+                WHERE insight_id = :iid AND status = 'active'
+            """),
+            {"iid": insight_id, "by": body.acknowledged_by},
+        ),
     )
     await session.commit()
     if result.rowcount == 0:
@@ -454,13 +467,16 @@ async def dismiss_insight(
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> InsightActionResponse:
     """Dismiss an insight with a reason."""
-    result = await session.execute(
-        text("""
-            UPDATE cognitive.insight
-            SET status = 'dismissed', dismissed_reason = :reason, updated_at = NOW()
-            WHERE insight_id = :iid AND status IN ('active', 'acknowledged')
-        """),
-        {"iid": insight_id, "reason": body.reason},
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            text("""
+                UPDATE cognitive.insight
+                SET status = 'dismissed', dismissed_reason = :reason, updated_at = NOW()
+                WHERE insight_id = :iid AND status IN ('active', 'acknowledged')
+            """),
+            {"iid": insight_id, "reason": body.reason},
+        ),
     )
     await session.commit()
     if result.rowcount == 0:
@@ -474,8 +490,10 @@ async def dismiss_insight(
 
 
 async def _fetch_host_snapshot_rows(
-    session: AsyncSession, limit: int, offset: int,
-) -> list[Any]:
+    session: AsyncSession,
+    limit: int,
+    offset: int,
+) -> list[Row[Any]]:
     result = await session.execute(
         text("""
             SELECT h.host_id, h.host_code,
@@ -509,18 +527,18 @@ async def _fetch_host_snapshot_rows(
         """),
         {"limit": limit, "offset": offset},
     )
-    return result.fetchall()
+    return list(result.fetchall())
 
 
 def _parse_mem_pct(vitals_payload: dict[str, Any]) -> float:
-    mem_kb = vitals_payload.get("memory_kb") or {}
+    mem_kb: dict[str, Any] = cast(dict[str, Any], vitals_payload.get("memory_kb") or {})
     mem_total = float(mem_kb.get("MemTotal") or 0)
     mem_avail = float(mem_kb.get("MemAvailable") or mem_kb.get("MemFree") or 0)
     return ((mem_total - mem_avail) / mem_total * 100) if mem_total > 0 else 0.0
 
 
 def _parse_cpu_pct(vitals_payload: dict[str, Any]) -> float:
-    cpu_times = vitals_payload.get("cpu_times") or {}
+    cpu_times: dict[str, Any] = cast(dict[str, Any], vitals_payload.get("cpu_times") or {})
     cpu_idle = float(cpu_times.get("idle") or 0)
     cpu_total = sum(float(v) for v in cpu_times.values()) if cpu_times else 0
     if cpu_total <= 0:
@@ -529,7 +547,7 @@ def _parse_cpu_pct(vitals_payload: dict[str, Any]) -> float:
 
 
 def _parse_root_disk_pct(disk_payload: dict[str, Any]) -> float:
-    for d in disk_payload.get("disks") or []:
+    for d in cast(list[dict[str, Any]], disk_payload.get("disks") or []):
         if d.get("mountpoint", "") == "/":
             raw = str(d.get("used_pct", "0")).replace("%", "")
             try:
@@ -540,18 +558,19 @@ def _parse_root_disk_pct(disk_payload: dict[str, Any]) -> float:
 
 
 def _parse_container_counts(docker_payload: dict[str, Any]) -> tuple[int, int]:
-    containers = docker_payload.get("containers") or []
+    containers: list[Any] = cast(list[Any], docker_payload.get("containers") or [])
     running = sum(
-        1 for c in containers
-        if isinstance(c, dict) and "Up" in str(c.get("status", ""))
+        1
+        for c in containers
+        if isinstance(c, dict) and "Up" in str(cast(dict[str, Any], c).get("status", ""))
     )
     return len(containers), running
 
 
 def _score_single_host(m: Any, scorer: Any) -> HealthScoreOut:
-    vp = m.get("vitals_payload") or {}
-    dp = m.get("disk_payload") or {}
-    docker_p = m.get("docker_payload") or {}
+    vp = cast(dict[str, Any], m.get("vitals_payload") or {})
+    dp = cast(dict[str, Any], m.get("disk_payload") or {})
+    docker_p = cast(dict[str, Any], m.get("docker_payload") or {})
 
     cpu_pct = _parse_cpu_pct(vp)
     mem_pct = _parse_mem_pct(vp)
@@ -596,7 +615,7 @@ async def list_health_scores(
     """Live health scores for all hosts using real system_vitals + disk_state snapshots."""
     offset = (page - 1) * page_size
     try:
-        from internalcmdb.cognitive.health_scorer import HealthScorer
+        from internalcmdb.cognitive.health_scorer import HealthScorer  # noqa: PLC0415
 
         scorer = HealthScorer()
         rows = await _fetch_host_snapshot_rows(session, page_size, offset)
@@ -617,16 +636,19 @@ _VALID_ENTITY_TYPES = {"host", "service", "cluster"}
 async def get_health_score(
     entity_type: str,
     entity_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_async_session)],
+    _session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> HealthScoreOut:
     """Detailed health score for a specific entity."""
     if entity_type not in _VALID_ENTITY_TYPES:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid entity_type '{entity_type}'. Must be one of: {sorted(_VALID_ENTITY_TYPES)}",
+            detail=(
+                f"Invalid entity_type '{entity_type}'. Must be one of: "
+                f"{sorted(_VALID_ENTITY_TYPES)}"
+            ),
         )
     try:
-        from internalcmdb.cognitive.health_scorer import HealthScorer
+        from internalcmdb.cognitive.health_scorer import HealthScorer  # noqa: PLC0415
 
         scorer = HealthScorer()
         host_data = {
@@ -647,7 +669,8 @@ async def get_health_score(
             timestamp=hs.timestamp,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.exception("Health score computation failed for entity %s", entity_id)
+        raise HTTPException(status_code=500, detail="Health score computation failed") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -705,8 +728,8 @@ async def get_report(
         return _row_to_dict(row)
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=404, detail="Report not found")
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Report not found") from exc
 
 
 @router.post(
@@ -724,8 +747,8 @@ async def generate_report(
     now = _now_iso()
 
     try:
-        from internalcmdb.cognitive.report_generator import ReportGenerator
-        from internalcmdb.llm.client import LLMClient
+        from internalcmdb.cognitive.report_generator import ReportGenerator  # noqa: PLC0415
+        from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
 
         llm = LLMClient()
         gen = ReportGenerator(llm, session)
@@ -793,7 +816,7 @@ class DriftCheckResponse(BaseModel):
 )
 async def trigger_drift_check(
     body: DriftCheckRequest,
-    session: Annotated[AsyncSession, Depends(get_async_session)],
+    _session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> DriftCheckResponse:
     """Trigger a configuration drift check."""
     drift_id = str(uuid.uuid4())
@@ -880,7 +903,9 @@ async def list_playbooks(
             PlaybookOut(
                 playbook_id="pb-restart-service",
                 name="Restart Unhealthy Service",
-                description="Automatically restarts a service container when health checks fail 3+ times.",
+                description=(
+                    "Automatically restarts a service container when health checks fail 3+ times."
+                ),
                 trigger_conditions=["health_check_fail_count >= 3"],
                 risk_level="low",
             ),

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from internalcmdb.governance.hitl_workflow import HITLWorkflow, _json_or_none
-
+from internalcmdb.governance.hitl_workflow import (
+    HITLWorkflow,
+    _json_or_none,
+    _notify,
+    _sanitize_log,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -62,12 +67,14 @@ class TestSubmit:
         wf, session = _make_workflow()
 
         with patch("internalcmdb.governance.hitl_workflow._notify", new=AsyncMock()):
-            item_id = await wf.submit({
-                "item_type": "action_review",
-                "risk_class": "RC-3",
-                "source_event_id": "evt-001",
-                "correlation_id": "corr-001",
-            })
+            item_id = await wf.submit(
+                {
+                    "item_type": "action_review",
+                    "risk_class": "RC-3",
+                    "source_event_id": "evt-001",
+                    "correlation_id": "corr-001",
+                }
+            )
 
         assert isinstance(item_id, str)
         assert len(item_id) == 36
@@ -109,7 +116,7 @@ class TestSubmit:
 
     @pytest.mark.asyncio
     async def test_submit_notifies(self) -> None:
-        wf, session = _make_workflow()
+        wf, _ = _make_workflow()
         notify_mock = AsyncMock()
 
         with patch("internalcmdb.governance.hitl_workflow._notify", new=notify_mock):
@@ -129,10 +136,7 @@ class TestApprove:
     @pytest.mark.asyncio
     async def test_approve_returns_true_on_success(self) -> None:
         wf, session = _make_workflow()
-
-        result_mock = MagicMock()
-        result_mock.fetchone.return_value = ("item-001",)
-        session.execute = AsyncMock(return_value=result_mock)
+        _mock_execute_returning(session, [("item-001",)])
 
         with patch.object(wf, "_record_feedback", new=AsyncMock()):
             ok = await wf.approve("item-001", decided_by="alice", reason="LGTM")
@@ -143,10 +147,7 @@ class TestApprove:
     @pytest.mark.asyncio
     async def test_approve_returns_false_when_not_found(self) -> None:
         wf, session = _make_workflow()
-
-        result_mock = MagicMock()
-        result_mock.fetchone.return_value = None
-        session.execute = AsyncMock(return_value=result_mock)
+        _mock_execute_returning(session, [])
 
         ok = await wf.approve("nonexistent-id", decided_by="alice", reason="reason")
 
@@ -162,10 +163,7 @@ class TestReject:
     @pytest.mark.asyncio
     async def test_reject_returns_true_on_success(self) -> None:
         wf, session = _make_workflow()
-
-        result_mock = MagicMock()
-        result_mock.fetchone.return_value = ("item-002",)
-        session.execute = AsyncMock(return_value=result_mock)
+        _mock_execute_returning(session, [("item-002",)])
 
         with patch.object(wf, "_record_feedback", new=AsyncMock()):
             ok = await wf.reject("item-002", decided_by="bob", reason="not safe")
@@ -194,10 +192,7 @@ class TestModify:
     @pytest.mark.asyncio
     async def test_modify_calls_decide_with_modifications(self) -> None:
         wf, session = _make_workflow()
-
-        result_mock = MagicMock()
-        result_mock.fetchone.return_value = ("item-003",)
-        session.execute = AsyncMock(return_value=result_mock)
+        _mock_execute_returning(session, [("item-003",)])
 
         with patch.object(wf, "_record_feedback", new=AsyncMock()):
             ok = await wf.modify(
@@ -311,9 +306,6 @@ class TestDecideInvalidDecision:
 # ---------------------------------------------------------------------------
 
 
-from internalcmdb.governance.hitl_workflow import _sanitize_log  # noqa: E402
-
-
 class TestSanitizeLog:
     """Verify that _sanitize_log prevents log injection attacks (S5145)."""
 
@@ -367,3 +359,70 @@ class TestSanitizeLog:
     def test_multi_control_chars_all_replaced(self) -> None:
         result = _sanitize_log("\x01\x02\x03\x0a\x0d\x1f")
         assert all(c == "?" for c in result)
+
+
+# ---------------------------------------------------------------------------
+# Integration: log-injection prevention through public workflow API (S5145)
+# ---------------------------------------------------------------------------
+
+
+class TestLogInjectionPrevention:
+    """Verify that user-controlled values reaching logger calls are sanitized."""
+
+    @pytest.mark.asyncio
+    async def test_submit_with_malicious_risk_class_does_not_inject_newline(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A risk_class containing CRLF must not produce newlines in log output."""
+        wf, _session = _make_workflow()
+        with (
+            patch("internalcmdb.governance.hitl_workflow._notify", new=AsyncMock()),
+            caplog.at_level(logging.INFO, logger="internalcmdb.governance.hitl_workflow"),
+        ):
+            await wf.submit(
+                {
+                    "risk_class": "RC-3\nFAKE LOG ENTRY — severity escalated by attacker",
+                    "item_type": "action_review",
+                }
+            )
+        for record in caplog.records:
+            msg = record.getMessage()
+            assert "\n" not in msg, f"Newline leaked into log: {msg!r}"
+            assert "\r" not in msg, f"CR leaked into log: {msg!r}"
+
+    @pytest.mark.asyncio
+    async def test_submit_with_malicious_priority_does_not_inject_control_char(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A derived priority value that carries taint must not produce control chars in the log."""
+        wf, _session = _make_workflow()
+        # Patch _PRIORITY_MAP to inject a tainted priority string
+        with (
+            patch(
+                "internalcmdb.governance.hitl_workflow._PRIORITY_MAP",
+                {"RC-2": "medium\x00null-injected"},
+            ),
+            patch("internalcmdb.governance.hitl_workflow._notify", new=AsyncMock()),
+            caplog.at_level(logging.INFO, logger="internalcmdb.governance.hitl_workflow"),
+        ):
+            await wf.submit({"risk_class": "RC-2"})
+        for record in caplog.records:
+            msg = record.getMessage()
+            assert "\x00" not in msg, f"Null byte leaked into log: {msg!r}"
+
+    @pytest.mark.asyncio
+    async def test_notify_dispatch_failure_sanitizes_event_type(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The _notify catch-path logger.debug must sanitize event_type (S5145)."""
+        with (
+            patch(
+                "internalcmdb.governance.notifications.notify_hitl_event",
+                side_effect=RuntimeError("simulated channel failure"),
+            ),
+            caplog.at_level(logging.DEBUG, logger="internalcmdb.governance.hitl_workflow"),
+        ):
+            await _notify("submitted\nFAKE LOG ENTRY", {"item_id": "x"})
+        for record in caplog.records:
+            msg = record.getMessage()
+            assert "\n" not in msg, f"Newline in _notify debug log: {msg!r}"

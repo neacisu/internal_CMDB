@@ -1,0 +1,200 @@
+rules:
+  # -------------------------------------------------------------------------
+  # RULE 1: SQLAlchemy text() with f-string interpolation
+  #
+  # Risk: SQL injection. text(f"... {variable} ...") bypasses SQLAlchemy's
+  # parameterised query safety. All dynamic values must use :param notation
+  # and be passed via the second argument dict.
+  #
+  # Files found in codebase: hitl_workflow.py, accuracy_tracker.py,
+  # feedback_loop.py, migrations/env.py
+  # -------------------------------------------------------------------------
+  - id: sqlalchemy-text-fstring-injection
+    patterns:
+      - pattern: text(f"...")
+      - pattern-not: |
+          text(f"... :$PARAM ...")
+    message: >
+      [CRITICAL] SQLAlchemy text() called with an f-string that interpolates
+      Python variables directly into SQL. Use named bind parameters instead:
+        text("SELECT ... WHERE col = :val")  +  {"val": variable}
+      Violates OWASP A03:2021 Injection.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      owasp: "A03:2021 - Injection"
+      references:
+        - https://docs.sqlalchemy.org/en/20/core/sqlelement.html#sqlalchemy.sql.expression.text
+      confidence: HIGH
+
+  - id: sqlalchemy-text-fstring-multiline-injection
+    patterns:
+      - pattern: |
+          text(f"""...""")
+    message: >
+      [CRITICAL] SQLAlchemy text() called with a multiline f-string. Dynamic
+      values interpolated directly into SQL strings are an injection risk.
+      Use named bind parameters: text("... :param ..."), {"param": value}.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE 2: JWT secret loaded with empty-string fallback
+  #
+  # Risk: If JWT_SECRET_KEY is unset, the application silently uses "" as the
+  # signing secret, making all tokens trivially forgeable.
+  # -------------------------------------------------------------------------
+  - id: jwt-empty-secret-fallback
+    pattern: os.environ.get($KEY, "")
+    metavariable-regex:
+      metavariable: $KEY
+      regex: "(?i)(secret|jwt|token|password|passwd|key|auth)"
+    message: >
+      [HIGH] os.environ.get() for a secret/key with an empty string default.
+      If the environment variable is unset the application starts with no
+      secret, allowing token forgery or authentication bypass.
+      Use os.environ[$KEY] (raises KeyError) or validate the value is non-empty.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-1391: Use of Weak Credentials"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE 3: subprocess with shell=True and variable input
+  #
+  # Risk: Shell injection when the command or its components include any
+  # runtime variable. Applies to all subprocess variants.
+  # -------------------------------------------------------------------------
+  - id: subprocess-shell-true-with-variable
+    patterns:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+      - pattern-not: subprocess.$FUNC("...", shell=True)
+    message: >
+      [HIGH] subprocess called with shell=True and a non-literal command.
+      Any user-controlled data in the command string enables arbitrary shell
+      injection. Pass a list of arguments and remove shell=True.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE 4: Hardcoded secret / password assignment
+  #
+  # Risk: Credentials committed to source control are exposed to anyone with
+  # read access to the repo and remain in git history indefinitely.
+  # -------------------------------------------------------------------------
+  - id: hardcoded-secret-string
+    patterns:
+      - pattern: $VAR = "$SECRET"
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: "(?i)(password|passwd|secret|token|api_key|apikey|auth_key|private_key|jwt_secret)"
+      - metavariable-regex:
+          metavariable: $SECRET
+          regex: "^.{8,}$"
+      - pattern-not: $VAR = ""
+      - pattern-not: $VAR = "..."
+      - pattern-not: $VAR = "<...>"
+    message: >
+      [HIGH] Apparent hardcoded credential assigned to $VAR. Credentials must
+      be loaded from environment variables or a secrets manager (Vault), never
+      committed to source. Remove this value and rotate the credential.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      owasp: "A07:2021 - Identification and Authentication Failures"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE 5: FastAPI endpoint returns raw exception detail to client
+  #
+  # Risk: Leaking internal error messages (stack traces, SQL errors, model
+  # names) aids attackers in reconnaissance. OWASP A05.
+  # -------------------------------------------------------------------------
+  - id: fastapi-exception-detail-leakage
+    patterns:
+      - pattern: |
+          raise HTTPException(status_code=..., detail=str($EXC))
+    message: >
+      [MEDIUM] HTTPException detail is str(exception). This may leak internal
+      error messages, stack frames, or SQL error text to API clients.
+      Return a generic user-facing message and log the full exception server-side.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-209: Generation of Error Message Containing Sensitive Information"
+      owasp: "A05:2021 - Security Misconfiguration"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE 6: os.system() usage (prefer subprocess with explicit args)
+  # -------------------------------------------------------------------------
+  - id: os-system-call
+    pattern: os.system(...)
+    message: >
+      [MEDIUM] os.system() invokes a shell and is prone to injection.
+      Replace with subprocess.run([...], check=True) using a list of
+      explicit arguments without shell=True.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE 7: Insecure use of pickle / marshal deserialization
+  # -------------------------------------------------------------------------
+  - id: insecure-deserialization-pickle
+    patterns:
+      - pattern: pickle.loads(...)
+      - pattern: pickle.load(...)
+      - pattern: marshal.loads(...)
+    message: >
+      [HIGH] Deserializing data with pickle/marshal from an untrusted source
+      enables arbitrary code execution. Use JSON, msgpack, or another safe
+      format for data exchange. Violates OWASP A08:2021.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE 8: eval() / exec() on non-literal input
+  # -------------------------------------------------------------------------
+  - id: dangerous-eval-exec
+    patterns:
+      - pattern: eval($X)
+      - pattern-not: eval("...")
+    message: >
+      [CRITICAL] eval() called with a non-literal argument. Any user-controlled
+      data passed here executes arbitrary Python code. Remove eval() and
+      implement the required logic explicitly.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH

@@ -334,8 +334,7 @@ def _parse_docker_counts(docker_snap: object) -> tuple[int, int]:
         return 0, 0
     containers_list = docker_data.get("containers", [])
     running = sum(
-        1 for c in containers_list
-        if isinstance(c, dict) and "Up" in str(c.get("status", ""))
+        1 for c in containers_list if isinstance(c, dict) and "Up" in str(c.get("status", ""))
     )
     return docker_data.get("total", 0), running
 
@@ -357,7 +356,7 @@ def fleet_vitals(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict[str, object]]:
     """Latest system vitals per active agent — CPU, RAM, disk, network from snapshots."""
-    from internalcmdb.models.collectors import CollectorAgent
+    from internalcmdb.models.collectors import CollectorAgent  # noqa: PLC0415
 
     agents = db.scalars(
         select(CollectorAgent).where(
@@ -385,19 +384,21 @@ def fleet_vitals(
             _latest_snapshot(db, agent.agent_id, "docker_state"),
         )
 
-        result.append({
-            "agent_id": str(agent.agent_id),
-            "host_code": agent.host_code,
-            "status": derive_agent_status(agent),
-            "last_heartbeat_at": agent.last_heartbeat_at,
-            "load_avg": sv.get("load_avg", []) if sv else [],
-            "memory_pct": mem_pct,
-            "memory_total_gb": mem_total_gb,
-            "disk_root_pct": disk_pct,
-            "containers_running": running_count,
-            "containers_total": container_count,
-            "vitals_at": str(vitals_snap[1]) if vitals_snap else None,
-        })
+        result.append(
+            {
+                "agent_id": str(agent.agent_id),
+                "host_code": agent.host_code,
+                "status": derive_agent_status(agent),
+                "last_heartbeat_at": agent.last_heartbeat_at,
+                "load_avg": sv.get("load_avg", []) if sv else [],
+                "memory_pct": mem_pct,
+                "memory_total_gb": mem_total_gb,
+                "disk_root_pct": disk_pct,
+                "containers_running": running_count,
+                "containers_total": container_count,
+                "vitals_at": str(vitals_snap[1]) if vitals_snap else None,
+            }
+        )
 
     result.sort(key=lambda x: str(x.get("host_code", "")))
     return result

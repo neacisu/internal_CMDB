@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from internalcmdb.llm.client import LLMClient
@@ -54,7 +54,7 @@ class GuardResult:
 
     is_valid: bool
     score: float
-    details: dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=lambda: cast(dict[str, Any], {}))
 
 
 @dataclass(frozen=True)
@@ -125,9 +125,7 @@ class GuardPipeline:
             A :class:`GuardedResponse` with the scan outcomes and generated text.
         """
         if model not in _VALID_MODELS:
-            raise ValueError(
-                f"Unknown model {model!r}; expected one of {sorted(_VALID_MODELS)}"
-            )
+            raise ValueError(f"Unknown model {model!r}; expected one of {sorted(_VALID_MODELS)}")
 
         if not prompt or not prompt.strip():
             self.stats_blocked_input += 1
@@ -135,7 +133,9 @@ class GuardPipeline:
                 blocked=True,
                 content=None,
                 input_scan=GuardResult(
-                    is_valid=False, score=1.0, details={"_error": "empty_prompt"},
+                    is_valid=False,
+                    score=1.0,
+                    details={"_error": "empty_prompt"},
                 ),
                 output_scan=None,
             )
@@ -149,7 +149,10 @@ class GuardPipeline:
             self.stats_blocked_input += 1
             logger.warning(
                 "guard.input.blocked | ts=%s model=%s score=%.3f scanners=%s",
-                ts, model, input_scan.score, input_scan.details,
+                ts,
+                model,
+                input_scan.score,
+                input_scan.details,
             )
             self._emit_audit("input_blocked", ts, model, input_scan, None)
             return GuardedResponse(
@@ -161,7 +164,9 @@ class GuardPipeline:
 
         logger.info(
             "guard.input.passed | ts=%s model=%s score=%.3f",
-            ts, model, input_scan.score,
+            ts,
+            model,
+            input_scan.score,
         )
 
         # --- Step 2: Generate response ---
@@ -177,7 +182,8 @@ class GuardPipeline:
                 content=None,
                 input_scan=input_scan,
                 output_scan=GuardResult(
-                    is_valid=False, score=1.0,
+                    is_valid=False,
+                    score=1.0,
                     details={"_error": "generation_failed"},
                 ),
             )
@@ -189,7 +195,10 @@ class GuardPipeline:
             self.stats_blocked_output += 1
             logger.warning(
                 "guard.output.blocked | ts=%s model=%s score=%.3f scanners=%s",
-                ts, model, output_scan.score, output_scan.details,
+                ts,
+                model,
+                output_scan.score,
+                output_scan.details,
             )
             self._emit_audit("output_blocked", ts, model, input_scan, output_scan)
             return GuardedResponse(
@@ -202,7 +211,10 @@ class GuardPipeline:
         self.stats_passed += 1
         logger.info(
             "guard.output.passed | ts=%s model=%s input_score=%.3f output_score=%.3f",
-            ts, model, input_scan.score, output_scan.score,
+            ts,
+            model,
+            input_scan.score,
+            output_scan.score,
         )
         self._emit_audit("passed", ts, model, input_scan, output_scan)
 
@@ -222,7 +234,7 @@ class GuardPipeline:
         output_scan: GuardResult | None,
     ) -> None:
         """Write a structured JSON audit record to the dedicated audit logger."""
-        import json as _json
+        import json as _json  # noqa: PLC0415
 
         record = {
             "event": "guard_decision",
@@ -284,14 +296,13 @@ class GuardPipeline:
 
         try:
             return resp["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError):
+        except (KeyError, IndexError, TypeError) as exc:
             self.stats_errors += 1
-            available_keys = list(resp.keys()) if isinstance(resp, dict) else type(resp).__name__
+            available_keys: list[str] = list(resp.keys())
             logger.error(
-                "guard._generate: unexpected response structure "
-                "(available_keys=%s)", available_keys,
+                "guard._generate: unexpected response structure (available_keys=%s)",
+                available_keys,
             )
             raise ValueError(
-                f"LLM response missing choices[0].message.content "
-                f"(keys={available_keys})"
-            )
+                f"LLM response missing choices[0].message.content (keys={available_keys})"
+            ) from exc

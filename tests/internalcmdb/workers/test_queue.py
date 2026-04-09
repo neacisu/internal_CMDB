@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # WorkerSettings attribute tests
 # ---------------------------------------------------------------------------
@@ -18,9 +17,12 @@ class TestWorkerSettings:
         mock_settings = MagicMock()
         mock_settings.redis_url = "redis://localhost:6379"
 
-        with patch("internalcmdb.api.config.get_settings", return_value=mock_settings), \
-             patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()):
-            from internalcmdb.workers.queue import WorkerSettings
+        with (
+            patch("internalcmdb.api.config.get_settings", return_value=mock_settings),
+            patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()),
+        ):
+            from internalcmdb.workers.queue import WorkerSettings  # noqa: PLC0415
+
             return WorkerSettings
 
     def test_worker_settings_queue_name(self):
@@ -45,10 +47,7 @@ class TestWorkerSettings:
 
     def test_worker_settings_functions_present(self):
         ws = self._get_worker_settings()
-        function_names = [
-            f.__name__ if callable(f) else str(f)
-            for f in ws.functions
-        ]
+        function_names = [f.__name__ if callable(f) else str(f) for f in ws.functions]
         assert "data_retention_job" in function_names
 
     def test_worker_settings_functions_include_noop(self):
@@ -78,9 +77,11 @@ class TestHealthCheck:
         mock_settings = MagicMock()
         mock_settings.redis_url = "redis://localhost:6379"
 
-        with patch("internalcmdb.api.config.get_settings", return_value=mock_settings), \
-             patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()):
-            from internalcmdb.workers.queue import _health_check
+        with (
+            patch("internalcmdb.api.config.get_settings", return_value=mock_settings),
+            patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()),
+        ):
+            from internalcmdb.workers.queue import _health_check  # noqa: PLC0415
 
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
@@ -96,9 +97,11 @@ class TestHealthCheck:
         mock_settings = MagicMock()
         mock_settings.redis_url = "redis://localhost:6379"
 
-        with patch("internalcmdb.api.config.get_settings", return_value=mock_settings), \
-             patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()):
-            from internalcmdb.workers.queue import _health_check
+        with (
+            patch("internalcmdb.api.config.get_settings", return_value=mock_settings),
+            patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()),
+        ):
+            from internalcmdb.workers.queue import _health_check  # noqa: PLC0415
 
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(side_effect=ConnectionError("ping failed"))
@@ -113,9 +116,11 @@ class TestHealthCheck:
         mock_settings = MagicMock()
         mock_settings.redis_url = "redis://localhost:6379"
 
-        with patch("internalcmdb.api.config.get_settings", return_value=mock_settings), \
-             patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()):
-            from internalcmdb.workers.queue import _health_check
+        with (
+            patch("internalcmdb.api.config.get_settings", return_value=mock_settings),
+            patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()),
+        ):
+            from internalcmdb.workers.queue import _health_check  # noqa: PLC0415
 
         ctx = {}
         result = await _health_check(ctx)
@@ -134,9 +139,11 @@ class TestNoop:
         mock_settings = MagicMock()
         mock_settings.redis_url = "redis://localhost:6379"
 
-        with patch("internalcmdb.api.config.get_settings", return_value=mock_settings), \
-             patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()):
-            from internalcmdb.workers.queue import _noop
+        with (
+            patch("internalcmdb.api.config.get_settings", return_value=mock_settings),
+            patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()),
+        ):
+            from internalcmdb.workers.queue import _noop  # noqa: PLC0415
 
         ctx = {}
         result = await _noop(ctx)
@@ -147,8 +154,10 @@ class TestNoop:
         mock_settings = MagicMock()
         mock_settings.redis_url = "redis://localhost:6379"
 
-        with patch("internalcmdb.api.config.get_settings", return_value=mock_settings), \
-             patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()):
-            from internalcmdb.workers.queue import _noop
+        with (
+            patch("internalcmdb.api.config.get_settings", return_value=mock_settings),
+            patch("arq.connections.RedisSettings.from_dsn", return_value=MagicMock()),
+        ):
+            from internalcmdb.workers.queue import _noop  # noqa: PLC0415
 
         await _noop({"redis": AsyncMock(), "job_id": "test-123"})

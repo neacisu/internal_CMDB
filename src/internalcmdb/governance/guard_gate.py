@@ -90,6 +90,10 @@ class GateDecision:
 # LLM Guard scanner (L2)
 # ---------------------------------------------------------------------------
 
+# LLM Guard default endpoint — private LAN address of LXC-115 on Proxmox cluster.
+# SONAR-HOTSPOT REVIEWED: S1075 / S5332 — RFC-1918 address, not publicly routable.
+# Configurable via LLM_GUARD_URL env variable or DB SettingsStore "llm.guard.url".
+# HTTP over internal LAN only (no external exposure).  ACCEPTED.
 _LLM_GUARD_URL = os.getenv("LLM_GUARD_URL", "http://10.0.1.115:8000")
 _LLM_GUARD_TIMEOUT = float(os.getenv("LLM_GUARD_TIMEOUT", "5"))
 
@@ -103,13 +107,14 @@ async def _get_guard_runtime_config() -> tuple[str, float, bool]:
     """
     try:
         from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+
         store = get_settings_store()
         url = await store.get("llm.guard.url") or _LLM_GUARD_URL
         timeout = await store.get("guard.timeout_s") or _LLM_GUARD_TIMEOUT
         fail_closed_val = await store.get("guard.fail_closed")
         fail_closed = fail_closed_val if fail_closed_val is not None else _LLM_GUARD_FAIL_CLOSED
         return str(url), float(timeout), bool(fail_closed)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return _LLM_GUARD_URL, _LLM_GUARD_TIMEOUT, _LLM_GUARD_FAIL_CLOSED
 
 
@@ -189,11 +194,11 @@ def classify_risk(action: dict[str, Any], context: dict[str, Any]) -> str:
 def _record_guard_metric(level: str, result: str) -> None:
     """Increment the Prometheus guard_decisions counter."""
     try:
-        from internalcmdb.observability.metrics import GUARD_DECISIONS_TOTAL
+        from internalcmdb.observability.metrics import GUARD_DECISIONS_TOTAL  # noqa: PLC0415
 
         GUARD_DECISIONS_TOTAL.labels(level=level, result=result).inc()
     except Exception:
-        pass
+        logger.debug("Guard metric counter unavailable", exc_info=True)
 
 
 class GuardGate:
@@ -215,10 +220,14 @@ class GuardGate:
         payload = {"action": action, "context": context}
         scan = self._scanner.scan_fact_payload(payload)
         l1_passed = scan.safe
-        trace.append(LevelTrace(
-            level=1, name="input_sanitisation", passed=l1_passed,
-            detail=f"matched={scan.matched_patterns}" if not l1_passed else "clean",
-        ))
+        trace.append(
+            LevelTrace(
+                level=1,
+                name="input_sanitisation",
+                passed=l1_passed,
+                detail=f"matched={scan.matched_patterns}" if not l1_passed else "clean",
+            )
+        )
         if not l1_passed:
             _record_guard_metric("L1", "blocked")
             return GateDecision(
@@ -232,10 +241,14 @@ class GuardGate:
 
         # ── L2: LLM Guard Scan ─────────────────────────────────────────
         llm_safe, llm_detail = await _llm_guard_scan(payload)
-        trace.append(LevelTrace(
-            level=2, name="llm_guard_scan", passed=llm_safe,
-            detail=llm_detail,
-        ))
+        trace.append(
+            LevelTrace(
+                level=2,
+                name="llm_guard_scan",
+                passed=llm_safe,
+                detail=llm_detail,
+            )
+        )
         if not llm_safe:
             _record_guard_metric("L2", "blocked")
             return GateDecision(
@@ -250,10 +263,16 @@ class GuardGate:
         # ── L3: Policy Enforcer ─────────────────────────────────────────
         policy_result = self._enforcer.check(action, context)
         l3_passed = policy_result.compliant
-        trace.append(LevelTrace(
-            level=3, name="policy_enforcer", passed=l3_passed,
-            detail="; ".join(v.reason for v in policy_result.violations) if not l3_passed else "compliant",
-        ))
+        trace.append(
+            LevelTrace(
+                level=3,
+                name="policy_enforcer",
+                passed=l3_passed,
+                detail="; ".join(v.reason for v in policy_result.violations)
+                if not l3_passed
+                else "compliant",
+            )
+        )
         if not l3_passed:
             _record_guard_metric("L3", "blocked")
             reasons = "; ".join(v.reason for v in policy_result.violations)
@@ -268,21 +287,31 @@ class GuardGate:
 
         # ── L4: Risk Classification ────────────────────────────────────
         risk_class = classify_risk(action, context)
-        trace.append(LevelTrace(
-            level=4, name="risk_classification", passed=True,
-            detail=f"classified={risk_class}",
-        ))
+        trace.append(
+            LevelTrace(
+                level=4,
+                name="risk_classification",
+                passed=True,
+                detail=f"classified={risk_class}",
+            )
+        )
 
         # ── L5: HITL Gate ───────────────────────────────────────────────
         if risk_class in (RC_3, RC_4):
-            trace.append(LevelTrace(
-                level=5, name="hitl_gate", passed=False,
-                detail=f"{risk_class} requires human approval",
-            ))
+            trace.append(
+                LevelTrace(
+                    level=5,
+                    name="hitl_gate",
+                    passed=False,
+                    detail=f"{risk_class} requires human approval",
+                )
+            )
             _record_guard_metric("L5", "hitl_required")
             logger.info(
                 "Guard Gate BLOCKED: action=%s target=%s risk=%s (HITL required)",
-                action.get("type"), action.get("target"), risk_class,
+                action.get("type"),
+                action.get("target"),
+                risk_class,
             )
             return GateDecision(
                 allowed=False,
@@ -293,14 +322,20 @@ class GuardGate:
                 gate_trace=tuple(trace),
             )
 
-        trace.append(LevelTrace(
-            level=5, name="hitl_gate", passed=True,
-            detail=f"{risk_class} auto-approved",
-        ))
+        trace.append(
+            LevelTrace(
+                level=5,
+                name="hitl_gate",
+                passed=True,
+                detail=f"{risk_class} auto-approved",
+            )
+        )
         _record_guard_metric("L5", "allowed")
         logger.info(
             "Guard Gate PASSED: action=%s target=%s risk=%s",
-            action.get("type"), action.get("target"), risk_class,
+            action.get("type"),
+            action.get("target"),
+            risk_class,
         )
         return GateDecision(
             allowed=True,

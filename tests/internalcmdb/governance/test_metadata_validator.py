@@ -25,6 +25,7 @@ Covers:
 from __future__ import annotations
 
 # pylint: disable=redefined-outer-name
+from datetime import date
 from pathlib import Path
 from textwrap import dedent
 
@@ -597,3 +598,179 @@ class TestOwnerValidation:
         p = _write_md(_VALID_FM, tmp_docs)
         result = validate_file(p)
         assert not any("owner" in w for w in result.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — direct unit tests (post-refactor coverage)
+# ---------------------------------------------------------------------------
+
+from internalcmdb.governance.metadata_validator import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    PERMITTED_RELATIONS,
+    _check_date,
+    _validate_approval_fields,
+    _validate_doc_refs,
+    _validate_related_adrs,
+    _validate_single_binding,
+)
+
+
+class TestCheckDate:
+    """Unit tests for the internal _check_date helper (S1172 fix: field_name removed)."""
+
+    def test_valid_iso_string_returns_date(self) -> None:
+        assert _check_date("2024-01-15") == date(2024, 1, 15)
+
+    def test_date_object_passthrough(self) -> None:
+        d = date(2024, 6, 1)
+        assert _check_date(d) is d
+
+    def test_invalid_string_returns_none(self) -> None:
+        assert _check_date("not-a-date") is None
+
+    def test_integer_returns_none(self) -> None:
+        assert _check_date(20240101) is None
+
+    def test_none_value_returns_none(self) -> None:
+        assert _check_date(None) is None
+
+
+class TestValidateSingleBinding:
+    """Unit tests for _validate_single_binding (extracted from _validate_bindings, S3776 fix)."""
+
+    def _result(self, tmp_path: Path) -> ValidationResult:
+        return ValidationResult(path=tmp_path / "x.md")
+
+    def test_non_dict_appends_error_and_returns(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        _validate_single_binding(0, "not-a-dict", r)
+        assert any("must be a mapping" in e for e in r.errors)
+
+    def test_missing_entity_type_appends_error(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        b = {"entity_id": "1", "relation": next(iter(sorted(PERMITTED_RELATIONS)))}
+        _validate_single_binding(0, b, r)
+        assert any("entity_type" in e for e in r.errors)
+
+    def test_invalid_entity_type_format_appends_error(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        relation = next(iter(sorted(PERMITTED_RELATIONS)))
+        b = {"entity_type": "BadFormat", "entity_id": "1", "relation": relation}
+        _validate_single_binding(0, b, r)
+        assert any("must match" in e for e in r.errors)
+
+    def test_missing_entity_id_appends_error(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        relation = next(iter(sorted(PERMITTED_RELATIONS)))
+        b = {"entity_type": "schema.table", "relation": relation}
+        _validate_single_binding(0, b, r)
+        assert any("entity_id" in e for e in r.errors)
+
+    def test_empty_entity_id_appends_error(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        relation = next(iter(sorted(PERMITTED_RELATIONS)))
+        b = {"entity_type": "schema.table", "entity_id": "", "relation": relation}
+        _validate_single_binding(0, b, r)
+        assert any("entity_id" in e for e in r.errors)
+
+    def test_missing_relation_appends_error(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        b = {"entity_type": "schema.table", "entity_id": "1"}
+        _validate_single_binding(0, b, r)
+        assert any("relation" in e for e in r.errors)
+
+    def test_invalid_relation_appends_error(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        b = {"entity_type": "schema.table", "entity_id": "1", "relation": "_invalid_"}
+        _validate_single_binding(0, b, r)
+        assert any("not permitted" in e for e in r.errors)
+
+    def test_valid_binding_produces_no_errors(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        relation = next(iter(sorted(PERMITTED_RELATIONS)))
+        b = {"entity_type": "schema.table", "entity_id": "42", "relation": relation}
+        _validate_single_binding(0, b, r)
+        assert not r.errors
+
+
+class TestValidateApprovalFields:
+    """Unit tests for _validate_approval_fields (extracted from _validate_strict, S3776 fix)."""
+
+    def _result(self, tmp_path: Path) -> ValidationResult:
+        return ValidationResult(path=tmp_path / "x.md")
+
+    def test_missing_approved_by_appends_error(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        _validate_approval_fields({"approved_at": "2025-01-01"}, r)
+        assert any("approved_by" in e for e in r.errors)
+
+    def test_missing_approved_at_appends_error(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        _validate_approval_fields({"approved_by": "Alice"}, r)
+        assert any("approved_at" in e for e in r.errors)
+
+    def test_both_fields_present_no_errors(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        _validate_approval_fields({"approved_by": "Alice", "approved_at": "2025-01-01"}, r)
+        assert not r.errors
+
+    def test_empty_approved_by_appends_error(self, tmp_path: Path) -> None:
+        r = self._result(tmp_path)
+        _validate_approval_fields({"approved_by": "", "approved_at": "2025-01-01"}, r)
+        assert any("approved_by" in e for e in r.errors)
+
+
+class TestValidateDocRefs:
+    """Unit tests for _validate_doc_refs (extracted from _validate_strict, S3776 fix)."""
+
+    def _result(self, tmp_path: Path) -> ValidationResult:
+        return ValidationResult(path=tmp_path / "x.md")
+
+    def test_unresolvable_ref_creates_warning(self, tmp_docs: Path) -> None:
+        r = self._result(tmp_docs)
+        _validate_doc_refs("See [[doc:nonexistent-xyz-000]]", tmp_docs, r)
+        assert any("nonexistent-xyz-000" in w for w in r.warnings)
+
+    def test_resolvable_ref_no_warning(self, tmp_docs: Path) -> None:
+        (tmp_docs / "my-adr-001.md").write_text("# ADR")
+        r = self._result(tmp_docs)
+        _validate_doc_refs("See [[doc:my-adr-001]]", tmp_docs, r)
+        assert not r.warnings
+
+    def test_no_refs_in_body_no_warnings(self, tmp_docs: Path) -> None:
+        r = self._result(tmp_docs)
+        _validate_doc_refs("Plain text body with no doc refs.", tmp_docs, r)
+        assert not r.warnings
+
+    def test_multiple_unresolvable_refs_each_warned(self, tmp_docs: Path) -> None:
+        r = self._result(tmp_docs)
+        body = "See [[doc:ref-aaa]] and [[doc:ref-bbb]]"
+        _validate_doc_refs(body, tmp_docs, r)
+        assert len(r.warnings) == 2
+
+
+class TestValidateRelatedAdrs:
+    """Unit tests for _validate_related_adrs (extracted from _validate_strict, S3776 fix)."""
+
+    def _result(self, tmp_path: Path) -> ValidationResult:
+        return ValidationResult(path=tmp_path / "x.md")
+
+    def test_unresolvable_adr_creates_warning(self, tmp_docs: Path) -> None:
+        r = self._result(tmp_docs)
+        _validate_related_adrs({"related_adrs": ["adr-999-missing"]}, tmp_docs, r)
+        assert any("adr-999-missing" in w for w in r.warnings)
+
+    def test_resolvable_adr_no_warning(self, tmp_docs: Path) -> None:
+        (tmp_docs / "adr-001-example.md").write_text("# ADR 001")
+        r = self._result(tmp_docs)
+        _validate_related_adrs({"related_adrs": ["adr-001-example"]}, tmp_docs, r)
+        assert not r.warnings
+
+    def test_empty_list_no_warnings(self, tmp_docs: Path) -> None:
+        r = self._result(tmp_docs)
+        _validate_related_adrs({"related_adrs": []}, tmp_docs, r)
+        assert not r.warnings
+
+    def test_missing_key_no_warnings(self, tmp_docs: Path) -> None:
+        r = self._result(tmp_docs)
+        _validate_related_adrs({}, tmp_docs, r)
+        assert not r.warnings

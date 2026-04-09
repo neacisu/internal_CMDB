@@ -2,7 +2,7 @@
 
 Backed by telemetry.slo_definition and telemetry.slo_measurement tables.
 Burn-rate thresholds follow Google SRE multi-window alerting:
-  fast burn = 14.4× budget consumption, slow burn = 1.0× budget consumption.
+  fast burn = 14.4x budget consumption, slow burn = 1.0x budget consumption.
 """
 
 from __future__ import annotations
@@ -14,9 +14,13 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .burn_rate import BurnRateCalculator, BurnRateResult
+from .burn_rate import BurnRateCalculator
 
 logger = logging.getLogger(__name__)
+
+_SLO_MAX_WINDOW_DAYS = 365  # maximum allowed SLO evaluation window
+_SLO_BUDGET_HEALTHY_PCT = 50  # budget remaining % above which → no action
+_SLO_BUDGET_WARN_PCT = 20  # budget remaining % above which → warn only
 
 
 class SLOFramework:
@@ -36,7 +40,7 @@ class SLOFramework:
         """Create a new SLO definition. Returns the created record."""
         if not (0.0 < target <= 1.0):
             raise ValueError(f"SLO target must be in (0.0, 1.0], got {target}")
-        if not (1 <= window_days <= 365):
+        if not (1 <= window_days <= _SLO_MAX_WINDOW_DAYS):
             raise ValueError(f"window_days must be in [1, 365], got {window_days}")
 
         slo_id = str(uuid.uuid4())
@@ -143,7 +147,7 @@ class SLOFramework:
 
         if result["alert_level"] != "none":
             try:
-                from internalcmdb.governance.notifications import notify_hitl_event
+                from internalcmdb.governance.notifications import notify_hitl_event  # noqa: PLC0415
 
                 await notify_hitl_event(
                     "slo_breach",
@@ -170,10 +174,10 @@ class SLOFramework:
 
         remaining = budget["budget_remaining_pct"]
 
-        if remaining > 50:
+        if remaining > _SLO_BUDGET_HEALTHY_PCT:
             action = "none"
             reason = "Budget is healthy (>50% remaining)"
-        elif remaining > 20:
+        elif remaining > _SLO_BUDGET_WARN_PCT:
             action = "warn"
             reason = "Budget is moderately consumed (20-50% remaining)"
         elif remaining > 0:

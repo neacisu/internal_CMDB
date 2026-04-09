@@ -1,6 +1,7 @@
 """Shared service seed — idempotent upsert of all known shared services.
 
-v1.5 — 2026-03-24 — wapp-pro-app dual-homed: eth0 10.0.1.105 (VLAN 4000) + eth1 95.216.36.226 (public, MAC 00:50:56:01:1F:F0).
+v1.5 — 2026-03-24 — wapp-pro-app dual-homed:
+    eth0 10.0.1.105 (VLAN 4000) + eth1 95.216.36.226 (public, MAC 00:50:56:01:1F:F0).
 
 v1.4 — 2026-03-24 — WAPP Pro: LXC wapp-pro-app host bootstrap, app services, proxy mesh metadata.
 
@@ -34,7 +35,8 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from typing import Any, Callable, cast
+from collections.abc import Callable
+from typing import Any, cast
 
 import sqlalchemy as sa
 from dotenv import load_dotenv
@@ -894,7 +896,7 @@ _SERVICES: list[tuple[str, str, str, str, str, str | None, dict[str, Any]]] = [
     ),
 ]
 
-# SOCKS5 proxy mesh — metadata only (Etapa 2 deploy). One row per HAProxy VIP port 26100–26110.
+# SOCKS5 proxy mesh -- metadata only (Etapa 2 deploy). One row per HAProxy VIP port 26100-26110.
 _WAPP_PROXY_MESH_SPEC: list[tuple[str, str, str, str, str, str, str]] = [
     ("hz62", "hz.62", "26100", "10.0.1.62:1080", "95.216.66.62", "95.216.66.0/24", "T1"),
     ("hz113", "hz.113", "26101", "10.0.1.13:1080", "49.13.97.113", "49.13.97.0/24", "T1"),
@@ -905,8 +907,24 @@ _WAPP_PROXY_MESH_SPEC: list[tuple[str, str, str, str, str, str, str]] = [
     ("hz215", "hz.215", "26106", "10.0.1.9:1080", "95.216.36.215", "95.216.36.0/24", "T1"),
     ("hz223", "hz.223", "26107", "10.0.1.8:1080", "95.217.32.223", "95.217.32.0/24", "T1"),
     ("hz247", "hz.247", "26108", "10.0.1.7:1080", "95.216.68.247", "95.216.68.0/24", "T1"),
-    ("orchestrator", "orchestrator", "26109", "10.0.1.18:1080", "77.42.76.185", "77.42.76.0/24", "T1"),
-    ("hz118spare", "hz.118-spare", "26110", "10.0.1.4:1081", "95.216.125.173", "95.216.125.0/24", "T2"),
+    (
+        "orchestrator",
+        "orchestrator",
+        "26109",
+        "10.0.1.18:1080",
+        "77.42.76.185",
+        "77.42.76.0/24",
+        "T1",
+    ),
+    (
+        "hz118spare",
+        "hz.118-spare",
+        "26110",
+        "10.0.1.4:1081",
+        "95.216.125.173",
+        "95.216.125.0/24",
+        "T2",
+    ),
 ]
 
 _SERVICES.extend(

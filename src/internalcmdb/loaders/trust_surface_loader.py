@@ -237,9 +237,7 @@ def _load_host(
     scanner = RedactionScanner()
     scan_result = scanner.scan_fact_payload(fact_payload)
     if not scan_result.safe:
-        print(
-            f"  REDACT {alias}: sshd fact rejected — matched {scan_result.matched_patterns}"
-        )
+        print(f"  REDACT {alias}: sshd fact rejected — matched {scan_result.matched_patterns}")
     else:
         conn.execute(
             sa.text(

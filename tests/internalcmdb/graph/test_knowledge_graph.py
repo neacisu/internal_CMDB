@@ -1,11 +1,17 @@
 """Tests for graph.knowledge_graph — InfrastructureKnowledgeGraph."""
+
 from __future__ import annotations
-import unittest.mock as mock
+
 from unittest.mock import AsyncMock, MagicMock
+
 import networkx as nx
 import pytest
-from internalcmdb.graph.knowledge_graph import InfrastructureKnowledgeGraph, _ci_confidence, _service_dependency_target_id
 
+from internalcmdb.graph.knowledge_graph import (
+    InfrastructureKnowledgeGraph,
+    _ci_confidence,
+    _service_dependency_target_id,
+)
 
 # ---------------------------------------------------------------------------
 # Module helpers
@@ -76,7 +82,8 @@ async def test_build_graph_with_hosts():
         r.scalar.return_value = False
         return r
 
-    import uuid
+    import uuid  # noqa: PLC0415
+
     host_id = uuid.uuid4()
     host_row = MagicMock()
     host_row.host_id = host_id
@@ -84,6 +91,7 @@ async def test_build_graph_with_hosts():
     host_row.host_code = "hz-01"
 
     call_count = [0]
+
     def side_effect(stmt, *args, **kwargs):
         call_count[0] += 1
         if call_count[0] == 1:
@@ -181,7 +189,8 @@ async def test_detect_circular_dependencies_no_cycles():
     kg._graph = g
 
     cycles = await kg.detect_circular_dependencies()
-    assert isinstance(cycles, list) and len(cycles) == 0
+    assert isinstance(cycles, list)
+    assert len(cycles) == 0
 
 
 @pytest.mark.asyncio
@@ -218,6 +227,8 @@ async def test_to_json_structure():
     kg._graph = g
 
     data = kg.to_json()
-    assert "nodes" in data and "edges" in data
+    assert "nodes" in data
+    assert "edges" in data
     node_ids = [n["id"] for n in data["nodes"]]
-    assert "h1" in node_ids and "h2" in node_ids
+    assert "h1" in node_ids
+    assert "h2" in node_ids

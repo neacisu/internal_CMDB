@@ -1,14 +1,13 @@
 """Burn-rate calculator for SLO error budgets.
 
 Thresholds follow Google SRE multi-window alerting practice:
-  - Fast burn: 14.4× the budget consumption rate  → page immediately
-  - Slow burn: 1.0× the budget consumption rate   → create a ticket
+  - Fast burn: 14.4x the budget consumption rate  → page immediately
+  - Slow burn: 1.0x the budget consumption rate   → create a ticket
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-
 
 FAST_BURN_THRESHOLD = 14.4
 SLOW_BURN_THRESHOLD = 1.0

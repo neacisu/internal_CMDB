@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 from typing import Any
 
@@ -20,10 +21,8 @@ def _check_endpoint(name: str, url: str, timeout: float = 5.0) -> dict[str, Any]
         elapsed_ms = round((time.monotonic() - start) * 1000, 2)
 
         body: dict[str, Any] = {}
-        try:
+        with contextlib.suppress(Exception):
             body = resp.json()
-        except Exception:
-            pass
 
         return {
             "name": name,
@@ -73,8 +72,7 @@ def collect(endpoints: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         name = ep.get("name", "unknown")
         url = ep.get("url", "")
         if not url:
-            results.append({"name": name, "url": "", "healthy": False,
-                            "error": "missing url"})
+            results.append({"name": name, "url": "", "healthy": False, "error": "missing url"})
             continue
         results.append(_check_endpoint(name, url))
     healthy = sum(1 for r in results if r.get("healthy"))

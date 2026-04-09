@@ -13,6 +13,21 @@ from internalcmdb.models.collectors import CollectorAgent
 logger = logging.getLogger(__name__)
 
 
+def _classify_status_change(old_status: str, new_status: str) -> str | None:
+    """Return the counter key for a status transition, or None if uncounted.
+
+    Returned values correspond to keys in the ``counts`` dict inside
+    :func:`check_staleness`: ``"degraded"``, ``"offline"``, or ``"recovered"``.
+    """
+    if new_status == "degraded":
+        return "degraded"
+    if new_status == "offline":
+        return "offline"
+    if new_status == "online" and old_status in ("degraded", "offline"):
+        return "recovered"
+    return None
+
+
 def check_staleness(db: Session) -> dict[str, int]:
     """Check all active agents and update status based on heartbeat freshness.
 
@@ -32,13 +47,9 @@ def check_staleness(db: Session) -> dict[str, int]:
         agent.status = derive_agent_status(agent)
 
         if old_status != agent.status:
-            if agent.status == "degraded":
-                counts["degraded"] += 1
-            elif agent.status == "offline":
-                counts["offline"] += 1
-            elif agent.status == "online" and old_status in ("degraded", "offline"):
-                counts["recovered"] += 1
-
+            key = _classify_status_change(old_status, agent.status)
+            if key:
+                counts[key] += 1
             logger.info(
                 "Agent %s (%s): %s → %s",
                 agent.agent_id,

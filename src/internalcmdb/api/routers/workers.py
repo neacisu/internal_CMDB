@@ -67,7 +67,10 @@ def list_cognitive_tasks() -> list[dict[str, str]]:
         {
             "task_name": "data_retention",
             "display_name": "Data Retention",
-            "description": "Drops old partitions, deletes expired rows, vacuums tables, refreshes materialized views",
+            "description": (
+                "Drops old partitions, deletes expired rows, vacuums tables, "
+                "refreshes materialized views"
+            ),
             "category": "maintenance",
             "runtime": "arq",
         },
@@ -88,7 +91,7 @@ def list_cognitive_tasks() -> list[dict[str, str]]:
 def run_task(
     task_name: str,
     body: JobTriggerRequest,
-) -> dict:  # type: ignore[type-arg]
+) -> dict[str, Any]:
     if task_name not in SCRIPTS:
         raise HTTPException(status_code=404, detail=f"Unknown task: {task_name!r}")
     job_id = enqueue_job(

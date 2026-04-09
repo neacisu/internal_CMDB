@@ -14,7 +14,6 @@ from internalcmdb.cognitive.correlator import (
     _within_cooldown,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -217,15 +216,21 @@ class TestHelpers:
         assert _time_span(events) == pytest.approx(300.0)
 
     def test_within_cooldown_true(self) -> None:
-        assert _within_cooldown(
-            "2024-06-01T10:00:00+00:00",
-            "2024-06-01T10:01:00+00:00",
-            cooldown_seconds=300,
-        ) is True
+        assert (
+            _within_cooldown(
+                "2024-06-01T10:00:00+00:00",
+                "2024-06-01T10:01:00+00:00",
+                cooldown_seconds=300,
+            )
+            is True
+        )
 
     def test_within_cooldown_false(self) -> None:
-        assert _within_cooldown(
-            "2024-06-01T10:00:00+00:00",
-            "2024-06-01T11:00:00+00:00",
-            cooldown_seconds=60,
-        ) is False
+        assert (
+            _within_cooldown(
+                "2024-06-01T10:00:00+00:00",
+                "2024-06-01T11:00:00+00:00",
+                cooldown_seconds=60,
+            )
+            is False
+        )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import socket
 import ssl
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 DEFAULT_ENDPOINTS: list[dict[str, Any]] = [
@@ -31,9 +31,51 @@ def _verified_chain_depth(ssock: ssl.SSLSocket, has_der: bool) -> int:
         return 0
     try:
         verified = ssock.get_verified_chain()
-    except (AttributeError, ValueError, ssl.SSLError):
+    except AttributeError, ValueError, ssl.SSLError:
         return 1
     return len(verified) if verified else 1
+
+
+def _error_result(host: str, port: int, error: str) -> dict[str, Any]:
+    """Build a standardised error result dict for ``_check_cert``."""
+    return {"host": host, "port": port, "error": error}
+
+
+def _parse_expiry(not_after_str: str) -> tuple[datetime | None, int | None]:
+    """Parse the OpenSSL notAfter string into a datetime and days-until-expiry pair.
+
+    Returns ``(None, None)`` if *not_after_str* is empty or cannot be parsed.
+    """
+    if not not_after_str:
+        return None, None
+    try:
+        expiry_dt = datetime.strptime(not_after_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
+        return expiry_dt, (expiry_dt - datetime.now(UTC)).days
+    except ValueError:
+        return None, None
+
+
+def _build_cert_result(
+    host: str,
+    port: int,
+    cert: dict[str, Any],
+    chain_depth: int,
+) -> dict[str, Any]:
+    """Build a success result dict from a parsed certificate."""
+    not_after_str: str = cert.get("notAfter", "")
+    subject = _rdn_tuple_to_dict(cert.get("subject", ()))
+    issuer = _rdn_tuple_to_dict(cert.get("issuer", ()))
+    _expiry_dt, days_until_expiry = _parse_expiry(not_after_str)
+    return {
+        "host": host,
+        "port": port,
+        "subject": subject.get("commonName", str(subject)),
+        "issuer": issuer.get("organizationName", str(issuer)),
+        "not_after": not_after_str,
+        "days_until_expiry": days_until_expiry,
+        "chain_depth": chain_depth,
+        "serial_number": cert.get("serialNumber"),
+    }
 
 
 def _check_cert(host: str, port: int = 443, timeout: float = 5.0) -> dict[str, Any]:
@@ -46,55 +88,26 @@ def _check_cert(host: str, port: int = 443, timeout: float = 5.0) -> dict[str, A
     ctx.verify_mode = ssl.CERT_REQUIRED
 
     try:
-        with socket.create_connection((host, port), timeout=timeout) as sock, \
-             ctx.wrap_socket(sock, server_hostname=host) as ssock:
+        with (
+            socket.create_connection((host, port), timeout=timeout) as sock,
+            ctx.wrap_socket(sock, server_hostname=host) as ssock,
+        ):
             cert = ssock.getpeercert(binary_form=False)
             der = ssock.getpeercert(binary_form=True)
             chain_depth = _verified_chain_depth(ssock, bool(der))
 
             if not cert:
-                return {
-                    "host": host,
-                    "port": port,
-                    "error": "no certificate returned",
-                }
+                return _error_result(host, port, "no certificate returned")
 
-            not_after_str = cert.get("notAfter", "")
-            subject_parts = cert.get("subject", ())
-            issuer_parts = cert.get("issuer", ())
-
-            subject = _rdn_tuple_to_dict(subject_parts)
-            issuer = _rdn_tuple_to_dict(issuer_parts)
-
-            expiry_dt = None
-            days_until_expiry = None
-            if not_after_str:
-                try:
-                    expiry_dt = datetime.strptime(not_after_str, "%b %d %H:%M:%S %Y %Z").replace(
-                        tzinfo=timezone.utc
-                    )
-                    days_until_expiry = (expiry_dt - datetime.now(timezone.utc)).days
-                except ValueError:
-                    pass
-
-            return {
-                "host": host,
-                "port": port,
-                "subject": subject.get("commonName", str(subject)),
-                "issuer": issuer.get("organizationName", str(issuer)),
-                "not_after": not_after_str,
-                "days_until_expiry": days_until_expiry,
-                "chain_depth": chain_depth,
-                "serial_number": cert.get("serialNumber"),
-            }
+            return _build_cert_result(host, port, cert, chain_depth)
     except ConnectionRefusedError:
-        return {"host": host, "port": port, "error": "connection_refused"}
+        return _error_result(host, port, "connection_refused")
     except TimeoutError:
-        return {"host": host, "port": port, "error": "timeout"}
+        return _error_result(host, port, "timeout")
     except ssl.SSLError as exc:
-        return {"host": host, "port": port, "error": f"ssl_error: {exc}"}
+        return _error_result(host, port, f"ssl_error: {exc}")
     except OSError as exc:
-        return {"host": host, "port": port, "error": str(exc)}
+        return _error_result(host, port, str(exc))
 
 
 def collect(endpoints: list[dict[str, Any]] | None = None) -> dict[str, Any]:

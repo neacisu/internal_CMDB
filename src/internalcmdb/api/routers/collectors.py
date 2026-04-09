@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
-
-import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import func, select, text
@@ -30,7 +30,7 @@ from internalcmdb.models.discovery import EvidenceArtifact
 
 from ..config import get_settings
 from ..deps import get_db
-from ..middleware.rate_limit import limiter
+from ..middleware.rate_limit import rate_limit
 from ..middleware.rbac import require_role
 from ..schemas.collectors import (
     AgentConfigUpdate,
@@ -56,6 +56,17 @@ logger = logging.getLogger(__name__)
 
 _AGENT_NOT_FOUND_DETAIL = "Agent not found"
 _DISK_HEAL_THRESHOLD_PCT = 85
+
+
+@dataclass
+class SnapshotData:
+    """Groups snapshot payload fields to keep _insert_snapshot_safe args within PLR0913 limit."""
+
+    snapshot_kind: str
+    payload_jsonb: dict[str, Any]
+    payload_hash: str
+    collected_at: str
+    tier_code: str
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +101,8 @@ def verify_agent_token(
 
     try:
         agent_id = uuid.UUID(x_agent_id)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid agent ID")
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Invalid agent ID") from exc
 
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
@@ -112,9 +123,7 @@ def _lock_agent(db: Session, agent_id: uuid.UUID) -> CollectorAgent | None:
     preventing both deadlocks and snapshot-version collisions.
     """
     return db.execute(
-        select(CollectorAgent)
-        .where(CollectorAgent.agent_id == agent_id)
-        .with_for_update()
+        select(CollectorAgent).where(CollectorAgent.agent_id == agent_id).with_for_update()
     ).scalar_one_or_none()
 
 
@@ -134,12 +143,8 @@ def _next_snapshot_version(db: Session, agent_id: uuid.UUID) -> int:
 def _insert_snapshot_safe(
     db: Session,
     agent_id: uuid.UUID,
+    data: SnapshotData,
     *,
-    snapshot_kind: str,
-    payload_jsonb: dict,
-    payload_hash: str,
-    collected_at: str,
-    tier_code: str,
     max_retries: int = 3,
 ) -> CollectorSnapshot | None:
     """Insert a snapshot with retry on version conflict.
@@ -152,11 +157,11 @@ def _insert_snapshot_safe(
             snapshot_id=uuid.uuid4(),
             agent_id=agent_id,
             snapshot_version=version,
-            snapshot_kind=snapshot_kind,
-            payload_jsonb=payload_jsonb,
-            payload_hash=payload_hash,
-            collected_at=collected_at,
-            tier_code=tier_code,
+            snapshot_kind=data.snapshot_kind,
+            payload_jsonb=data.payload_jsonb,
+            payload_hash=data.payload_hash,
+            collected_at=data.collected_at,
+            tier_code=data.tier_code,
         )
         nested = db.begin_nested()
         try:
@@ -332,7 +337,7 @@ def retire_agent(
 
 def _extract_root_usage(disk_payload: dict[str, Any]) -> float:
     """Parse root filesystem usage percentage from a disk_state snapshot payload."""
-    for d in disk_payload.get("disks") or []:
+    for d in cast(list[dict[str, Any]], disk_payload.get("disks") or []):
         if d.get("mountpoint") == "/":
             raw = str(d.get("used_pct", "0")).replace("%", "")
             try:
@@ -361,9 +366,7 @@ def _trigger_cognitive_reactions(
         root_pct = _extract_root_usage(payload)
         if root_pct >= _DISK_HEAL_THRESHOLD_PCT:
             host_code = agent.host_code or str(body.agent_id)
-            background_tasks.add_task(
-                _enqueue_cognitive_self_heal, host_code, root_pct
-            )
+            background_tasks.add_task(_enqueue_cognitive_self_heal, host_code, root_pct)
             break
 
 
@@ -410,13 +413,13 @@ def _enqueue_cognitive_self_heal(host_code: str, disk_pct: float) -> None:
 
 
 @router.post("/ingest", response_model=IngestResponse)
-@limiter.limit("60/minute")
+@rate_limit("60/minute")
 def ingest_snapshots(
     request: Request,
     body: IngestRequest,
     db: Annotated[Session, Depends(get_db)],
     authenticated_agent_id: Annotated[uuid.UUID, Depends(verify_agent_token)],
-    background_tasks: BackgroundTasks = BackgroundTasks(),
+    background_tasks: BackgroundTasks = BackgroundTasks(),  # noqa: B008
 ) -> IngestResponse:
     """Receive a batch of snapshots from an agent."""
     if body.agent_id != authenticated_agent_id:
@@ -452,11 +455,13 @@ def ingest_snapshots(
         snapshot = _insert_snapshot_safe(
             db,
             body.agent_id,
-            snapshot_kind=item.snapshot_kind,
-            payload_jsonb=item.payload,
-            payload_hash=item.payload_hash,
-            collected_at=item.collected_at,
-            tier_code=item.tier_code,
+            SnapshotData(
+                snapshot_kind=item.snapshot_kind,
+                payload_jsonb=item.payload,
+                payload_hash=item.payload_hash,
+                collected_at=item.collected_at,
+                tier_code=item.tier_code,
+            ),
         )
         if snapshot is None:
             errors.append(f"Failed to insert snapshot kind={item.snapshot_kind}")
@@ -491,13 +496,13 @@ def ingest_snapshots(
     db.commit()
 
     try:
-        from internalcmdb.observability.metrics import COLLECTOR_INGEST_TOTAL
+        from internalcmdb.observability.metrics import COLLECTOR_INGEST_TOTAL  # noqa: PLC0415
 
         host_code = agent.host_code or str(body.agent_id)
         for item in body.snapshots:
             COLLECTOR_INGEST_TOTAL.labels(host=host_code, kind=item.snapshot_kind).inc()
     except Exception:
-        pass
+        logger.debug("Ingest metrics counter unavailable", exc_info=True)
 
     _trigger_cognitive_reactions(background_tasks, body, agent)
 
@@ -548,11 +553,13 @@ def heartbeat(
         _insert_snapshot_safe(
             db,
             body.agent_id,
-            snapshot_kind="heartbeat",
-            payload_jsonb=payload,
-            payload_hash=payload_hash,
-            collected_at=str(datetime.now(UTC)),
-            tier_code="5s",
+            SnapshotData(
+                snapshot_kind="heartbeat",
+                payload_jsonb=payload,
+                payload_hash=payload_hash,
+                collected_at=str(datetime.now(UTC)),
+                tier_code="5s",
+            ),
         )
 
     db.commit()

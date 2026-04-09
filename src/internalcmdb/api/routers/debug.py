@@ -26,6 +26,7 @@ router = APIRouter(
 )
 
 _SINCE_QUERY_DESCRIPTION = "ISO timestamp lower bound"
+_ORDER_LIMIT_CLAUSE = " ORDER BY created_at DESC LIMIT :lim"
 
 
 # ---------------------------------------------------------------------------
@@ -154,15 +155,14 @@ async def list_llm_calls(
         params["since"] = since
 
     where = " AND ".join(filters)
+    sql = (
+        "SELECT event_id, action AS model, action, status,"
+        "       duration_ms, correlation_id, created_at"
+        "  FROM governance.audit_event"
+        " WHERE " + where + _ORDER_LIMIT_CLAUSE
+    )
     result = await session.execute(
-        text(f"""
-            SELECT event_id, action AS model, action, status,
-                   duration_ms, correlation_id, created_at
-              FROM governance.audit_event
-             WHERE {where}
-             ORDER BY created_at DESC
-             LIMIT :lim
-        """),
+        text(sql),
         params,
     )
     return [_row_to_dict(r) for r in result.fetchall()]
@@ -186,19 +186,17 @@ async def list_errors(
         filters.append("status >= '500'")
 
     where = " AND ".join(filters)
+    sql = (
+        "SELECT event_id, action, status, correlation_id,"
+        "       CASE WHEN status::int >= 500 THEN 'critical'"
+        "            WHEN status::int >= 400 THEN 'error'"
+        "            ELSE 'warning'"
+        "       END AS severity, created_at"
+        "  FROM governance.audit_event"
+        " WHERE " + where + _ORDER_LIMIT_CLAUSE
+    )
     result = await session.execute(
-        text(f"""
-            SELECT event_id, action, status, correlation_id,
-                   CASE WHEN status::int >= 500 THEN 'critical'
-                        WHEN status::int >= 400 THEN 'error'
-                        ELSE 'warning'
-                   END AS severity,
-                   created_at
-              FROM governance.audit_event
-             WHERE {where}
-             ORDER BY created_at DESC
-             LIMIT :lim
-        """),
+        text(sql),
         params,
     )
     return [_row_to_dict(r) for r in result.fetchall()]
@@ -236,17 +234,13 @@ async def list_guard_blocks(
     if since:
         since_filter = "AND created_at >= :since::timestamptz"
         params["since"] = since
-
+    sql = (
+        "SELECT item_id, item_type, risk_class, status, decision, created_at"
+        "  FROM governance.hitl_item"
+        " WHERE status IN ('blocked', 'rejected') " + since_filter + _ORDER_LIMIT_CLAUSE
+    )
     result = await session.execute(
-        text(f"""
-            SELECT item_id, item_type, risk_class, status,
-                   decision, created_at
-              FROM governance.hitl_item
-             WHERE status IN ('blocked', 'rejected')
-                   {since_filter}
-             ORDER BY created_at DESC
-             LIMIT :lim
-        """),
+        text(sql),
         params,
     )
     return [_row_to_dict(r) for r in result.fetchall()]
@@ -254,7 +248,7 @@ async def list_guard_blocks(
 
 @router.get("/event-bus/stats", response_model=EventBusStats)
 async def event_bus_stats(
-    session: Annotated[AsyncSession, Depends(get_async_session)],
+    _session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> dict[str, Any]:
     """EventBus statistics: stream lengths, consumer lag."""
     try:

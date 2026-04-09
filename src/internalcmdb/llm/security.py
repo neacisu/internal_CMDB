@@ -75,7 +75,8 @@ _PII_PATTERNS: dict[str, re.Pattern[str]] = {
     ),
     "jwt": re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_+/=\-]{10,}"),
     "private_key_header": re.compile(
-        r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----", re.IGNORECASE,
+        r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----",
+        re.IGNORECASE,
     ),
 }
 
@@ -346,17 +347,23 @@ class LLMSecurityLayer:
                     continue
 
                 redacted = self._redact(matched, pii_type)
-                severity = "critical" if pii_type in ("private_key_header", "jwt", "api_key") else "high"
+                severity = (
+                    "critical" if pii_type in ("private_key_header", "jwt", "api_key") else "high"
+                )
 
-                findings.append({
-                    "pii_type": pii_type,
-                    "severity": severity,
-                    "redacted_match": redacted,
-                    "position": match.start(),
-                })
+                findings.append(
+                    {
+                        "pii_type": pii_type,
+                        "severity": severity,
+                        "redacted_match": redacted,
+                        "position": match.start(),
+                    }
+                )
                 logger.warning(
                     "PII detected: type=%s severity=%s position=%d",
-                    pii_type, severity, match.start(),
+                    pii_type,
+                    severity,
+                    match.start(),
                 )
         return findings
 
@@ -364,15 +371,17 @@ class LLMSecurityLayer:
     def _luhn_check(candidate: str) -> bool:
         """Luhn algorithm to reduce false positives on credit card detection."""
         digits = [int(c) for c in candidate if c.isdigit()]
-        if len(digits) < 13:
+        if len(digits) < 13:  # noqa: PLR2004
             return False
         checksum = 0
         for i, d in enumerate(reversed(digits)):
             if i % 2 == 1:
-                d *= 2
-                if d > 9:
-                    d -= 9
-            checksum += d
+                doubled = d * 2
+                if doubled > 9:  # noqa: PLR2004
+                    doubled -= 9
+                checksum += doubled
+            else:
+                checksum += d
         return checksum % 10 == 0
 
     @staticmethod
@@ -381,8 +390,8 @@ class LLMSecurityLayer:
         if pii_type == "email":
             at_idx = value.find("@")
             if at_idx > 1:
-                return value[0] + "***@" + value[at_idx + 1:]
-        if len(value) > 6:
+                return value[0] + "***@" + value[at_idx + 1 :]
+        if len(value) > 6:  # noqa: PLR2004
             return value[:3] + "***" + value[-2:]
         return "***"
 
@@ -419,15 +428,17 @@ class LLMSecurityLayer:
     # Data provenance verification (OWASP LLM03 — Training Data Poisoning)
     # ------------------------------------------------------------------
 
-    TRUSTED_DATA_SOURCES: ClassVar[frozenset[str]] = frozenset({
-        "collector_agent",
-        "ssh_audit_loader",
-        "trust_surface_loader",
-        "runtime_posture_loader",
-        "shared_service_seed",
-        "chunker",
-        "evidence_pack",
-    })
+    TRUSTED_DATA_SOURCES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "collector_agent",
+            "ssh_audit_loader",
+            "trust_surface_loader",
+            "runtime_posture_loader",
+            "shared_service_seed",
+            "chunker",
+            "evidence_pack",
+        }
+    )
 
     def verify_data_provenance(self, source: str, content_hash: str = "") -> bool:
         """Verify that RAG data originates from a trusted internal source.
@@ -457,7 +468,8 @@ class LLMSecurityLayer:
         """
         now = time.monotonic()
         limit = self.MAX_ACTIONS_PER_SESSION.get(
-            caller, self.MAX_ACTIONS_PER_SESSION["default"],
+            caller,
+            self.MAX_ACTIONS_PER_SESSION["default"],
         )
 
         entry = self._action_counts.get(caller)
@@ -468,7 +480,10 @@ class LLMSecurityLayer:
         if entry["count"] >= limit:
             logger.warning(
                 "Excessive agency blocked for %s: %d actions >= limit %d (type=%s)",
-                caller, entry["count"], limit, action_type,
+                caller,
+                entry["count"],
+                limit,
+                action_type,
             )
             return False
 
@@ -516,8 +531,10 @@ class LLMSecurityLayer:
         if entry["count"] >= self._MODEL_ACCESS_RATE_LIMIT:
             logger.warning(
                 "Model access rate limit exceeded for %s: %d >= %d/%.0fs",
-                caller, entry["count"],
-                self._MODEL_ACCESS_RATE_LIMIT, self._MODEL_ACCESS_RATE_WINDOW,
+                caller,
+                entry["count"],
+                self._MODEL_ACCESS_RATE_LIMIT,
+                self._MODEL_ACCESS_RATE_WINDOW,
             )
             return False
 

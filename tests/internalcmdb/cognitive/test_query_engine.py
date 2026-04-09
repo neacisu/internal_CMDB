@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from internalcmdb.cognitive.query_engine import QueryEngine, QueryResult
+from internalcmdb.cognitive.query_engine import QueryEngine
 
 _EMBED_DIM = 4096
 
@@ -28,10 +28,13 @@ def _make_llm(
     else:
         llm.embed = AsyncMock(return_value=vectors or [[0.1] * _EMBED_DIM])
 
-    llm.reason = AsyncMock(return_value=reason_response or {
-        "choices": [{"message": {"content": "The answer is 42."}}],
-        "usage": {"total_tokens": 100},
-    })
+    llm.reason = AsyncMock(
+        return_value=reason_response
+        or {
+            "choices": [{"message": {"content": "The answer is 42."}}],
+            "usage": {"total_tokens": 100},
+        }
+    )
     return llm
 
 
@@ -148,10 +151,7 @@ class TestAssembleContext:
 
     def test_token_budget_respected(self) -> None:
         big_content = "x" * 400
-        sources = [
-            {"section": "s", "content": big_content, "distance": 0.1}
-            for _ in range(100)
-        ]
+        sources = [{"section": "s", "content": big_content, "distance": 0.1} for _ in range(100)]
         ctx = QueryEngine._assemble_context(sources, max_tokens=500)
         assert len(ctx) < 500 * 4 * 5
 

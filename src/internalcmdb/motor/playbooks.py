@@ -16,7 +16,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class ExecutionResult:
     playbook: str
     steps_completed: int
     steps_total: int
-    output: dict[str, Any] = field(default_factory=dict)
+    output: dict[str, Any] = field(default_factory=dict[str, Any])
     error: str | None = None
     rollback_error: str | None = None
     duration_ms: int = 0
@@ -82,6 +82,7 @@ async def _noop_rollback(params: dict[str, Any]) -> dict[str, Any]:
 
 # --- restart_container ---------------------------------------------------
 
+
 async def _restart_container_pre(params: dict[str, Any]) -> dict[str, Any]:
     await _playbook_step_yield()
     cid = params.get("container_id", "unknown")
@@ -116,8 +117,8 @@ async def _restart_container_rollback(params: dict[str, Any]) -> dict[str, Any]:
 async def _clear_disk_pre(params: dict[str, Any]) -> dict[str, Any]:
     """Pre-check: verify Docker socket is available and resources are reclaimable."""
     from internalcmdb.cognitive.self_heal_disk import (  # noqa: PLC0415
-        SafeDockerCleaner,
         _MINIMUM_RECLAIMABLE_MB,
+        SafeDockerCleaner,
         docker_socket_available,
         format_bytes,
     )
@@ -165,7 +166,10 @@ async def _clear_disk_pre(params: dict[str, Any]) -> dict[str, Any]:
 
 async def _clear_disk_exec(params: dict[str, Any]) -> dict[str, Any]:
     """Execute safe Docker resource cleanup via the Engine API."""
-    from internalcmdb.cognitive.self_heal_disk import SafeDockerCleaner, format_bytes  # noqa: PLC0415
+    from internalcmdb.cognitive.self_heal_disk import (  # noqa: PLC0415
+        SafeDockerCleaner,
+        format_bytes,
+    )
 
     host = params.get("host", "localhost")
     disk_pct = params.get("disk_pct", 0.0)
@@ -211,11 +215,11 @@ async def _clear_disk_post(params: dict[str, Any]) -> dict[str, Any]:
 
     def _check() -> int:
         cleaner = SafeDockerCleaner()
-        sysdf = cleaner._get_json("/system/df")  # noqa: SLF001
+        sysdf = cast(dict[str, Any], cleaner._get_json("/system/df"))
         total = 0
-        for img in sysdf.get("Images") or []:
+        for img in cast(list[dict[str, Any]], sysdf.get("Images") or []):
             total += img.get("Size", 0)
-        for bc in sysdf.get("BuildCache") or []:
+        for bc in cast(list[dict[str, Any]], sysdf.get("BuildCache") or []):
             total += bc.get("Size", 0)
         return total
 
@@ -230,6 +234,7 @@ async def _clear_disk_post(params: dict[str, Any]) -> dict[str, Any]:
 
 
 # --- restart_llm_engine ---------------------------------------------------
+
 
 async def _restart_llm_pre(params: dict[str, Any]) -> dict[str, Any]:
     await _playbook_step_yield()
@@ -254,6 +259,7 @@ async def _restart_llm_post(params: dict[str, Any]) -> dict[str, Any]:
 
 # --- alert_escalate -------------------------------------------------------
 
+
 async def _alert_escalate_pre(params: dict[str, Any]) -> dict[str, Any]:
     await _playbook_step_yield()
     alert_id = params.get("alert_id", "unknown")
@@ -269,12 +275,13 @@ async def _alert_escalate_exec(params: dict[str, Any]) -> dict[str, Any]:
     return {"alert_id": alert_id, "channel": channel, "escalated": True}
 
 
-async def _alert_escalate_post(params: dict[str, Any]) -> dict[str, Any]:
+async def _alert_escalate_post(_params: dict[str, Any]) -> dict[str, Any]:
     await _playbook_step_yield()
     return {"post_check": "passed", "ack_received": True}
 
 
 # --- rotate_certificate ---------------------------------------------------
+
 
 async def _rotate_cert_pre(params: dict[str, Any]) -> dict[str, Any]:
     await _playbook_step_yield()
@@ -306,6 +313,7 @@ async def _rotate_cert_rollback(params: dict[str, Any]) -> dict[str, Any]:
 
 # --- rebalance_gpu_load ---------------------------------------------------
 
+
 async def _rebalance_gpu_pre(params: dict[str, Any]) -> dict[str, Any]:
     await _playbook_step_yield()
     cluster = params.get("cluster", "default")
@@ -327,8 +335,6 @@ async def _rebalance_gpu_post(params: dict[str, Any]) -> dict[str, Any]:
     return {"cluster": cluster, "imbalance_pct": 4, "post_check": "passed"}
 
 
-
-
 # --- truncate_container_log -----------------------------------------------
 
 _DOCKER_DATA_ROOT_FALLBACK = "/mnt/HC_Volume_105014654/docker"
@@ -342,7 +348,7 @@ def _get_data_root_from_daemon() -> str:
         with open("/etc/docker/daemon.json") as fh:
             cfg = _json.load(fh)
         return str(cfg.get("data-root", _DOCKER_DATA_ROOT_FALLBACK))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return _DOCKER_DATA_ROOT_FALLBACK
 
 
@@ -387,7 +393,7 @@ async def _truncate_log_pre(params: dict[str, Any]) -> dict[str, Any]:
     logger.info(
         "Pre-check: log %s exists, size=%.2f GB.",
         resolved_log,
-        pre_size / (1024 ** 3),
+        pre_size / (1024**3),
     )
     return {
         "pre_check": "passed",
@@ -422,13 +428,13 @@ async def _truncate_log_exec(params: dict[str, Any]) -> dict[str, Any]:
     logger.info(
         "Container log truncated: %s — freed %.2f GB.",
         resolved,
-        pre_size / (1024 ** 3),
+        pre_size / (1024**3),
     )
     return {
         "log_path": resolved,
         "container_name": name,
         "freed_bytes": pre_size,
-        "freed_gb": round(pre_size / (1024 ** 3), 2),
+        "freed_gb": round(pre_size / (1024**3), 2),
         "action": "log_truncated",
     }
 
@@ -565,11 +571,23 @@ def _post_check_passed(result: dict[str, Any]) -> bool:
 def _record_playbook_metric(playbook: str, result: str) -> None:
     """Increment the Prometheus self_heal_actions counter."""
     try:
-        from internalcmdb.observability.metrics import SELF_HEAL_ACTIONS_TOTAL
+        from internalcmdb.observability.metrics import SELF_HEAL_ACTIONS_TOTAL  # noqa: PLC0415
 
         SELF_HEAL_ACTIONS_TOTAL.labels(playbook=playbook, result=result).inc()
     except Exception:
-        pass
+        logger.debug("Playbook metric counter unavailable", exc_info=True)
+
+
+@dataclass
+class _PlaybookRun:
+    """Mutable run-state passed between phase helpers to avoid long argument lists."""
+
+    playbook_name: str
+    timeout_s: int
+    steps_total: int
+    steps_completed: int = 0
+    combined_output: dict[str, Any] = field(default_factory=dict[str, Any])
+    start: float = field(default_factory=time.monotonic)
 
 
 class PlaybookExecutor:
@@ -591,18 +609,8 @@ class PlaybookExecutor:
         playbook_name: str,
         params: dict[str, Any],
     ) -> ExecutionResult:
-        """Execute the named playbook.
-
-        Lifecycle:
-          1. **pre_check** — validate preconditions (abort without rollback on failure)
-          2. **execute** — perform the remediation action
-          3. **post_check** — verify the action succeeded
-          4. **rollback** — if post_check fails, attempt rollback
-        """
+        """Execute the named playbook with pre→exec→post→rollback lifecycle."""
         steps_total = 4
-        steps_completed = 0
-        combined_output: dict[str, Any] = {}
-        start = time.monotonic()
 
         if playbook_name not in self._registry:
             return ExecutionResult(
@@ -616,132 +624,161 @@ class PlaybookExecutor:
 
         pb = self._registry[playbook_name]
         timeout_s = pb.get("timeout_s", _DEFAULT_STEP_TIMEOUT_S)
-        logger.info("▶ Playbook '%s' started. params=%s timeout=%ds", playbook_name, params, timeout_s)
+        logger.info(
+            "▶ Playbook '%s' started. params=%s timeout=%ds", playbook_name, params, timeout_s
+        )
+        run = _PlaybookRun(
+            playbook_name=playbook_name,
+            timeout_s=timeout_s,
+            steps_total=steps_total,
+        )
 
-        # -- Step 1: pre_check (failure → abort, NO rollback) --------
+        pre_result = await self._phase_pre_check(pb, params, run)
+        if pre_result is not None:
+            return pre_result
+        return await self._phase_execute(pb, params, run)
+
+    async def _phase_pre_check(
+        self,
+        pb: _PlaybookSteps,
+        params: dict[str, Any],
+        run: _PlaybookRun,
+    ) -> ExecutionResult | None:
+        """Run the pre_check phase. Returns None on pass; failure ExecutionResult otherwise."""
         try:
             pre_fn = pb.get("pre_check", _noop_pre_check)
-            async with asyncio.timeout(timeout_s):
+            async with asyncio.timeout(run.timeout_s):
                 pre_result = await pre_fn(params)
-            combined_output["pre_check"] = pre_result
-            steps_completed += 1
+            run.combined_output["pre_check"] = pre_result
+            run.steps_completed += 1
             logger.info("  ✓ pre_check completed.")
 
             if pre_result.get("pre_check") != "passed":
-                elapsed = int((time.monotonic() - start) * 1000)
+                elapsed = int((time.monotonic() - run.start) * 1000)
                 logger.warning("  ✗ pre_check did not pass — aborting without rollback.")
                 return ExecutionResult(
                     success=False,
-                    playbook=playbook_name,
-                    steps_completed=steps_completed,
-                    steps_total=steps_total,
-                    output=combined_output,
+                    playbook=run.playbook_name,
+                    steps_completed=run.steps_completed,
+                    steps_total=run.steps_total,
+                    output=run.combined_output,
                     error="Pre-check failed; execution aborted (no rollback needed).",
                     phase_failed="pre_check",
                     duration_ms=elapsed,
                 )
+            return None
+
         except TimeoutError:
-            elapsed = int((time.monotonic() - start) * 1000)
-            logger.error("  ✗ pre_check timed out after %ds.", timeout_s)
+            elapsed = int((time.monotonic() - run.start) * 1000)
+            logger.error("  ✗ pre_check timed out after %ds.", run.timeout_s)
             return ExecutionResult(
                 success=False,
-                playbook=playbook_name,
-                steps_completed=steps_completed,
-                steps_total=steps_total,
-                output=combined_output,
-                error=f"Pre-check timed out after {timeout_s}s",
+                playbook=run.playbook_name,
+                steps_completed=run.steps_completed,
+                steps_total=run.steps_total,
+                output=run.combined_output,
+                error=f"Pre-check timed out after {run.timeout_s}s",
                 phase_failed="pre_check",
                 duration_ms=elapsed,
             )
         except Exception as exc:
-            elapsed = int((time.monotonic() - start) * 1000)
+            elapsed = int((time.monotonic() - run.start) * 1000)
             logger.exception("  ✗ pre_check raised exception — aborting without rollback.")
             return ExecutionResult(
                 success=False,
-                playbook=playbook_name,
-                steps_completed=steps_completed,
-                steps_total=steps_total,
-                output=combined_output,
+                playbook=run.playbook_name,
+                steps_completed=run.steps_completed,
+                steps_total=run.steps_total,
+                output=run.combined_output,
                 error=f"Pre-check exception: {exc}",
                 phase_failed="pre_check",
                 duration_ms=elapsed,
             )
 
-        # -- Steps 2+3: execute → post_check (failure → rollback) ---
+    async def _phase_execute(
+        self,
+        pb: _PlaybookSteps,
+        params: dict[str, Any],
+        run: _PlaybookRun,
+    ) -> ExecutionResult:
+        """Run the execute + post_check phase. Returns ExecutionResult always."""
         try:
             exec_fn = pb.get("execute", _noop_execute)
-            async with asyncio.timeout(timeout_s):
+            async with asyncio.timeout(run.timeout_s):
                 exec_result = await exec_fn(params)
-            combined_output["execute"] = exec_result
-            steps_completed += 1
+            run.combined_output["execute"] = exec_result
+            run.steps_completed += 1
             logger.info("  ✓ execute completed.")
 
             post_fn = pb.get("post_check", _noop_post_check)
-            async with asyncio.timeout(timeout_s):
+            async with asyncio.timeout(run.timeout_s):
                 post_result = await post_fn(params)
-            combined_output["post_check"] = post_result
-            steps_completed += 1
+            run.combined_output["post_check"] = post_result
+            run.steps_completed += 1
             logger.info("  ✓ post_check completed.")
 
             if not _post_check_passed(post_result):
                 logger.warning("  ⚠ post_check failed — triggering rollback.")
-                rollback_error = await self._do_rollback(pb, params, combined_output, timeout_s)
-                steps_completed += 1
-
-                elapsed = int((time.monotonic() - start) * 1000)
-                _record_playbook_metric(playbook_name, "rollback")
-                logger.warning("▶ Playbook '%s' rolled back. duration=%dms", playbook_name, elapsed)
+                rollback_error = await self._do_rollback(
+                    pb, params, run.combined_output, run.timeout_s
+                )
+                run.steps_completed += 1
+                elapsed = int((time.monotonic() - run.start) * 1000)
+                _record_playbook_metric(run.playbook_name, "rollback")
+                logger.warning(
+                    "▶ Playbook '%s' rolled back. duration=%dms", run.playbook_name, elapsed
+                )
                 return ExecutionResult(
                     success=False,
-                    playbook=playbook_name,
-                    steps_completed=steps_completed,
-                    steps_total=steps_total,
-                    output=combined_output,
+                    playbook=run.playbook_name,
+                    steps_completed=run.steps_completed,
+                    steps_total=run.steps_total,
+                    output=run.combined_output,
                     error="Post-check failed; rollback executed.",
                     rollback_error=rollback_error,
                     phase_failed="post_check",
                     duration_ms=elapsed,
                 )
 
-            elapsed = int((time.monotonic() - start) * 1000)
-            logger.info("▶ Playbook '%s' succeeded. duration=%dms", playbook_name, elapsed)
-            _record_playbook_metric(playbook_name, "success")
+            elapsed = int((time.monotonic() - run.start) * 1000)
+            logger.info("▶ Playbook '%s' succeeded. duration=%dms", run.playbook_name, elapsed)
+            _record_playbook_metric(run.playbook_name, "success")
             return ExecutionResult(
                 success=True,
-                playbook=playbook_name,
-                steps_completed=steps_completed,
-                steps_total=steps_total,
-                output=combined_output,
+                playbook=run.playbook_name,
+                steps_completed=run.steps_completed,
+                steps_total=run.steps_total,
+                output=run.combined_output,
                 duration_ms=elapsed,
             )
 
         except TimeoutError:
-            logger.error("Playbook '%s' timed out during execute/post_check.", playbook_name)
-            rollback_error = await self._do_rollback(pb, params, combined_output, timeout_s)
-            _record_playbook_metric(playbook_name, "timeout")
-            elapsed = int((time.monotonic() - start) * 1000)
+            logger.error("Playbook '%s' timed out during execute/post_check.", run.playbook_name)
+            rollback_error = await self._do_rollback(pb, params, run.combined_output, run.timeout_s)
+            _record_playbook_metric(run.playbook_name, "timeout")
+            elapsed = int((time.monotonic() - run.start) * 1000)
             return ExecutionResult(
                 success=False,
-                playbook=playbook_name,
-                steps_completed=steps_completed,
-                steps_total=steps_total,
-                output=combined_output,
-                error=f"Execution timed out after {timeout_s}s; emergency rollback attempted.",
+                playbook=run.playbook_name,
+                steps_completed=run.steps_completed,
+                steps_total=run.steps_total,
+                output=run.combined_output,
+                error=f"Execution timed out after {run.timeout_s}s; emergency rollback attempted.",
                 rollback_error=rollback_error,
                 phase_failed="execute",
                 duration_ms=elapsed,
             )
         except Exception as exc:
-            logger.exception("Playbook '%s' failed with exception.", playbook_name)
-            rollback_error = await self._do_rollback(pb, params, combined_output, timeout_s)
-            _record_playbook_metric(playbook_name, "error")
-            elapsed = int((time.monotonic() - start) * 1000)
+            logger.exception("Playbook '%s' failed with exception.", run.playbook_name)
+            rollback_error = await self._do_rollback(pb, params, run.combined_output, run.timeout_s)
+            _record_playbook_metric(run.playbook_name, "error")
+            elapsed = int((time.monotonic() - run.start) * 1000)
             return ExecutionResult(
                 success=False,
-                playbook=playbook_name,
-                steps_completed=steps_completed,
-                steps_total=steps_total,
-                output=combined_output,
+                playbook=run.playbook_name,
+                steps_completed=run.steps_completed,
+                steps_total=run.steps_total,
+                output=run.combined_output,
                 error=str(exc),
                 rollback_error=rollback_error,
                 phase_failed="execute",

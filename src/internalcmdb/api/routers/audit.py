@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -9,8 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from internalcmdb.models.governance import (
-    AuditEvent,
     ApprovalRecord,
+    AuditEvent,
     ChangeLog,
     PolicyRecord,
 )
@@ -20,22 +21,29 @@ from ..deps import get_db
 router = APIRouter(prefix="/audit", tags=["audit"])
 
 
+@dataclass
+class AuditFilterParams:
+    """Query-parameter filter group for audit event listing."""
+
+    actor: str | None = None
+    status: str | None = None
+    event_type: str | None = None
+
+
 @router.get("/events")
 def list_events(
     db: Annotated[Session, Depends(get_db)],
+    filters: Annotated[AuditFilterParams, Depends()],
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    actor: str | None = None,
-    status: str | None = None,
-    event_type: str | None = None,
 ) -> dict[str, object]:
     q = db.query(AuditEvent)
-    if actor is not None:
-        q = q.filter(AuditEvent.actor.ilike(f"%{actor}%"))
-    if status is not None:
-        q = q.filter(AuditEvent.status == status)
-    if event_type is not None:
-        q = q.filter(AuditEvent.event_type == event_type)
+    if filters.actor is not None:
+        q = q.filter(AuditEvent.actor.ilike(f"%{filters.actor}%"))
+    if filters.status is not None:
+        q = q.filter(AuditEvent.status == filters.status)
+    if filters.event_type is not None:
+        q = q.filter(AuditEvent.event_type == filters.event_type)
 
     total = q.count()
     items = (
@@ -104,11 +112,14 @@ def audit_stats(
         select(func.avg(AuditEvent.duration_ms)).where(AuditEvent.duration_ms.isnot(None))
     )
 
-    error_count = db.scalar(
-        select(func.count())
-        .select_from(AuditEvent)
-        .where(AuditEvent.status.in_(["400", "401", "403", "404", "422", "500", "502", "503"]))
-    ) or 0
+    error_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(AuditEvent.status.in_(["400", "401", "403", "404", "422", "500", "502", "503"]))
+        )
+        or 0
+    )
 
     latest_event = db.scalar(
         select(AuditEvent.created_at).order_by(AuditEvent.created_at.desc()).limit(1)

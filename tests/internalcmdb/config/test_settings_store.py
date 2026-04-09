@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 import time
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from internalcmdb.config.settings_store import SettingsStore, _SECRET_MASK
-
+from internalcmdb.config.settings_store import _SECRET_MASK, SettingsStore
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -41,7 +38,7 @@ def _make_row(
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def store() -> SettingsStore:
     # Patch create_engine so the fixture doesn't require a real DB driver.
     with patch("sqlalchemy.create_engine", return_value=MagicMock()):
@@ -73,7 +70,9 @@ def test_cache_invalidate(store: SettingsStore) -> None:
 def test_cache_expires() -> None:
     # Force a very short TTL store
     with patch("sqlalchemy.create_engine", return_value=MagicMock()):
-        fast_store = SettingsStore("postgresql+psycopg://user:pass@localhost:5432/testdb", cache_ttl=0.01)
+        fast_store = SettingsStore(
+            "postgresql+psycopg://user:pass@localhost:5432/testdb", cache_ttl=0.01
+        )
     fast_store._cache_put("x", "val")
     time.sleep(0.02)
     assert fast_store._cache_hit("x") is None
@@ -133,7 +132,7 @@ async def test_get_row_cached_on_second_fetch(store: SettingsStore) -> None:
     row = _make_row("llm.url", "http://x", is_secret=False)
     call_count = 0
 
-    def _fetch(key: str) -> dict | None:
+    def _fetch(key: str) -> dict[str, Any] | None:
         nonlocal call_count
         call_count += 1
         return row
@@ -217,9 +216,11 @@ async def test_set_updates_value_and_invalidates_cache(store: SettingsStore) -> 
 
 @pytest.mark.asyncio
 async def test_set_raises_key_error_for_missing_key(store: SettingsStore) -> None:
-    with patch.object(store, "_upsert_row", side_effect=KeyError("missing.key")):
-        with pytest.raises(KeyError):
-            await store.set("missing.key", "val", updated_by="test")
+    with (
+        patch.object(store, "_upsert_row", side_effect=KeyError("missing.key")),
+        pytest.raises(KeyError),
+    ):
+        await store.set("missing.key", "val", updated_by="test")
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +317,7 @@ def test_invalidate_all_clears_cache(store: SettingsStore) -> None:
 
 
 def test_build_sync_url_strips_sslmode_require() -> None:
-    from internalcmdb.config.settings_store import _build_sync_url
+    from internalcmdb.config.settings_store import _build_sync_url  # noqa: PLC0415
 
     url = "postgresql+psycopg://user:pass@remote.host:5432/db?sslmode=require"
     result = _build_sync_url(url)
@@ -325,7 +326,7 @@ def test_build_sync_url_strips_sslmode_require() -> None:
 
 
 def test_build_sync_url_forces_sslmode_disable_when_absent() -> None:
-    from internalcmdb.config.settings_store import _build_sync_url
+    from internalcmdb.config.settings_store import _build_sync_url  # noqa: PLC0415
 
     url = "postgresql+psycopg://user:pass@host:5432/db"
     result = _build_sync_url(url)
@@ -333,7 +334,7 @@ def test_build_sync_url_forces_sslmode_disable_when_absent() -> None:
 
 
 def test_build_sync_url_overrides_host_and_port(monkeypatch: pytest.MonkeyPatch) -> None:
-    from internalcmdb.config.settings_store import _build_sync_url
+    from internalcmdb.config.settings_store import _build_sync_url  # noqa: PLC0415
 
     monkeypatch.setenv("POSTGRES_SYNC_HOST", "127.0.0.1")
     monkeypatch.setenv("POSTGRES_SYNC_PORT", "5433")
@@ -344,8 +345,10 @@ def test_build_sync_url_overrides_host_and_port(monkeypatch: pytest.MonkeyPatch)
     assert "sslmode=disable" in result
 
 
-def test_build_sync_url_keeps_credentials_when_overriding_host(monkeypatch: pytest.MonkeyPatch) -> None:
-    from internalcmdb.config.settings_store import _build_sync_url
+def test_build_sync_url_keeps_credentials_when_overriding_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from internalcmdb.config.settings_store import _build_sync_url  # noqa: PLC0415
 
     monkeypatch.setenv("POSTGRES_SYNC_HOST", "127.0.0.1")
     monkeypatch.setenv("POSTGRES_SYNC_PORT", "5433")
@@ -357,7 +360,7 @@ def test_build_sync_url_keeps_credentials_when_overriding_host(monkeypatch: pyte
 
 
 def test_build_sync_url_no_env_vars_keeps_original_host(monkeypatch: pytest.MonkeyPatch) -> None:
-    from internalcmdb.config.settings_store import _build_sync_url
+    from internalcmdb.config.settings_store import _build_sync_url  # noqa: PLC0415
 
     monkeypatch.delenv("POSTGRES_SYNC_HOST", raising=False)
     monkeypatch.delenv("POSTGRES_SYNC_PORT", raising=False)
@@ -373,26 +376,29 @@ def test_build_sync_url_no_env_vars_keeps_original_host(monkeypatch: pytest.Monk
 
 @pytest.mark.asyncio
 async def test_get_row_returns_none_on_db_error(store: SettingsStore) -> None:
-    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.exc import OperationalError  # noqa: PLC0415
 
-    with patch.object(store, "_fetch_one", side_effect=OperationalError("fail", None, None)):
+    _orig = OSError("Connection refused")
+    with patch.object(store, "_fetch_one", side_effect=OperationalError("fail", None, _orig)):
         result = await store.get_row("llm.url")
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_get_group_returns_empty_list_on_db_error(store: SettingsStore) -> None:
-    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.exc import OperationalError  # noqa: PLC0415
 
-    with patch.object(store, "_fetch_group", side_effect=OperationalError("fail", None, None)):
+    _orig = OSError("Connection refused")
+    with patch.object(store, "_fetch_group", side_effect=OperationalError("fail", None, _orig)):
         result = await store.get_group("llm")
     assert result == []
 
 
 @pytest.mark.asyncio
 async def test_get_all_groups_returns_empty_dict_on_db_error(store: SettingsStore) -> None:
-    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.exc import OperationalError  # noqa: PLC0415
 
-    with patch.object(store, "_fetch_all", side_effect=OperationalError("fail", None, None)):
+    _orig = OSError("Connection refused")
+    with patch.object(store, "_fetch_all", side_effect=OperationalError("fail", None, _orig)):
         result = await store.get_all_groups()
     assert result == {}

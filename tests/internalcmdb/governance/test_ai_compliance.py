@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,7 +12,6 @@ from internalcmdb.governance.ai_compliance import (
     AISystemEntry,
     _parse_entity_uuid,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -154,12 +152,10 @@ class TestGetAIInventoryWithSession:
 
     @pytest.mark.asyncio
     async def test_db_error_returns_inventory_without_counts(self) -> None:
-        from sqlalchemy.exc import ProgrammingError
+        from sqlalchemy.exc import ProgrammingError  # noqa: PLC0415
 
         mgr, session = _make_manager_with_session()
-        session.execute = AsyncMock(
-            side_effect=ProgrammingError("relation not found", {}, None)
-        )
+        session.execute = AsyncMock(side_effect=ProgrammingError("relation not found", {}, None))
 
         inventory = await mgr.get_ai_inventory()
 
@@ -250,14 +246,20 @@ class TestGenerateComplianceReport:
     async def test_report_is_string(self) -> None:
         mgr = _make_manager_no_session()
 
-        with patch.object(mgr, "check_article_12", new=AsyncMock(return_value={
-            "audit_trail": True,
-            "decision_logging": True,
-            "model_versioning": True,
-            "data_lineage": True,
-            "hitl_feedback": True,
-            "overall_compliant": True,
-        })):
+        with patch.object(
+            mgr,
+            "check_article_12",
+            new=AsyncMock(
+                return_value={
+                    "audit_trail": True,
+                    "decision_logging": True,
+                    "model_versioning": True,
+                    "data_lineage": True,
+                    "hitl_feedback": True,
+                    "overall_compliant": True,
+                }
+            ),
+        ):
             report = await mgr.generate_compliance_report()
 
         assert isinstance(report, str)
@@ -267,14 +269,20 @@ class TestGenerateComplianceReport:
     async def test_report_contains_article_sections(self) -> None:
         mgr = _make_manager_no_session()
 
-        with patch.object(mgr, "check_article_12", new=AsyncMock(return_value={
-            "audit_trail": True,
-            "decision_logging": True,
-            "model_versioning": True,
-            "data_lineage": True,
-            "hitl_feedback": True,
-            "overall_compliant": True,
-        })):
+        with patch.object(
+            mgr,
+            "check_article_12",
+            new=AsyncMock(
+                return_value={
+                    "audit_trail": True,
+                    "decision_logging": True,
+                    "model_versioning": True,
+                    "data_lineage": True,
+                    "hitl_feedback": True,
+                    "overall_compliant": True,
+                }
+            ),
+        ):
             report = await mgr.generate_compliance_report()
 
         assert "Article" in report or "EU AI Act" in report
@@ -284,14 +292,20 @@ class TestGenerateComplianceReport:
     async def test_report_contains_overall_assessment(self) -> None:
         mgr = _make_manager_no_session()
 
-        with patch.object(mgr, "check_article_12", new=AsyncMock(return_value={
-            "audit_trail": True,
-            "decision_logging": True,
-            "model_versioning": True,
-            "data_lineage": True,
-            "hitl_feedback": True,
-            "overall_compliant": True,
-        })):
+        with patch.object(
+            mgr,
+            "check_article_12",
+            new=AsyncMock(
+                return_value={
+                    "audit_trail": True,
+                    "decision_logging": True,
+                    "model_versioning": True,
+                    "data_lineage": True,
+                    "hitl_feedback": True,
+                    "overall_compliant": True,
+                }
+            ),
+        ):
             report = await mgr.generate_compliance_report()
 
         assert "Overall Assessment" in report or "COMPLIANT" in report or "REVIEW NEEDED" in report

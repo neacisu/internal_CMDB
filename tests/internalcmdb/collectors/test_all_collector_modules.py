@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import importlib
 import subprocess
-from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # All collector module names (19 modules matching COLLECTOR_MODULES)
@@ -50,9 +47,11 @@ def _import_collector(name: str):
 class TestHeartbeatCollect:
     def test_heartbeat_collect_returns_dict(self):
         mod = _import_collector("heartbeat")
-        with patch("os.getloadavg", return_value=(0.5, 0.6, 0.7)), \
-             patch("builtins.open", side_effect=FileNotFoundError), \
-             patch("subprocess.run") as mock_run:
+        with (
+            patch("os.getloadavg", return_value=(0.5, 0.6, 0.7)),
+            patch("builtins.open", side_effect=FileNotFoundError),
+            patch("subprocess.run") as mock_run,
+        ):
             mock_result = MagicMock()
             mock_result.stdout = "{ sec = 1700000000, usec = 0 }"
             mock_run.return_value = mock_result
@@ -65,9 +64,11 @@ class TestHeartbeatCollect:
 
     def test_heartbeat_collect_keys(self):
         mod = _import_collector("heartbeat")
-        with patch("os.getloadavg", return_value=(1.0, 1.0, 1.0)), \
-             patch("builtins.open", side_effect=FileNotFoundError), \
-             patch("subprocess.run") as mock_run:
+        with (
+            patch("os.getloadavg", return_value=(1.0, 1.0, 1.0)),
+            patch("builtins.open", side_effect=FileNotFoundError),
+            patch("subprocess.run") as mock_run,
+        ):
             mock_result = MagicMock()
             mock_result.stdout = "{ sec = 1700000000, usec = 0 }"
             mock_run.return_value = mock_result
@@ -94,8 +95,10 @@ class TestHeartbeatCollect:
             handle.__exit__ = MagicMock(return_value=False)
             return handle
 
-        with patch("builtins.open", side_effect=open_mock), \
-             patch("os.getloadavg", return_value=(0.1, 0.2, 0.3)):
+        with (
+            patch("builtins.open", side_effect=open_mock),
+            patch("os.getloadavg", return_value=(0.1, 0.2, 0.3)),
+        ):
             result = mod.collect()
 
         assert isinstance(result, dict)
@@ -109,8 +112,10 @@ class TestHeartbeatCollect:
 class TestSystemVitalsCollect:
     def test_system_vitals_collect_returns_dict(self):
         mod = _import_collector("system_vitals")
-        with patch("os.getloadavg", return_value=(0.5, 0.8, 1.0)), \
-             patch("builtins.open", side_effect=FileNotFoundError):
+        with (
+            patch("os.getloadavg", return_value=(0.5, 0.8, 1.0)),
+            patch("builtins.open", side_effect=FileNotFoundError),
+        ):
             result = mod.collect()
 
         assert isinstance(result, dict)
@@ -120,8 +125,10 @@ class TestSystemVitalsCollect:
 
     def test_system_vitals_contains_swap_keys(self):
         mod = _import_collector("system_vitals")
-        with patch("os.getloadavg", return_value=(0.1, 0.2, 0.3)), \
-             patch("builtins.open", side_effect=FileNotFoundError):
+        with (
+            patch("os.getloadavg", return_value=(0.1, 0.2, 0.3)),
+            patch("builtins.open", side_effect=FileNotFoundError),
+        ):
             result = mod.collect()
 
         assert "swap_total_kb" in result
@@ -129,8 +136,10 @@ class TestSystemVitalsCollect:
 
     def test_system_vitals_load_avg_list(self):
         mod = _import_collector("system_vitals")
-        with patch("os.getloadavg", return_value=(1.5, 2.0, 2.5)), \
-             patch("builtins.open", side_effect=FileNotFoundError):
+        with (
+            patch("os.getloadavg", return_value=(1.5, 2.0, 2.5)),
+            patch("builtins.open", side_effect=FileNotFoundError),
+        ):
             result = mod.collect()
 
         assert isinstance(result["load_avg"], list)
@@ -343,9 +352,11 @@ class TestAllModulesHaveCollectFunction:
         safe_modules = ["heartbeat", "system_vitals", "disk_state", "docker_state", "gpu_state"]
         for name in safe_modules:
             mod = _import_collector(name)
-            with patch("subprocess.run") as mock_run, \
-                 patch("os.getloadavg", return_value=(0.0, 0.0, 0.0)), \
-                 patch("builtins.open", side_effect=FileNotFoundError):
+            with (
+                patch("subprocess.run") as mock_run,
+                patch("os.getloadavg", return_value=(0.0, 0.0, 0.0)),
+                patch("builtins.open", side_effect=FileNotFoundError),
+            ):
                 mock_result = MagicMock()
                 mock_result.returncode = 1
                 mock_result.stdout = ""

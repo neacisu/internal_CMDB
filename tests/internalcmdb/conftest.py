@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy.orm import Session
@@ -109,10 +108,12 @@ class MockLLMClient:
         await _mock_async_tick()
         self.call_log.append({"method": "reason", "messages": messages})
         return {
-            "choices": [{
-                "message": {"role": "assistant", "content": "Mock reasoning response."},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "Mock reasoning response."},
+                    "finish_reason": "stop",
+                }
+            ],
             "model": "mock-reasoning",
             "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
         }
@@ -121,10 +122,12 @@ class MockLLMClient:
         await _mock_async_tick()
         self.call_log.append({"method": "fast", "messages": messages})
         return {
-            "choices": [{
-                "message": {"role": "assistant", "content": "Mock fast response."},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "Mock fast response."},
+                    "finish_reason": "stop",
+                }
+            ],
             "model": "mock-fast",
             "usage": {"prompt_tokens": 5, "completion_tokens": 10, "total_tokens": 15},
         }
@@ -148,7 +151,7 @@ class MockLLMClient:
         """No persistent handles — mirror production lifecycle for ``async with``."""
         await _mock_async_tick()
 
-    async def __aenter__(self) -> "MockLLMClient":
+    async def __aenter__(self) -> MockLLMClient:
         await _mock_async_tick()
         return self
 
@@ -186,7 +189,7 @@ class MockLLMClientFailing:
     async def close(self) -> None:
         await _mock_async_tick()
 
-    async def __aenter__(self) -> "MockLLMClientFailing":
+    async def __aenter__(self) -> MockLLMClientFailing:
         return self
 
     async def __aexit__(self, *_: object) -> None:
@@ -289,7 +292,7 @@ class MockEventBus:
         from internalcmdb.nervous.event_bus import Event  # noqa: PLC0415
 
         pending = self._pending.get(stream, [])[:count]
-        events = []
+        events: list[Any] = []
         for item in pending:
             msg_id = item.get("_msg_id", "mock-0")
             payload = {k: v for k, v in item.items() if k != "_msg_id"}
@@ -302,9 +305,7 @@ class MockEventBus:
         await _mock_async_tick()
         self._acked.append((stream, group, message_id))
         pending = self._pending.get(stream, [])
-        self._pending[stream] = [
-            p for p in pending if p.get("_msg_id") != message_id
-        ]
+        self._pending[stream] = [p for p in pending if p.get("_msg_id") != message_id]
 
     async def ensure_groups(self) -> None:
         """Redis XGROUP CREATE is a no-op for this in-memory stand-in."""
@@ -319,3 +320,45 @@ class MockEventBus:
 def mock_event_bus() -> MockEventBus:
     """In-memory event bus — no Redis required."""
     return MockEventBus()
+
+
+# ---------------------------------------------------------------------------
+# Auth / Redis mocks — isolate revocation and lockout from live Redis
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_redis_revocation():
+    """Stub out Redis for token revocation — always returns not-revoked (fail-open)."""
+    revocation_client = MagicMock()
+    revocation_client.setex = MagicMock(return_value=True)
+    revocation_client.exists = MagicMock(return_value=0)  # Redis: falsy means not revoked
+
+    with patch("internalcmdb.auth.revocation._get_redis_client", return_value=revocation_client):
+        yield revocation_client
+
+
+@pytest.fixture
+def mock_redis_lockout():
+    """Stub out Redis for brute-force lockout — always returns not-locked (fail-open)."""
+    lockout_client = MagicMock()
+    lockout_client.get = MagicMock(return_value=None)  # None = no lockout entry
+    lockout_client.incr = MagicMock(return_value=1)
+    lockout_client.expire = MagicMock(return_value=True)
+    lockout_client.delete = MagicMock(return_value=1)
+
+    with patch("internalcmdb.auth.lockout._get_redis_client", return_value=lockout_client):
+        yield lockout_client
+
+
+@pytest.fixture
+def auth_admin_user():
+    """Return a minimal admin User ORM mock for auth dependency tests."""
+    user = MagicMock()
+    user.user_id = uuid.uuid4()
+    user.email = "admin@example.com"
+    user.username = "admin"
+    user.role = "admin"
+    user.is_active = True
+    user.force_password_change = False
+    return user

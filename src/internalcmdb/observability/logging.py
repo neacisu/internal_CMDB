@@ -19,7 +19,7 @@ import logging
 import sys
 from contextvars import ContextVar
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 
@@ -60,7 +60,7 @@ class JSONFormatter(logging.Formatter):
 
         try:
             return json.dumps(log_entry, default=str)
-        except (ValueError, TypeError, OverflowError):
+        except ValueError, TypeError, OverflowError:
             log_entry.pop("extra", None)
             log_entry["_format_error"] = True
             return json.dumps(log_entry, default=str)
@@ -71,27 +71,46 @@ def _truncate_extra(extra: dict[str, Any]) -> dict[str, Any]:
     serialised = json.dumps(extra, default=str)
     if len(serialised) <= _MAX_EXTRA_SIZE:
         return extra
-    return {"_truncated": True, "_original_size": len(serialised),
-            "_keys": list(extra.keys())[:20]}
+    return {"_truncated": True, "_original_size": len(serialised), "_keys": list(extra.keys())[:20]}
 
 
-_BUILTIN_LOG_ATTRS = frozenset({
-    "name", "msg", "args", "created", "relativeCreated", "exc_info",
-    "exc_text", "stack_info", "lineno", "funcName", "pathname",
-    "filename", "module", "levelno", "levelname", "processName",
-    "process", "threadName", "thread", "msecs", "message",
-    "event_type", "taskName",
-})
+_BUILTIN_LOG_ATTRS = frozenset(
+    {
+        "name",
+        "msg",
+        "args",
+        "created",
+        "relativeCreated",
+        "exc_info",
+        "exc_text",
+        "stack_info",
+        "lineno",
+        "funcName",
+        "pathname",
+        "filename",
+        "module",
+        "levelno",
+        "levelname",
+        "processName",
+        "process",
+        "threadName",
+        "thread",
+        "msecs",
+        "message",
+        "event_type",
+        "taskName",
+    }
+)
 
 
 class _DevFormatter(logging.Formatter):
     """Coloured single-line formatter for development (no Rich dependency)."""
 
-    _COLORS = {
-        "DEBUG": "\033[36m",     # cyan
-        "INFO": "\033[32m",      # green
-        "WARNING": "\033[33m",   # yellow
-        "ERROR": "\033[31m",     # red
+    _COLORS: ClassVar[dict[str, str]] = {
+        "DEBUG": "\033[36m",  # cyan
+        "INFO": "\033[32m",  # green
+        "WARNING": "\033[33m",  # yellow
+        "ERROR": "\033[31m",  # red
         "CRITICAL": "\033[41m",  # red bg
     }
     _RESET = "\033[0m"
@@ -134,7 +153,8 @@ def setup_logging(
     if resolved_level not in _VALID_LEVELS:
         resolved_level = "INFO"
         logging.getLogger(__name__).warning(
-            "Invalid log level %r — falling back to INFO", level,
+            "Invalid log level %r — falling back to INFO",
+            level,
         )
 
     root = logging.getLogger()

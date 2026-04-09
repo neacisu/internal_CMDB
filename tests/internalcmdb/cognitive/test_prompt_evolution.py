@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -13,7 +14,6 @@ from internalcmdb.cognitive.prompt_evolution import (
     _extract_response_text,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -21,69 +21,80 @@ from internalcmdb.cognitive.prompt_evolution import (
 
 def _make_llm(improved_text: str = "improved prompt text") -> MagicMock:
     llm = MagicMock()
-    llm.reason = AsyncMock(return_value={
-        "choices": [{"message": {"content": improved_text}}],
-    })
+    llm.reason = AsyncMock(
+        return_value={
+            "choices": [{"message": {"content": improved_text}}],
+        }
+    )
     llm.guard_input = AsyncMock(return_value={"is_valid": True, "results": []})
     return llm
 
 
 def _row_mock(values: list[Any]) -> MagicMock:
     row = MagicMock()
-    for i, v in enumerate(values):
-        row.__getitem__ = lambda self, idx, vals=values: vals[idx]
-    row.__iter__ = lambda self: iter(values)
+
+    def _getitem(_self: Any, idx: int) -> Any:
+        return values[idx]
+
+    def _iter(_self: Any) -> Iterator[Any]:
+        return iter(values)
+
+    row.__getitem__ = _getitem
+    row.__iter__ = _iter
     return row
+
+
+def _make_execute_response(
+    call_count: int,
+    template_rows: list[Any] | None,
+    stats_row: tuple[Any, ...] | None,
+    corrections: list[tuple[Any, ...]] | None,
+    feedback_rows: list[Any] | None,
+    improvement_row: tuple[Any, ...] | None,
+) -> MagicMock:
+    """Build a mock DB result for the given sequential call number."""
+    result = MagicMock()
+    if call_count == 1:
+        result.fetchall.return_value = template_rows or []
+        result.fetchone.return_value = improvement_row
+    elif call_count == 2:
+        if stats_row:
+            result.fetchone.return_value = _row_mock(list(stats_row))
+        else:
+            result.fetchone.return_value = None
+    elif call_count == 3:
+        result.fetchall.return_value = list(corrections) if corrections else []
+    elif call_count == 4:
+        result.fetchone.return_value = improvement_row if improvement_row else None
+    else:
+        result.fetchone.return_value = stats_row
+        result.fetchall.return_value = feedback_rows or []
+    return result
 
 
 def _make_session(
     template_rows: list[Any] | None = None,
-    stats_row: tuple | None = None,
-    corrections: list[tuple] | None = None,
+    stats_row: tuple[Any, ...] | None = None,
+    corrections: list[tuple[Any, ...]] | None = None,
     feedback_rows: list[Any] | None = None,
-    improvement_row: tuple | None = None,
+    improvement_row: tuple[Any, ...] | None = None,
 ) -> MagicMock:
     session = MagicMock()
     call_count = 0
 
-    async def execute_se(stmt, params=None):
+    def execute_se(stmt: Any, params: Any = None) -> MagicMock:
         nonlocal call_count
         call_count += 1
-        result = MagicMock()
+        return _make_execute_response(
+            call_count, template_rows, stats_row, corrections, feedback_rows, improvement_row
+        )
 
-        if call_count == 1:
-            result.fetchall.return_value = template_rows or []
-            result.fetchone.return_value = improvement_row
-        elif call_count == 2:
-            if stats_row:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i, s=stats_row: s[i]
-                result.fetchone.return_value = row
-            else:
-                result.fetchone.return_value = None
-        elif call_count == 3:
-            result.fetchall.return_value = [
-                (ct, n) for ct, n in (corrections or [])
-            ]
-        elif call_count == 4:
-            if improvement_row:
-                result.fetchone.return_value = improvement_row
-            else:
-                result.fetchone.return_value = None
-        else:
-            result.fetchone.return_value = stats_row
-            result.fetchall.return_value = feedback_rows or []
-
-        return result
-
-    session.execute = execute_se
+    session.execute = AsyncMock(side_effect=execute_se)
     return session
 
 
 def _tmpl_row(tid: str = "tid-1", code: str = "tmpl-code", version: str = "1.0") -> MagicMock:
-    row = MagicMock()
-    row.__getitem__ = lambda self, i: [tid, code, version][i]
-    return row
+    return _row_mock([tid, code, version])
 
 
 # ---------------------------------------------------------------------------
@@ -105,21 +116,19 @@ class TestEvaluatePrompts:
         session = MagicMock()
         call_n = 0
 
-        async def execute_se(stmt, params=None):
+        def execute_se(stmt: Any, params: Any = None) -> MagicMock:
             nonlocal call_n
             call_n += 1
             result = MagicMock()
             if call_n == 1:
                 result.fetchall.return_value = [_tmpl_row()]
             elif call_n == 2:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i: (20, 0.95)[i]
-                result.fetchone.return_value = row
+                result.fetchone.return_value = _row_mock([20, 0.95])
             else:
                 result.fetchall.return_value = []
             return result
 
-        session.execute = execute_se
+        session.execute = AsyncMock(side_effect=execute_se)
         llm = _make_llm()
         engine = PromptEvolutionEngine(session, llm, accuracy_threshold=0.80)
         evaluations = await engine.evaluate_prompts()
@@ -131,21 +140,19 @@ class TestEvaluatePrompts:
         session = MagicMock()
         call_n = 0
 
-        async def execute_se(stmt, params=None):
+        def execute_se(stmt: Any, params: Any = None) -> MagicMock:
             nonlocal call_n
             call_n += 1
             result = MagicMock()
             if call_n == 1:
                 result.fetchall.return_value = [_tmpl_row()]
             elif call_n == 2:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i: (15, 0.50)[i]
-                result.fetchone.return_value = row
+                result.fetchone.return_value = _row_mock([15, 0.50])
             else:
                 result.fetchall.return_value = []
             return result
 
-        session.execute = execute_se
+        session.execute = AsyncMock(side_effect=execute_se)
         llm = _make_llm()
         engine = PromptEvolutionEngine(session, llm, accuracy_threshold=0.80)
         evaluations = await engine.evaluate_prompts()
@@ -156,21 +163,19 @@ class TestEvaluatePrompts:
         session = MagicMock()
         call_n = 0
 
-        async def execute_se(stmt, params=None):
+        def execute_se(stmt: Any, params: Any = None) -> MagicMock:
             nonlocal call_n
             call_n += 1
             result = MagicMock()
             if call_n == 1:
                 result.fetchall.return_value = [_tmpl_row()]
             elif call_n == 2:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i: (3, 0.40)[i]
-                result.fetchone.return_value = row
+                result.fetchone.return_value = _row_mock([3, 0.40])
             else:
                 result.fetchall.return_value = []
             return result
 
-        session.execute = execute_se
+        session.execute = AsyncMock(side_effect=execute_se)
         llm = _make_llm()
         engine = PromptEvolutionEngine(session, llm)
         evaluations = await engine.evaluate_prompts()
@@ -185,7 +190,7 @@ class TestEvaluatePrompts:
 
         tmpl_rows = [_tmpl_row(f"tid-{i}", f"code-{i}") for i in range(3)]
 
-        async def execute_se(stmt, params=None):
+        def execute_se(stmt: Any, params: Any = None) -> MagicMock:
             nonlocal call_n
             call_n += 1
             result = MagicMock()
@@ -194,14 +199,12 @@ class TestEvaluatePrompts:
             elif call_n % 2 == 0:
                 idx = (call_n - 2) // 2
                 acc = accuracies[idx] if idx < len(accuracies) else 1.0
-                row = MagicMock()
-                row.__getitem__ = lambda self, i, a=acc: (total, a)[i]
-                result.fetchone.return_value = row
+                result.fetchone.return_value = _row_mock([total, acc])
             else:
                 result.fetchall.return_value = []
             return result
 
-        session.execute = execute_se
+        session.execute = AsyncMock(side_effect=execute_se)
         llm = _make_llm()
         engine = PromptEvolutionEngine(session, llm)
         evaluations = await engine.evaluate_prompts()
@@ -231,25 +234,19 @@ class TestProposeImprovement:
         session = MagicMock()
         call_n = 0
 
-        async def execute_se(stmt, params=None):
+        def execute_se(stmt: Any, params: Any = None) -> MagicMock:
             nonlocal call_n
             call_n += 1
             result = MagicMock()
             if call_n == 1:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i: [
-                    "prompt text", "v1", "task", "tmpl-code"
-                ][i]
-                result.fetchone.return_value = row
+                result.fetchone.return_value = _row_mock(["prompt text", "v1", "task", "tmpl-code"])
             elif call_n == 2:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i: (3, 0.5)[i]
-                result.fetchone.return_value = row
+                result.fetchone.return_value = _row_mock([3, 0.5])
             else:
                 result.fetchall.return_value = []
             return result
 
-        session.execute = execute_se
+        session.execute = AsyncMock(side_effect=execute_se)
         llm = _make_llm()
         engine = PromptEvolutionEngine(session, llm)
         with pytest.raises(ValueError, match="Insufficient feedback samples"):
@@ -260,30 +257,22 @@ class TestProposeImprovement:
         session = MagicMock()
         call_n = 0
 
-        async def execute_se(stmt, params=None):
+        def execute_se(stmt: Any, params: Any = None) -> MagicMock:
             nonlocal call_n
             call_n += 1
             result = MagicMock()
             if call_n == 1:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i: [
-                    "prompt text", "v1", "task", "tmpl-code"
-                ][i]
-                result.fetchone.return_value = row
+                result.fetchone.return_value = _row_mock(["prompt text", "v1", "task", "tmpl-code"])
             elif call_n == 2:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i: (20, 0.60)[i]
-                result.fetchone.return_value = row
-            elif call_n == 3:
-                result.fetchall.return_value = []
-            elif call_n == 4:
+                result.fetchone.return_value = _row_mock([20, 0.60])
+            elif call_n in {3, 4}:
                 result.fetchall.return_value = []
             else:
                 result.fetchone.return_value = None
                 result.fetchall.return_value = []
             return result
 
-        session.execute = execute_se
+        session.execute = AsyncMock(side_effect=execute_se)
         llm = _make_llm(improved_text="new improved prompt")
         engine = PromptEvolutionEngine(session, llm)
         out = await engine.propose_improvement("tmpl-code", submit_hitl=False)
@@ -296,25 +285,19 @@ class TestProposeImprovement:
         session = MagicMock()
         call_n = 0
 
-        async def execute_se(stmt, params=None):
+        def execute_se(stmt: Any, params: Any = None) -> MagicMock:
             nonlocal call_n
             call_n += 1
             result = MagicMock()
             if call_n == 1:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i: [
-                    "prompt text", "v1", "task", "tmpl-code"
-                ][i]
-                result.fetchone.return_value = row
+                result.fetchone.return_value = _row_mock(["prompt text", "v1", "task", "tmpl-code"])
             elif call_n == 2:
-                row = MagicMock()
-                row.__getitem__ = lambda self, i: (20, 0.60)[i]
-                result.fetchone.return_value = row
+                result.fetchone.return_value = _row_mock([20, 0.60])
             else:
                 result.fetchall.return_value = []
             return result
 
-        session.execute = execute_se
+        session.execute = AsyncMock(side_effect=execute_se)
         llm = _make_llm()
         llm.guard_input = AsyncMock(return_value={"is_valid": False, "results": ["toxic"]})
         engine = PromptEvolutionEngine(session, llm)

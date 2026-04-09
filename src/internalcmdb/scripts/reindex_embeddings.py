@@ -67,7 +67,9 @@ def _fetch_stale_rows(
         ORDER  BY ce.created_at
         LIMIT  :batch_size
     """)
-    rows = conn.execute(query, {"target_dim": _TARGET_DIM, "batch_size": batch_size}).mappings().all()
+    rows = (
+        conn.execute(query, {"target_dim": _TARGET_DIM, "batch_size": batch_size}).mappings().all()
+    )
     return [dict(r) for r in rows]
 
 
@@ -140,7 +142,7 @@ def _persist_vectors(
     updated = 0
     skipped = 0
     with engine.connect() as conn:
-        for cid, vec in zip(ids, vectors):
+        for cid, vec in zip(ids, vectors, strict=False):
             if len(vec) != _TARGET_DIM:
                 print(f"  SKIP {cid}: vector dim {len(vec)} != {_TARGET_DIM}", file=sys.stderr)
                 skipped += 1
@@ -171,7 +173,10 @@ async def _reindex(engine: sa.engine.Engine) -> None:
 
             t0 = time.perf_counter()
             vectors, consecutive_failures = await _embed_batch(
-                llm, texts, batch_num, consecutive_failures,
+                llm,
+                texts,
+                batch_num,
+                consecutive_failures,
             )
 
             if vectors is None:
@@ -192,10 +197,7 @@ async def _reindex(engine: sa.engine.Engine) -> None:
                 f"-- embed took {elapsed:.2f}s"
             )
 
-        print(
-            f"\nDone. Total rows re-indexed: {total_processed}, "
-            f"skipped: {total_skipped}"
-        )
+        print(f"\nDone. Total rows re-indexed: {total_processed}, skipped: {total_skipped}")
 
 
 def main() -> None:

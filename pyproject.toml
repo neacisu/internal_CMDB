@@ -37,6 +37,9 @@ dependencies = [
   "opentelemetry-instrumentation-sqlalchemy>=0.49b",
   "slowapi>=0.1.9",
   "hvac>=2.3",
+  "PyJWT>=2.9",
+  "argon2-cffi>=23.1.0",
+  "pydantic[email]>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -49,7 +52,12 @@ dev = [
   "pytest>=8.4.2",
   "pytest-cov>=7.0.0",
   "ruff>=0.12.12",
+  # semgrep is intentionally NOT listed here: it pulls opentelemetry 0.58b0
+  # which conflicts with the app stack (0.61b0+). Install it in isolation:
+  #   python3 -m venv /opt/semgrep-venv && /opt/semgrep-venv/bin/pip install semgrep
+  #   ln -sf /opt/semgrep-venv/bin/semgrep /usr/local/bin/semgrep
   "types-PyYAML>=6.0",
+  "types-requests>=2.32",
   "types-setuptools>=80.9.0.20250822",
   "locust>=2.29",
   "pytest-asyncio>=0.24",
@@ -212,7 +220,21 @@ ignored-classes = ["MagicMock"]
 typeCheckingMode = "strict"
 reportPrivateUsage = "none"
 reportMissingTypeStubs = "none"
-extraPaths = ["subprojects"]
+# SQLAlchemy's DeclarativeBase declares __table_args__ as an instance variable
+# (type: Any) in its source .py file (no .pyi stubs ship with SQLAlchemy).
+# Every ORM model in this codebase correctly annotates __table_args__ as
+# ClassVar[...], which is the only type-safe approach — but Pylance strict
+# mode sees the ClassVar annotation as overriding an instance variable from
+# DeclarativeBase, producing reportIncompatibleVariableOverride.
+# This is a known Pylance/SQLAlchemy incompatibility; suppressed project-wide.
+reportIncompatibleVariableOverride = "none"
+# "src" must be listed so Pylance resolves internalcmdb.* directly from src/
+# without the src. prefix, matching the editable-install .pth that puts
+# src/ on sys.path.  Without this, Pylance maps workspace files as
+# src.internalcmdb.* while TYPE_CHECKING imports resolve internalcmdb.*,
+# causing spurious reportAssignmentType / reportArgumentType errors on
+# invariant list[AssembledItem] across the two artificial namespaces.
+extraPaths = ["subprojects", "src"]
 
 [tool.pylint."MESSAGES CONTROL"]
 disable = [

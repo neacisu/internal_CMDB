@@ -107,10 +107,7 @@ def upgrade() -> None:
         """)
     )
     op.execute(
-        sa.text(
-            f"CREATE INDEX ix_app_setting_group "
-            f"ON {_CONFIG}.app_setting (setting_group)"
-        )
+        sa.text(f"CREATE INDEX ix_app_setting_group ON {_CONFIG}.app_setting (setting_group)")
     )
 
     # config.notification_channel — outbound webhook channels
@@ -152,10 +149,7 @@ def upgrade() -> None:
         """)
     )
     op.execute(
-        sa.text(
-            f"CREATE INDEX ix_user_preference_user "
-            f"ON {_CONFIG}.user_preference (user_id)"
-        )
+        sa.text(f"CREATE INDEX ix_user_preference_user ON {_CONFIG}.user_preference (user_id)")
     )
 
 
@@ -164,10 +158,5 @@ def downgrade() -> None:
     op.execute(sa.text(f"DROP TABLE IF EXISTS {_CONFIG}.notification_channel"))
     op.execute(sa.text(f"DROP TABLE IF EXISTS {_CONFIG}.app_setting"))
     op.execute(sa.text(f"DROP SCHEMA IF EXISTS {_CONFIG}"))
-    op.execute(
-        sa.text(
-            f"ALTER TABLE {_COGNITIVE}.insight "
-            f"DROP COLUMN IF EXISTS evidence"
-        )
-    )
+    op.execute(sa.text(f"ALTER TABLE {_COGNITIVE}.insight DROP COLUMN IF EXISTS evidence"))
     op.execute(sa.text(f"DROP TABLE IF EXISTS {_COGNITIVE}.self_heal_action"))

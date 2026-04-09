@@ -16,7 +16,8 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any
+from collections.abc import Callable
+from typing import Any, ParamSpec, TypeVar, cast
 
 from fastapi import Request, Response
 from slowapi import Limiter
@@ -24,13 +25,15 @@ from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
-_EXEMPT_PATHS = frozenset({
-    "/health",
-    "/metrics",
-    "/api/docs",
-    "/api/redoc",
-    "/api/openapi.json",
-})
+_EXEMPT_PATHS = frozenset(
+    {
+        "/health",
+        "/metrics",
+        "/api/docs",
+        "/api/redoc",
+        "/api/openapi.json",
+    }
+)
 
 
 def _key_func(request: Request) -> str:
@@ -78,9 +81,12 @@ def _safe_build_storage_uri() -> str | None:
     if uri is None:
         return None
     try:
-        import redis as _redis  # noqa: PLC0415
-        client = _redis.from_url(uri, socket_connect_timeout=3)
-        client.ping()
+        from redis import Redis as _Redis  # noqa: PLC0415
+
+        client = _Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
+            uri, socket_connect_timeout=3
+        )
+        client.ping()  # pyright: ignore[reportUnknownMemberType]
         test_key = "internalcmdb:rate_limit:probe"
         client.set(test_key, "1", ex=10)
         client.delete(test_key)
@@ -101,7 +107,38 @@ limiter = Limiter(
     default_limits=["200/minute"],
 )
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def rate_limit(limit_string: str) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
+    """Type-safe wrapper around slowapi Limiter.limit() for Pylance compatibility.
+
+    slowapi does not ship complete PEP 561 stubs — ``Limiter.limit()`` returns
+    a decorator whose type is ``Unknown`` to Pylance, triggering both
+    ``reportUntypedFunctionDecorator`` and ``reportUnknownMemberType`` in
+    strict-mode analysis.  This wrapper absorbs the single suppression comment
+    and re-exports a fully-typed ``Callable`` that preserves the decorated
+    function's complete signature via ``ParamSpec``.
+    """
+    # cast() overrides Pylance's inference at the assignment site — the only
+    # correct tool when a third-party call returns Unknown due to incomplete
+    # PEP 561 stubs.  The pyright suppression on the inner call covers
+    # reportUnknownMemberType; cast() covers reportUnknownVariableType by
+    # telling Pylance the concrete type we know the decorator to have.
+    raw_decorator = cast(
+        Callable[[Callable[_P, _R]], Callable[_P, _R]],
+        limiter.limit(limit_string),  # pyright: ignore[reportUnknownMemberType]
+    )
+
+    def _typed_decorator(func: Callable[_P, _R]) -> Callable[_P, _R]:
+        return raw_decorator(func)
+
+    return _typed_decorator
+
+
 RATE_LIMITS: dict[str, str] = {
+    "/api/v1/auth/login": "10/minute",
     "/api/v1/collectors/ingest": "60/minute",
     "/api/v1/cognitive/query": "10/minute",
     "/api/v1/hitl/bulk-decide": "5/minute",
@@ -113,7 +150,10 @@ def rate_limit_exceeded_handler(_request: Request, exc: RateLimitExceeded) -> Re
     retry_match = re.search(r"(\d+) per (\d+) (\w+)", str(exc.detail))
     if retry_match:
         window_seconds = {
-            "second": 1, "minute": 60, "hour": 3600, "day": 86400,
+            "second": 1,
+            "minute": 60,
+            "hour": 3600,
+            "day": 86400,
         }.get(retry_match.group(3), 60)
         retry_after = str(int(retry_match.group(2)) * window_seconds)
     else:
@@ -130,4 +170,4 @@ def rate_limit_exceeded_handler(_request: Request, exc: RateLimitExceeded) -> Re
 
 def get_rate_limit_decorators() -> dict[str, Any]:
     """Return a mapping of path → limiter.limit decorator for router-level use."""
-    return {path: limiter.limit(limit) for path, limit in RATE_LIMITS.items()}
+    return {path: limiter.limit(limit) for path, limit in RATE_LIMITS.items()}  # pyright: ignore[reportUnknownMemberType]

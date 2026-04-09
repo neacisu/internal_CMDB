@@ -23,19 +23,23 @@ import math
 import statistics
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 # Sub-score weight: each factor has a maximum of 25 points.
 _MAX_FACTOR_SCORE = 25
 
+# Fleet health score thresholds
+_SCORE_HEALTHY_THRESHOLD = 80  # score > this → healthy status
+_SCORE_WARNING_THRESHOLD = 60  # score >= this (and <= healthy) → warning status
+
 # Thresholds (percentage utilisation → sub-score mapping).
 # Lower utilisation → higher health sub-score.
 _UTIL_BREAKPOINTS: list[tuple[float, float]] = [
-    (0.0, 1.0),    # 0 % utilisation → 100 % of max factor score
-    (50.0, 0.9),   # 50 % → 90 %
-    (70.0, 0.7),   # 70 % → 70 %
-    (85.0, 0.4),   # 85 % → 40 %
-    (95.0, 0.1),   # 95 % → 10 %
+    (0.0, 1.0),  # 0 % utilisation → 100 % of max factor score
+    (50.0, 0.9),  # 50 % → 90 %
+    (70.0, 0.7),  # 70 % → 70 %
+    (85.0, 0.4),  # 85 % → 40 %
+    (95.0, 0.1),  # 95 % → 10 %
     (100.0, 0.0),  # 100 % → 0
 ]
 
@@ -47,7 +51,7 @@ class HealthScore:
     Attributes:
         entity_id:    Identifier of the scored entity.
         entity_type:  ``"host"`` or other entity kind code.
-        score:        Composite health score (0–100).
+        score:        Composite health score (0-100).
         breakdown:    Per-factor score mapping.
         timestamp:    ISO-8601 timestamp of when the score was computed.
     """
@@ -66,7 +70,7 @@ class FleetHealthScore:
     Attributes:
         total_hosts:    Number of hosts scored.
         healthy_count:  Hosts with score > 80.
-        warning_count:  Hosts with score 60–80.
+        warning_count:  Hosts with score 60-80.
         critical_count: Hosts with score < 60.
         average_score:  Mean score across the fleet.
         min_score:      Lowest individual score.
@@ -82,7 +86,7 @@ class FleetHealthScore:
     average_score: float
     min_score: int
     max_score: int
-    host_scores: list[HealthScore] = field(default_factory=list)
+    host_scores: list[HealthScore] = field(default_factory=lambda: cast(list[HealthScore], []))
     timestamp: str = ""
 
 
@@ -94,12 +98,12 @@ class HealthScorer:
 
         Expected keys in *host_data*:
             - ``host_id`` or ``entity_id`` (str)
-            - ``cpu_usage_pct`` (float, 0–100)
-            - ``memory_usage_pct`` (float, 0–100)
-            - ``disk_usage_pct`` (float, 0–100)
+            - ``cpu_usage_pct`` (float, 0-100)
+            - ``memory_usage_pct`` (float, 0-100)
+            - ``disk_usage_pct`` (float, 0-100)
             - ``services_total`` (int)
             - ``services_healthy`` (int)
-            - ``gpu_usage_pct`` (float, 0–100, optional — only for GPU hosts)
+            - ``gpu_usage_pct`` (float, 0-100, optional — only for GPU hosts)
             - ``is_gpu_capable`` (bool, optional)
         """
         entity_id = str(host_data.get("host_id") or host_data.get("entity_id", "unknown"))
@@ -179,9 +183,11 @@ class HealthScorer:
             )
 
         values = [s.score for s in scores]
-        healthy = sum(1 for v in values if v > 80)
-        warning = sum(1 for v in values if 60 <= v <= 80)
-        critical = sum(1 for v in values if v < 60)
+        healthy = sum(1 for v in values if v > _SCORE_HEALTHY_THRESHOLD)
+        warning = sum(
+            1 for v in values if _SCORE_WARNING_THRESHOLD <= v <= _SCORE_HEALTHY_THRESHOLD
+        )
+        critical = sum(1 for v in values if v < _SCORE_WARNING_THRESHOLD)
 
         return FleetHealthScore(
             total_hosts=len(scores),
@@ -207,7 +213,7 @@ class HealthScorer:
             return 0.0
         try:
             val = float(raw)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             missing.append(name)
             return 0.0
         if math.isnan(val) or math.isinf(val):
@@ -217,7 +223,7 @@ class HealthScorer:
 
     @staticmethod
     def _utilisation_subscore(usage_pct: float) -> int:
-        """Map a utilisation percentage (0–100) to a sub-score (0–25).
+        """Map a utilisation percentage (0-100) to a sub-score (0-25).
 
         Uses linear interpolation between breakpoints.
         """
@@ -237,7 +243,7 @@ class HealthScorer:
 
     @staticmethod
     def _service_subscore(total: int, healthy: int) -> int:
-        """Service health sub-score (0–25) based on healthy/total ratio."""
+        """Service health sub-score (0-25) based on healthy/total ratio."""
         if total <= 0:
             return _MAX_FACTOR_SCORE
         ratio = max(0.0, min(1.0, healthy / total))
@@ -245,8 +251,8 @@ class HealthScorer:
 
     @staticmethod
     def _status_label(score: int) -> str:
-        if score > 80:
+        if score > _SCORE_HEALTHY_THRESHOLD:
             return "healthy"
-        if score >= 60:
+        if score >= _SCORE_WARNING_THRESHOLD:
             return "warning"
         return "critical"

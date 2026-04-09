@@ -40,10 +40,14 @@ INJECTION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\[INST\]|\[/INST\]|<\|im_start\|>|<\|im_end\|>"),
     re.compile(r"```\s*(?:system|assistant)\s*\n", re.IGNORECASE),
     re.compile(r"do\s+not\s+follow\s+(?:any|the)\s+(?:rules|guidelines)", re.IGNORECASE),
-    re.compile(r"override\s+(?:all\s+)?(?:safety|security|content)\s+(?:filter|policy)", re.IGNORECASE),
+    re.compile(
+        r"override\s+(?:all\s+)?(?:safety|security|content)\s+(?:filter|policy)", re.IGNORECASE
+    ),
     re.compile(r"repeat\s+(?:the\s+)?(?:system|initial)\s+(?:prompt|instruction)", re.IGNORECASE),
     re.compile(r"act\s+as\s+(?:if\s+)?(?:you\s+(?:are|were)|a)\s+", re.IGNORECASE),
-    re.compile(r"(?:reveal|show|print|output)\s+(?:the\s+)?(?:system|hidden)\s+prompt", re.IGNORECASE),
+    re.compile(
+        r"(?:reveal|show|print|output)\s+(?:the\s+)?(?:system|hidden)\s+prompt", re.IGNORECASE
+    ),
     re.compile(r"<\s*/?(?:script|iframe|object|embed)\s*", re.IGNORECASE),
     re.compile(r"(?:base64|eval|exec)\s*\(", re.IGNORECASE),
 ]
@@ -133,14 +137,16 @@ class RAGContentIntegrityChecker:
                         recommendation=_recommendation_for_severity(severity),
                     )
 
-                    findings.append({
-                        "chunk_index": finding.chunk_index,
-                        "pattern": finding.pattern_matched,
-                        "severity": finding.severity,
-                        "snippet": finding.snippet,
-                        "recommendation": finding.recommendation,
-                        "detected_at": datetime.now(tz=UTC).isoformat(),
-                    })
+                    findings.append(
+                        {
+                            "chunk_index": finding.chunk_index,
+                            "pattern": finding.pattern_matched,
+                            "severity": finding.severity,
+                            "snippet": finding.snippet,
+                            "recommendation": finding.recommendation,
+                            "detected_at": datetime.now(tz=UTC).isoformat(),
+                        }
+                    )
 
                     logger.warning(
                         "Injection pattern in chunk %d: severity=%s pattern=%s",

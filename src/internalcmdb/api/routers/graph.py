@@ -41,8 +41,7 @@ async def full_topology(
         kept_ids = {n["id"] for n in data["nodes"][:limit]}
         data["nodes"] = data["nodes"][:limit]
         data["edges"] = [
-            e for e in data["edges"]
-            if e["source"] in kept_ids and e["target"] in kept_ids
+            e for e in data["edges"] if e["source"] in kept_ids and e["target"] in kept_ids
         ]
         data["truncated"] = True
         data["total_nodes"] = kg._graph.number_of_nodes()
@@ -101,15 +100,17 @@ async def critical_paths(
     for nid, data in g.nodes(data=True):
         in_deg = g.in_degree(nid)
         out_deg = g.out_degree(nid)
-        if in_deg + out_deg >= 2:
-            critical.append({
-                "entity_id": nid,
-                "kind": data.get("kind", "unknown"),
-                "label": data.get("label", ""),
-                "in_degree": in_deg,
-                "out_degree": out_deg,
-                "total_connections": in_deg + out_deg,
-            })
+        if in_deg + out_deg >= 2:  # noqa: PLR2004
+            critical.append(
+                {
+                    "entity_id": nid,
+                    "kind": data.get("kind", "unknown"),
+                    "label": data.get("label", ""),
+                    "in_degree": in_deg,
+                    "out_degree": out_deg,
+                    "total_connections": in_deg + out_deg,
+                }
+            )
 
     critical.sort(key=lambda x: x["total_connections"], reverse=True)
     return {"critical_nodes": critical[:50]}

@@ -2,21 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from internalcmdb.motor.chaos import (
+    _MAX_BLAST_RADIUS_COMPONENTS,
+    _MAX_CONCURRENT_EXPERIMENTS,
     EXPERIMENTS,
     ChaosEngine,
     ChaosResult,
     ExperimentState,
-    _MAX_BLAST_RADIUS_COMPONENTS,
-    _MAX_CONCURRENT_EXPERIMENTS,
-    _PRODUCTION_TARGETS,
 )
-
 
 # ---------------------------------------------------------------------------
 # Tests: EXPERIMENTS dict
@@ -342,7 +339,7 @@ class TestChaosPerHostLock:
     @pytest.mark.asyncio
     async def test_host_lock_released_after_run(self) -> None:
         engine = ChaosEngine()
-        result = await engine.run_experiment("cpu_stress", "host-03", dry_run=True)
+        await engine.run_experiment("cpu_stress", "host-03", dry_run=True)
 
         assert "host-03" not in engine._host_locks
 

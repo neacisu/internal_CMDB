@@ -29,9 +29,10 @@ function createWrapper() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
   });
-  return ({ children }: Readonly<{ children: React.ReactNode }>) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-  );
+  function TestWrapper({ children }: Readonly<{ children: React.ReactNode }>) {
+    return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+  }
+  return TestWrapper;
 }
 
 const mockHost: HostDetail = {
@@ -64,7 +65,7 @@ const mockVitals: FleetVital[] = [
     memory_pct: 42,
     memory_total_gb: 16,
     disk_root_pct: 55,
-    load_avg: [1.2, 1.0, 0.8],
+    load_avg: [1.2, 1, 0.8],
     containers_running: 3,
     containers_total: 5,
     last_heartbeat_at: "2026-03-26T10:00:00Z",

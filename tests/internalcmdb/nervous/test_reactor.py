@@ -1,17 +1,18 @@
 """Tests for nervous.reactor — ReactiveLoop."""
+
 from __future__ import annotations
+
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
+
 import pytest
+
 from internalcmdb.nervous.event_bus import Event
 from internalcmdb.nervous.reactor import (
-    CONSUMER_GROUP,
-    CONSUMER_NAME,
     STREAM_CONSCIOUSNESS_ALERT,
     STREAM_CORTEX_ANOMALY,
     STREAM_IMMUNE_HITL,
     STREAM_MOTOR_ACTION,
-    STREAM_SENSOR_INGEST,
     ReactiveLoop,
 )
 from internalcmdb.retrieval.task_types import RiskClass
@@ -189,7 +190,7 @@ async def test_handle_event_safely_error_increments_counter():
 
 @pytest.mark.asyncio
 async def test_handle_event_safely_success_increments_processed():
-    rl, bus = _loop()
+    rl, _bus = _loop()
     evt = _make_event("ingest")
     evt.redis_message_id = "msg-001"
     await rl._handle_event_safely(evt)
@@ -232,6 +233,6 @@ def test_resolve_risk_class_enum_instance():
 
 @pytest.mark.asyncio
 async def test_run_exits_when_shutdown_set():
-    rl, bus = _loop()
+    rl, _bus = _loop()
     rl.request_shutdown()
     await asyncio.wait_for(rl.run(), timeout=2.0)

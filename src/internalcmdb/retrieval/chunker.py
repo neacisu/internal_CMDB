@@ -46,14 +46,34 @@ _CHARS_PER_TOKEN: int = 4  # conservative BPE estimate for mixed prose/YAML
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)", re.MULTILINE)
 
-_SUPPORTED_FORMATS: frozenset[str] = frozenset({
-    ".md", ".markdown", ".txt", ".rst", ".yaml", ".yml", ".json", ".toml",
-    ".cfg", ".ini", ".csv", ".log", ".py", ".sh", ".sql",
-})
+_SUPPORTED_FORMATS: frozenset[str] = frozenset(
+    {
+        ".md",
+        ".markdown",
+        ".txt",
+        ".rst",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".toml",
+        ".cfg",
+        ".ini",
+        ".csv",
+        ".log",
+        ".py",
+        ".sh",
+        ".sql",
+    }
+)
 
 _BINARY_SIGNATURE_BYTES = (
-    b"%PDF", b"\x89PNG", b"\xff\xd8\xff", b"PK\x03\x04",
-    b"\x1f\x8b", b"\x00\x00\x01\x00", b"GIF8",
+    b"%PDF",
+    b"\x89PNG",
+    b"\xff\xd8\xff",
+    b"PK\x03\x04",
+    b"\x1f\x8b",
+    b"\x00\x00\x01\x00",
+    b"GIF8",
 )
 
 

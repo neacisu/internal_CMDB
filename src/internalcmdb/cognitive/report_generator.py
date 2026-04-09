@@ -153,16 +153,18 @@ class ReportGenerator:
             data_summary,
         )
 
-        return _FLEET_TEMPLATE.format_map({
-            "timestamp": ts,
-            "total_hosts": len(hosts),
-            "active_hosts": sum(1 for h in hosts if h.get("is_active")),
-            "total_services": len(services),
-            "active_services": sum(1 for s in services if s.get("is_active")),
-            "host_details": host_details,
-            "observations": observations or "_No recent observations._",
-            "llm_analysis": llm_analysis,
-        })
+        return _FLEET_TEMPLATE.format_map(
+            {
+                "timestamp": ts,
+                "total_hosts": len(hosts),
+                "active_hosts": sum(1 for h in hosts if h.get("is_active")),
+                "total_services": len(services),
+                "active_services": sum(1 for s in services if s.get("is_active")),
+                "host_details": host_details,
+                "observations": observations or "_No recent observations._",
+                "llm_analysis": llm_analysis,
+            }
+        )
 
     async def generate_security_report(self) -> str:
         """Generate a security posture report in markdown."""
@@ -176,7 +178,8 @@ class ReportGenerator:
 
         security_observations = self._format_facts_summary(security_facts)
         critical_count = sum(
-            1 for f in security_facts
+            1
+            for f in security_facts
             if f.get("fact_key", "").startswith("critical")
             or "vulnerability" in f.get("fact_key", "").lower()
         )
@@ -200,15 +203,18 @@ class ReportGenerator:
             data_summary,
         )
 
-        return _SECURITY_TEMPLATE.format_map({
-            "timestamp": ts,
-            "hosts_audited": len(hosts),
-            "security_facts_count": len(security_facts),
-            "critical_count": critical_count,
-            "security_observations": security_observations or "_No security observations found._",
-            "risk_assessment": risk_assessment,
-            "recommendations": recommendations,
-        })
+        return _SECURITY_TEMPLATE.format_map(
+            {
+                "timestamp": ts,
+                "hosts_audited": len(hosts),
+                "security_facts_count": len(security_facts),
+                "critical_count": critical_count,
+                "security_observations": security_observations
+                or "_No security observations found._",
+                "risk_assessment": risk_assessment,
+                "recommendations": recommendations,
+            }
+        )
 
     async def generate_capacity_report(self) -> str:
         """Generate a capacity planning report in markdown."""
@@ -242,14 +248,16 @@ class ReportGenerator:
             data_summary,
         )
 
-        return _CAPACITY_TEMPLATE.format_map({
-            "timestamp": ts,
-            "total_hosts": len(hosts),
-            "capacity_facts_count": len(capacity_facts),
-            "resource_utilisation": resource_utilisation or "_No capacity data available._",
-            "growth_trends": growth_trends,
-            "capacity_recommendations": capacity_recommendations,
-        })
+        return _CAPACITY_TEMPLATE.format_map(
+            {
+                "timestamp": ts,
+                "total_hosts": len(hosts),
+                "capacity_facts_count": len(capacity_facts),
+                "resource_utilisation": resource_utilisation or "_No capacity data available._",
+                "growth_trends": growth_trends,
+                "capacity_recommendations": capacity_recommendations,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Data fetching
@@ -356,7 +364,7 @@ class ReportGenerator:
             entity = str(f.get("entity_id", "?"))[:12]
             lines.append(f"- **{ns}.{key}** (entity: {entity}…): {_truncate_value(val)}")
 
-        if len(facts) > 30:
+        if len(facts) > 30:  # noqa: PLR2004
             lines.append(f"- _… and {len(facts) - 30} more observations._")
 
         return "\n".join(lines)
@@ -400,7 +408,8 @@ class ReportGenerator:
 
         try:
             guard_result = await self._llm.guard_output(
-                prompt=instruction, output=content,
+                prompt=instruction,
+                output=content,
             )
             if guard_result.get("is_valid") is False:
                 sanitized = guard_result.get("sanitized_output", "")

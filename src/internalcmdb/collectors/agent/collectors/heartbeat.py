@@ -10,6 +10,27 @@ from typing import Any
 _boot_time_ref: list[float] = []  # populated on first macOS fallback call
 
 
+def _read_macos_boot_epoch() -> float:
+    """Return the macOS boot epoch (seconds since Unix epoch) via ``sysctl``.
+
+    Output format: ``{ sec = 1710000000, usec = 0 } ...``
+    Falls back to ``time.time()`` if the epoch cannot be parsed.
+    """
+    out = subprocess.run(
+        ["sysctl", "-n", "kern.boottime"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    for part in out.split(","):
+        if "sec" in part:
+            try:
+                return float(part.split("=")[1].strip().rstrip("}"))
+            except ValueError:
+                break
+    return time.time()
+
+
 def _read_uptime() -> float:
     """Return system uptime in seconds."""
     try:
@@ -18,19 +39,7 @@ def _read_uptime() -> float:
     except FileNotFoundError:
         # macOS fallback — cache boot epoch in a mutable container (avoids global)
         if not _boot_time_ref:
-            out = subprocess.run(
-                ["sysctl", "-n", "kern.boottime"],
-                capture_output=True,
-                text=True,
-                check=False,
-            ).stdout
-            # Format: { sec = 1710000000, usec = 0 } ...
-            boot_sec: float | None = None
-            for part in out.split(","):
-                if "sec" in part:
-                    boot_sec = float(part.split("=")[1].strip().rstrip("}"))
-                    break
-            _boot_time_ref.append(boot_sec if boot_sec is not None else time.time())
+            _boot_time_ref.append(_read_macos_boot_epoch())
         return time.time() - _boot_time_ref[0]
 
 

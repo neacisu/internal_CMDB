@@ -63,6 +63,7 @@ interface AuditStats {
 async function fetchEvents(params: string): Promise<AuditEventsResponse> {
   const res = await fetch(`${BASE}/audit/events?${params}`, {
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
   });
   if (!res.ok) return { items: [], meta: { page: 1, page_size: 50, total: 0 } };
   return res.json();
@@ -71,6 +72,7 @@ async function fetchEvents(params: string): Promise<AuditEventsResponse> {
 async function fetchStats(): Promise<AuditStats> {
   const res = await fetch(`${BASE}/audit/stats`, {
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
   });
   if (!res.ok) throw new Error("Failed to load stats");
   return res.json();
@@ -187,7 +189,7 @@ function StatsTab() {
           <CardContent className="flex flex-col gap-2">
             {stats.actor_breakdown.map((a) => (
               <div key={a.actor} className="flex items-center justify-between">
-                <span className="text-xs truncate max-w-[180px]" style={{ fontFamily: "var(--fM)" }}>{a.actor ?? "anonymous"}</span>
+                <span className="text-xs truncate max-w-45" style={{ fontFamily: "var(--fM)" }}>{a.actor ?? "anonymous"}</span>
                 <span className="text-xs" style={{ fontFamily: "var(--fM)" }}>{a.count.toLocaleString()}</span>
               </div>
             ))}
@@ -310,7 +312,7 @@ function EventsTab() {
                         {timeAgo(e.created_at)}
                       </TableCell>
                       <TableCell className="text-xs">{e.actor ?? "anonymous"}</TableCell>
-                      <TableCell className="text-xs max-w-[260px] truncate" style={{ fontFamily: "var(--fM)" }}>
+                      <TableCell className="text-xs max-w-65 truncate" style={{ fontFamily: "var(--fM)" }}>
                         {e.action}
                       </TableCell>
                       <TableCell>

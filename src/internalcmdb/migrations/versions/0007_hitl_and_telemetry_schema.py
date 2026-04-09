@@ -35,17 +35,6 @@ _GOVERNANCE = "governance"
 _TELEMETRY = "telemetry"
 
 
-def _current_month_bounds() -> tuple[str, str]:
-    """Return (start, end) date strings for the current calendar month."""
-    now = datetime.now(tz=UTC)
-    start = now.strftime("%Y-%m-01")
-    if now.month == 12:
-        end = f"{now.year + 1}-01-01"
-    else:
-        end = f"{now.year}-{now.month + 1:02d}-01"
-    return start, end
-
-
 def upgrade() -> None:
     # ── governance schema ───────────────────────────────────────────────
     op.execute(sa.text(f"CREATE SCHEMA IF NOT EXISTS {_GOVERNANCE}"))
@@ -78,15 +67,9 @@ def upgrade() -> None:
         """)
     )
 
+    op.execute(sa.text(f"CREATE INDEX ix_hitl_item_status ON {_GOVERNANCE}.hitl_item (status)"))
     op.execute(
-        sa.text(
-            f"CREATE INDEX ix_hitl_item_status ON {_GOVERNANCE}.hitl_item (status)"
-        )
-    )
-    op.execute(
-        sa.text(
-            f"CREATE INDEX ix_hitl_item_risk_class ON {_GOVERNANCE}.hitl_item (risk_class)"
-        )
+        sa.text(f"CREATE INDEX ix_hitl_item_risk_class ON {_GOVERNANCE}.hitl_item (risk_class)")
     )
     op.execute(
         sa.text(
@@ -114,9 +97,7 @@ def upgrade() -> None:
     )
 
     op.execute(
-        sa.text(
-            f"CREATE INDEX ix_hitl_feedback_item ON {_GOVERNANCE}.hitl_feedback (hitl_item_id)"
-        )
+        sa.text(f"CREATE INDEX ix_hitl_feedback_item ON {_GOVERNANCE}.hitl_feedback (hitl_item_id)")
     )
 
     # -- audit_event -----------------------------------------------------
@@ -147,11 +128,7 @@ def upgrade() -> None:
             f"CREATE INDEX ix_audit_event_created ON {_GOVERNANCE}.audit_event (created_at DESC)"
         )
     )
-    op.execute(
-        sa.text(
-            f"CREATE INDEX ix_audit_event_actor ON {_GOVERNANCE}.audit_event (actor)"
-        )
-    )
+    op.execute(sa.text(f"CREATE INDEX ix_audit_event_actor ON {_GOVERNANCE}.audit_event (actor)"))
     op.execute(
         sa.text(
             f"CREATE INDEX ix_audit_event_correlation ON {_GOVERNANCE}.audit_event (correlation_id)"
@@ -178,12 +155,12 @@ def upgrade() -> None:
 
     op.execute(
         sa.text(
-            f"CREATE INDEX ix_metric_point_host ON {_TELEMETRY}.metric_point (host_id, collected_at DESC)"
+            f"CREATE INDEX ix_metric_point_host ON {_TELEMETRY}.metric_point (host_id, collected_at DESC)"  # noqa: E501
         )
     )
     op.execute(
         sa.text(
-            f"CREATE INDEX ix_metric_point_name ON {_TELEMETRY}.metric_point (metric_name, collected_at DESC)"
+            f"CREATE INDEX ix_metric_point_name ON {_TELEMETRY}.metric_point (metric_name, collected_at DESC)"  # noqa: E501
         )
     )
 
@@ -193,14 +170,11 @@ def upgrade() -> None:
     for month_offset in (0, 1):
         m = now.month + month_offset
         y = now.year
-        if m > 12:
+        if m > 12:  # noqa: PLR2004
             m -= 12
             y += 1
         p_start = f"{y}-{m:02d}-01"
-        if m == 12:
-            p_end = f"{y + 1}-01-01"
-        else:
-            p_end = f"{y}-{m + 1:02d}-01"
+        p_end = f"{y + 1}-01-01" if m == 12 else f"{y}-{m + 1:02d}-01"  # noqa: PLR2004
         part_name = f"metric_point_{y}_{m:02d}"
         op.execute(
             sa.text(
@@ -236,19 +210,15 @@ def upgrade() -> None:
         )
     )
     op.execute(
-        sa.text(
-            f"CREATE INDEX ix_llm_call_log_model ON {_TELEMETRY}.llm_call_log (model_id)"
-        )
+        sa.text(f"CREATE INDEX ix_llm_call_log_model ON {_TELEMETRY}.llm_call_log (model_id)")
     )
     op.execute(
         sa.text(
-            f"CREATE INDEX ix_llm_call_log_correlation ON {_TELEMETRY}.llm_call_log (correlation_id)"
+            f"CREATE INDEX ix_llm_call_log_correlation ON {_TELEMETRY}.llm_call_log (correlation_id)"  # noqa: E501
         )
     )
     op.execute(
-        sa.text(
-            f"CREATE INDEX ix_llm_call_log_status ON {_TELEMETRY}.llm_call_log (status)"
-        )
+        sa.text(f"CREATE INDEX ix_llm_call_log_status ON {_TELEMETRY}.llm_call_log (status)")
     )
 
 

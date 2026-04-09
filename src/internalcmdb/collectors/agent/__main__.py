@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+from typing import Any, cast
 
 try:
     import tomllib
@@ -39,7 +40,8 @@ def main() -> None:
     agent_conf: dict[str, str] = {}
     raw = config.get("agent", {})
     if isinstance(raw, dict):
-        agent_conf = {str(k): str(v) for k, v in raw.items()}
+        raw_typed: dict[str, Any] = cast(dict[str, Any], raw)
+        agent_conf = {str(k): str(v) for k, v in raw_typed.items()}
 
     api_url = os.environ.get(
         "AGENT_API_URL",
@@ -59,15 +61,18 @@ def main() -> None:
     )
     verify_ssl = verify_ssl_raw.lower() not in ("false", "0", "no")
 
-    ca_bundle = os.environ.get(
-        "AGENT_CA_BUNDLE",
-        str(agent_conf.get("ca_bundle", "")),
-    ) or None
+    ca_bundle = (
+        os.environ.get(
+            "AGENT_CA_BUNDLE",
+            str(agent_conf.get("ca_bundle", "")),
+        )
+        or None
+    )
 
     if not api_url.startswith("https://"):
         import sys  # noqa: PLC0415
 
-        print(  # noqa: T201
+        print(
             f"WARNING: api_url '{api_url}' is not HTTPS — TLS is strongly recommended",
             file=sys.stderr,
         )
@@ -80,11 +85,15 @@ def main() -> None:
         ca_bundle=ca_bundle,
     )
 
+    _pending_tasks: set[asyncio.Task[Any]] = set()
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
     def _shutdown(_signum: int, _frame: object) -> None:
-        _task = loop.create_task(daemon.stop())  # noqa: RUF006
+        task = loop.create_task(daemon.stop())
+        _pending_tasks.add(task)
+        task.add_done_callback(_pending_tasks.discard)
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)

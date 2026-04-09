@@ -1,0 +1,23 @@
+{
+    "recommendations": [
+        // Security & SAST
+        "semgrep.semgrep",
+        "sonarsource.sonarlint-vscode",
+        // Python toolchain
+        "ms-python.python",
+        "ms-python.mypy-type-checker",
+        "charliermarsh.ruff",
+        // Frontend
+        "bradlc.vscode-tailwindcss",
+        "dbaeumer.vscode-eslint",
+        // GitHub
+        "github.vscode-pull-request-github",
+        "github.copilot",
+        "github.copilot-chat",
+        // Database
+        "mtxr.sqltools",
+        // YAML / config
+        "redhat.vscode-yaml",
+        "timonwong.shellcheck"
+    ]
+}

@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from internalcmdb.cognitive.analyzer import AnalysisResult, FactAnalyzer
-
+from internalcmdb.cognitive.analyzer import FactAnalyzer
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_baseline_row(
-    mean: float, stddev: float, count: int
-) -> MagicMock:
+def _make_baseline_row(mean: float, stddev: float, count: int) -> MagicMock:
     """Simulate the SQLAlchemy row returned by _fetch_baseline."""
     row = MagicMock()
     row.mean = mean
@@ -44,12 +40,14 @@ class TestFactAnalyzer:
 
     @pytest.mark.asyncio
     async def test_non_numeric_fact_returns_info(self, analyzer: FactAnalyzer) -> None:
-        result = await analyzer.analyze_fact({
-            "entity_id": "host-1",
-            "fact_namespace": "service",
-            "fact_key": "status",
-            "fact_value_jsonb": {"value": "running"},
-        })
+        result = await analyzer.analyze_fact(
+            {
+                "entity_id": "host-1",
+                "fact_namespace": "service",
+                "fact_key": "status",
+                "fact_value_jsonb": {"value": "running"},
+            }
+        )
         assert result.is_anomaly is False
         assert result.severity == "info"
         assert result.category == "reliability"
@@ -63,12 +61,14 @@ class TestFactAnalyzer:
         result_mock.one.return_value = baseline_row
         mock_async_session.execute.return_value = result_mock
 
-        result = await analyzer.analyze_fact({
-            "entity_id": "host-1",
-            "fact_namespace": "cpu",
-            "fact_key": "usage_pct",
-            "fact_value_jsonb": {"value": 55.0},
-        })
+        result = await analyzer.analyze_fact(
+            {
+                "entity_id": "host-1",
+                "fact_namespace": "cpu",
+                "fact_key": "usage_pct",
+                "fact_value_jsonb": {"value": 55.0},
+            }
+        )
         assert result.is_anomaly is False
         assert result.severity == "info"
         assert result.category == "performance"
@@ -83,12 +83,14 @@ class TestFactAnalyzer:
         mock_async_session.execute.return_value = result_mock
 
         # Z-score = |75 - 50| / 10 = 2.5 → warning
-        result = await analyzer.analyze_fact({
-            "entity_id": "host-1",
-            "fact_namespace": "cpu",
-            "fact_key": "usage_pct",
-            "fact_value_jsonb": {"value": 75.0},
-        })
+        result = await analyzer.analyze_fact(
+            {
+                "entity_id": "host-1",
+                "fact_namespace": "cpu",
+                "fact_key": "usage_pct",
+                "fact_value_jsonb": {"value": 75.0},
+            }
+        )
         assert result.is_anomaly is True
         assert result.severity == "warning"
 
@@ -102,12 +104,14 @@ class TestFactAnalyzer:
         mock_async_session.execute.return_value = result_mock
 
         # Z-score = |70 - 50| / 5 = 4.0 → critical
-        result = await analyzer.analyze_fact({
-            "entity_id": "host-1",
-            "fact_namespace": "memory",
-            "fact_key": "used_pct",
-            "fact_value_jsonb": {"value": 70.0},
-        })
+        result = await analyzer.analyze_fact(
+            {
+                "entity_id": "host-1",
+                "fact_namespace": "memory",
+                "fact_key": "used_pct",
+                "fact_value_jsonb": {"value": 70.0},
+            }
+        )
         assert result.is_anomaly is True
         assert result.severity == "critical"
         assert result.category == "performance"
@@ -121,12 +125,14 @@ class TestFactAnalyzer:
         result_mock.one.return_value = baseline_row
         mock_async_session.execute.return_value = result_mock
 
-        result = await analyzer.analyze_fact({
-            "entity_id": "host-1",
-            "fact_namespace": "disk",
-            "fact_key": "free_gb",
-            "fact_value_jsonb": {"value": 100.0},
-        })
+        result = await analyzer.analyze_fact(
+            {
+                "entity_id": "host-1",
+                "fact_namespace": "disk",
+                "fact_key": "free_gb",
+                "fact_value_jsonb": {"value": 100.0},
+            }
+        )
         assert result.is_anomaly is False
         assert "Insufficient" in result.explanation
 
@@ -140,24 +146,28 @@ class TestFactAnalyzer:
         result_mock.one.return_value = baseline_row
         mock_async_session.execute.return_value = result_mock
 
-        result = await analyzer.analyze_fact({
-            "entity_id": "host-1",
-            "fact_namespace": "cpu",
-            "fact_key": "usage_pct",
-            "fact_value_jsonb": {"value": 99.0},
-        })
+        result = await analyzer.analyze_fact(
+            {
+                "entity_id": "host-1",
+                "fact_namespace": "cpu",
+                "fact_key": "usage_pct",
+                "fact_value_jsonb": {"value": 99.0},
+            }
+        )
         assert result.is_anomaly is False
         assert "Insufficient" in result.explanation
         assert "n=20" in result.explanation
 
     @pytest.mark.asyncio
     async def test_security_namespace_category(self, analyzer: FactAnalyzer) -> None:
-        result = await analyzer.analyze_fact({
-            "entity_id": "host-1",
-            "fact_namespace": "sshd",
-            "fact_key": "failed_logins",
-            "fact_value_jsonb": {"value": "many"},
-        })
+        result = await analyzer.analyze_fact(
+            {
+                "entity_id": "host-1",
+                "fact_namespace": "sshd",
+                "fact_key": "failed_logins",
+                "fact_value_jsonb": {"value": "many"},
+            }
+        )
         assert result.category == "security"
 
     def test_classify_category_unknown(self) -> None:

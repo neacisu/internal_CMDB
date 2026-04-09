@@ -47,7 +47,7 @@ def _parse_timestamp(raw: object) -> datetime:
 
     try:
         parsed = datetime.fromisoformat(str(raw))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return datetime.min.replace(tzinfo=UTC)
 
     if parsed.tzinfo is None:

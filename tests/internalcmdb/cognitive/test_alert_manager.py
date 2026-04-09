@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
-from unittest.mock import patch
-
-import pytest
 
 from internalcmdb.cognitive.alert_manager import (
-    AlertFatigueManager,
-    _COOLDOWN_SECONDS,
     _FLAP_THRESHOLD,
+    AlertFatigueManager,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

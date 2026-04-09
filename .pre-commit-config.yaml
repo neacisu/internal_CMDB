@@ -40,6 +40,28 @@ repos:
         pass_filenames: false
         types: [python]
 
+      - id: semgrep
+        name: semgrep (custom SAST rules)
+        language: system
+        # Uses isolated semgrep 1.157.0 venv (avoids opentelemetry conflict).
+        # SEMGREP_APP_TOKEN is read automatically from ~/.semgrep/settings.yml
+        # when the user has run `semgrep login`. Export it explicitly for
+        # non-interactive environments (CI, Docker):
+        #   export SEMGREP_APP_TOKEN=$(grep api_token ~/.semgrep/settings.yml | awk '{print $2}')
+        entry: /opt/semgrep-venv/bin/semgrep
+        args:
+          - "scan"
+          - "--config"
+          - ".semgrep/"
+          - "--severity"
+          - "WARNING"
+          - "--error"
+          - "--metrics=off"
+          - "--quiet"
+          - "src"
+        pass_filenames: false
+        types: [python]
+
       - id: yamllint
         name: yamllint (deploy + workflows)
         language: system

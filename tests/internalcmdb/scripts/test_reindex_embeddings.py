@@ -1,6 +1,9 @@
 """Tests for scripts.reindex_embeddings."""
+
 from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from internalcmdb.scripts.reindex_embeddings import (
@@ -11,10 +14,10 @@ from internalcmdb.scripts.reindex_embeddings import (
     _update_embedding,
 )
 
-
 # ---------------------------------------------------------------------------
 # _build_url
 # ---------------------------------------------------------------------------
+
 
 def test_build_url_constructs_postgres_url(monkeypatch):
     monkeypatch.setenv("POSTGRES_HOST", "db-host")
@@ -44,6 +47,7 @@ def test_build_url_default_port(monkeypatch):
 # _fetch_stale_rows
 # ---------------------------------------------------------------------------
 
+
 def test_fetch_stale_rows_returns_list():
     conn = MagicMock()
     rows = [
@@ -66,6 +70,7 @@ def test_fetch_stale_rows_empty():
 # _update_embedding
 # ---------------------------------------------------------------------------
 
+
 def test_update_embedding_calls_execute():
     conn = MagicMock()
     _update_embedding(conn, "chunk-id-1", [0.1, 0.2, 0.3])
@@ -76,12 +81,15 @@ def test_update_embedding_calls_execute():
 # _embed_batch
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_embed_batch_success():
     llm = AsyncMock()
     vectors = [[0.1, 0.2], [0.3, 0.4]]
     llm.embed = AsyncMock(return_value=vectors)
-    result, failures = await _embed_batch(llm, ["text1", "text2"], batch_num=1, consecutive_failures=0)
+    result, failures = await _embed_batch(
+        llm, ["text1", "text2"], batch_num=1, consecutive_failures=0
+    )
     assert result == vectors
     assert failures == 0
 
@@ -99,7 +107,9 @@ async def test_embed_batch_llm_failure():
 async def test_embed_batch_count_mismatch():
     llm = AsyncMock()
     llm.embed = AsyncMock(return_value=[[0.1]])  # 1 vector for 2 texts
-    result, failures = await _embed_batch(llm, ["text1", "text2"], batch_num=1, consecutive_failures=0)
+    result, failures = await _embed_batch(
+        llm, ["text1", "text2"], batch_num=1, consecutive_failures=0
+    )
     assert result is None
     assert failures == 1
 
@@ -116,8 +126,10 @@ async def test_embed_batch_increments_existing_failures():
 # _persist_vectors
 # ---------------------------------------------------------------------------
 
+
 def test_persist_vectors_correct_dim():
-    from internalcmdb.scripts.reindex_embeddings import _TARGET_DIM
+    from internalcmdb.scripts.reindex_embeddings import _TARGET_DIM  # noqa: PLC0415
+
     engine = MagicMock()
     conn = MagicMock()
     engine.connect.return_value.__enter__ = MagicMock(return_value=conn)
@@ -139,7 +151,8 @@ def test_persist_vectors_wrong_dim():
 
 
 def test_persist_vectors_mixed_dim():
-    from internalcmdb.scripts.reindex_embeddings import _TARGET_DIM
+    from internalcmdb.scripts.reindex_embeddings import _TARGET_DIM  # noqa: PLC0415
+
     engine = MagicMock()
     conn = MagicMock()
     engine.connect.return_value.__enter__ = MagicMock(return_value=conn)

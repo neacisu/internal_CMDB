@@ -12,7 +12,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects.postgresql import UUID as PgUUID  # noqa: N811
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 revision: str = "0003"
 down_revision: str | Sequence[str] | None = "0002"
@@ -25,7 +25,7 @@ def upgrade() -> None:
 
     op.create_table(
         "job_history",
-        sa.Column("job_id", PgUUID(as_uuid=True), primary_key=True),
+        sa.Column("job_id", PG_UUID(as_uuid=True), primary_key=True),
         sa.Column("task_name", sa.Text(), nullable=False),
         sa.Column("status", sa.Text(), nullable=False, server_default="queued"),
         sa.Column("started_at", sa.TIMESTAMP(timezone=True), nullable=True),
@@ -59,7 +59,7 @@ def upgrade() -> None:
 
     op.create_table(
         "worker_schedule",
-        sa.Column("schedule_id", PgUUID(as_uuid=True), primary_key=True),
+        sa.Column("schedule_id", PG_UUID(as_uuid=True), primary_key=True),
         sa.Column("task_name", sa.Text(), nullable=False),
         sa.Column("cron_expression", sa.Text(), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),

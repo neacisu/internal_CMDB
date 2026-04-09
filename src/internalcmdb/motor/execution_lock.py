@@ -110,7 +110,9 @@ class ExecutionLock:
             return False
 
         if result:
-            logger.info("Lock released: entity=%s action=%s token=%s", entity_id, action_type, token[:8])
+            logger.info(
+                "Lock released: entity=%s action=%s token=%s", entity_id, action_type, token[:8]
+            )
             return True
 
         logger.warning(

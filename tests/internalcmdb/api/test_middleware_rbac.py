@@ -1,71 +1,117 @@
-"""Tests for internalcmdb.api.middleware.rbac."""
+"""Tests for internalcmdb.api.middleware.rbac (local JWT, no Zitadel)."""
 
 from __future__ import annotations
 
-import base64
-import json
+from collections.abc import Iterator
+from typing import Any
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request as StarletteRequest
 
 from internalcmdb.api.middleware import rbac as rbac_mod
+from internalcmdb.auth.security import invalidate_jwt_secret_cache
+
+_SECRET = "x" * 32
 
 
-def test_extract_roles_zitadel_dict() -> None:
-    claims = {"urn:zitadel:iam:org:project:roles": {"Admin": {}, "Viewer": {}}}
-    roles = rbac_mod._extract_roles(claims)
-    assert "admin" in roles
-    assert "viewer" in roles
-
-
-def test_extract_roles_list_and_groups() -> None:
-    claims = {
-        "urn:zitadel:iam:org:project:roles": ["RoleA"],
-        "realm_access": {"roles": ["offline_access"]},
-        "groups": ["g1"],
-    }
-    roles = rbac_mod._extract_roles(claims)
-    assert "rolea" in roles
-    assert "offline_access" in roles
-    assert "g1" in roles
-
-
-def test_decode_jwt_claims_invalid_shape() -> None:
-    assert rbac_mod._decode_jwt_claims("not-a-jwt") == {}
-
-
-def test_decode_jwt_claims_valid_payload() -> None:
-    payload = {"sub": "user-1", "email": "a@b.c"}
-    b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
-    token = f"xx.{b64}.yy"
-    out = rbac_mod._decode_jwt_claims(token)
-    assert out.get("sub") == "user-1"
-
-
-def test_get_bearer_token() -> None:
-    scope = {
+def _make_request(
+    cookies: dict[str, str] | None = None,
+    auth_header: str | None = None,
+) -> StarletteRequest:
+    headers: list[tuple[bytes, bytes]] = []
+    if auth_header:
+        headers.append((b"authorization", auth_header.encode()))
+    scope: dict[str, Any] = {
         "type": "http",
         "method": "GET",
         "path": "/",
-        "headers": [(b"authorization", b"Bearer tok123")],
+        "query_string": b"",
+        "headers": headers,
+        "cookies": cookies or {},
     }
-    req = StarletteRequest(scope)
-    assert rbac_mod._get_bearer_token(req) == "tok123"
+    req = StarletteRequest(scope)  # type: ignore[arg-type]
+    # Starlette parses cookies from headers; inject directly for tests.
+    req._cookies = cookies or {}  # type: ignore[attr-defined]
+    return req
 
 
-def test_require_role_missing_token_when_not_dev() -> None:
+@pytest.fixture(autouse=True)
+def jwt_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("JWT_SECRET_KEY", _SECRET)
+    monkeypatch.setenv("AUTH_DEV_MODE", "false")
+    invalidate_jwt_secret_cache()
+    # Reload module-level AUTH_DEV_MODE for the test
+    import importlib  # noqa: PLC0415
+
+    importlib.reload(rbac_mod)
+    yield
+    invalidate_jwt_secret_cache()
+
+
+# ---------------------------------------------------------------------------
+# require_role — no token
+# ---------------------------------------------------------------------------
+
+
+def test_require_role_raises_401_missing_token() -> None:
     dep = rbac_mod.require_role("admin")
-    scope = {
-        "type": "http",
-        "method": "GET",
-        "path": "/x",
-        "headers": [],
-    }
-    req = StarletteRequest(scope)
-    if rbac_mod._DEV_MODE:
-        dep(request=req, token=None)  # type: ignore[misc]
-    else:
+    req = _make_request()
+    with pytest.raises(HTTPException) as ei:
+        dep(request=req, token=None)
+    assert ei.value.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# require_role — valid token
+# ---------------------------------------------------------------------------
+
+
+def test_require_role_passes_with_correct_role() -> None:
+    from internalcmdb.auth.security import TokenClaims, create_access_token  # noqa: PLC0415
+
+    token, _, _ = create_access_token(TokenClaims("u1", "u@e.com", "u", "admin"))
+
+    with patch("internalcmdb.api.middleware.rbac.is_revoked", return_value=False):
+        dep = rbac_mod.require_role("admin")
+        req = _make_request(auth_header=f"Bearer {token}")
+        dep(request=req, token=token)  # should not raise
+
+
+def test_require_role_raises_403_wrong_role() -> None:
+    from internalcmdb.auth.security import TokenClaims, create_access_token  # noqa: PLC0415
+
+    token, _, _ = create_access_token(TokenClaims("u1", "u@e.com", "u", "viewer"))
+
+    with patch("internalcmdb.api.middleware.rbac.is_revoked", return_value=False):
+        dep = rbac_mod.require_role("admin")
+        req = _make_request(auth_header=f"Bearer {token}")
         with pytest.raises(HTTPException) as ei:
-            dep(request=req, token=None)  # type: ignore[misc]
+            dep(request=req, token=token)
+        assert ei.value.status_code == 403
+
+
+def test_require_role_raises_401_revoked_token() -> None:
+    from internalcmdb.auth.security import TokenClaims, create_access_token  # noqa: PLC0415
+
+    token, _, _ = create_access_token(TokenClaims("u1", "u@e.com", "u", "admin"))
+
+    with patch("internalcmdb.api.middleware.rbac.is_revoked", return_value=True):
+        dep = rbac_mod.require_role("admin")
+        req = _make_request(auth_header=f"Bearer {token}")
+        with pytest.raises(HTTPException) as ei:
+            dep(request=req, token=token)
         assert ei.value.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# AUTH_DEV_MODE bypass
+# ---------------------------------------------------------------------------
+
+
+def test_require_role_dev_mode_bypasses_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rbac_mod, "AUTH_DEV_MODE", True)
+    dep = rbac_mod.require_role("admin")
+    req = _make_request()
+    dep(request=req, token=None)  # no error in dev mode

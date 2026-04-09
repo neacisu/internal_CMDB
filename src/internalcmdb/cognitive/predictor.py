@@ -22,11 +22,30 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
+_MIN_REGRESSION_POINTS = 2  # minimum data points for linear regression
+_COLLINEAR_EPSILON = 1e-12  # denominator threshold for regression collinearity
+_CERT_CRITICAL_DAYS = 7  # certificate expiry: critical urgency threshold
+_CERT_WARNING_DAYS = 30  # certificate expiry: warning urgency threshold
+_RISK_CRITICAL_THRESHOLD = 0.8  # failure probability → critical risk tier
+_RISK_HIGH_THRESHOLD = 0.6  # failure probability → high risk tier
+_RISK_MEDIUM_THRESHOLD = 0.3  # failure probability → medium risk tier
+_CPU_SLOPE_MIN = 0.5  # minimum CPU slope (%/day) for capacity alerting
+_MEM_SLOPE_MIN = 0.3  # minimum memory slope (%/day) for capacity alerting
+_MIN_DISK_SAMPLES = 2  # minimum disk samples for disk exhaustion prediction
+_MIN_CAPACITY_SAMPLES = 3  # minimum samples for capacity prediction
+_OVERCONFIDENCE_THRESHOLD = 0.95  # mean confidence above this is suspicious
+_UNDERCONFIDENCE_THRESHOLD = 0.1  # mean confidence below this is suspicious
+_MIN_VARIANCE_CHECK_SAMPLES = 3  # minimum samples for variance collapse check
+_MIN_RISK_DISTRIBUTION_SAMPLES = 5  # minimum predictions for risk distribution check
 
 # ---------------------------------------------------------------------------
 # Linear regression helpers (no numpy dependency)
@@ -50,7 +69,7 @@ def _linear_regression(xs: list[float], ys: list[float]) -> RegressionResult | N
     collinear xs).
     """
     n = len(xs)
-    if n < 2 or len(ys) != n:
+    if n < _MIN_REGRESSION_POINTS or len(ys) != n:
         return None
 
     if any(math.isnan(v) or math.isinf(v) for v in xs) or any(
@@ -61,11 +80,11 @@ def _linear_regression(xs: list[float], ys: list[float]) -> RegressionResult | N
 
     sum_x = sum(xs)
     sum_y = sum(ys)
-    sum_xy = sum(x * y for x, y in zip(xs, ys))
+    sum_xy = sum(x * y for x, y in zip(xs, ys, strict=False))
     sum_x2 = sum(x * x for x in xs)
 
     denom = n * sum_x2 - sum_x * sum_x
-    if abs(denom) < 1e-12:
+    if abs(denom) < _COLLINEAR_EPSILON:
         return None
 
     slope = (n * sum_xy - sum_x * sum_y) / denom
@@ -76,7 +95,7 @@ def _linear_regression(xs: list[float], ys: list[float]) -> RegressionResult | N
 
     mean_y = sum_y / n
     ss_tot = sum((y - mean_y) ** 2 for y in ys)
-    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys))
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys, strict=False))
     r_squared = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
 
     if math.isnan(r_squared) or math.isinf(r_squared):
@@ -104,20 +123,20 @@ def _confidence_from_r2(r_squared: float, n: int) -> float:
 
 def _cert_renewal_urgency(days_remaining: int) -> str:
     """Map days until certificate expiry to operator-facing urgency."""
-    if days_remaining <= 7:
+    if days_remaining <= _CERT_CRITICAL_DAYS:
         return "critical"
-    if days_remaining <= 30:
+    if days_remaining <= _CERT_WARNING_DAYS:
         return "warning"
     return "info"
 
 
 def _failure_risk_level(probability: float) -> str:
     """Discretise failure probability into a risk tier for alerting."""
-    if probability >= 0.8:
+    if probability >= _RISK_CRITICAL_THRESHOLD:
         return "critical"
-    if probability >= 0.6:
+    if probability >= _RISK_HIGH_THRESHOLD:
         return "high"
-    if probability >= 0.3:
+    if probability >= _RISK_MEDIUM_THRESHOLD:
         return "medium"
     return "low"
 
@@ -137,26 +156,20 @@ def _cpu_capacity_recommendation(
     cpu_reg: RegressionResult | None,
     ys_cpu: list[float],
 ) -> str | None:
-    if cpu_reg is None or cpu_reg.slope <= 0.5:
+    if cpu_reg is None or cpu_reg.slope <= _CPU_SLOPE_MIN:
         return None
     days = _capacity_days_to_pct_threshold(ys_cpu[-1], 80.0, cpu_reg.slope)
-    return (
-        f"CPU trending up at {cpu_reg.slope:.2f}%/day — "
-        f"80% threshold in ~{days} days"
-    )
+    return f"CPU trending up at {cpu_reg.slope:.2f}%/day — 80% threshold in ~{days} days"
 
 
 def _mem_capacity_recommendation(
     mem_reg: RegressionResult | None,
     ys_mem: list[float],
 ) -> str | None:
-    if mem_reg is None or mem_reg.slope <= 0.3:
+    if mem_reg is None or mem_reg.slope <= _MEM_SLOPE_MIN:
         return None
     days = _capacity_days_to_pct_threshold(ys_mem[-1], 85.0, mem_reg.slope)
-    return (
-        f"Memory trending up at {mem_reg.slope:.2f}%/day — "
-        f"85% threshold in ~{days} days"
-    )
+    return f"Memory trending up at {mem_reg.slope:.2f}%/day — 85% threshold in ~{days} days"
 
 
 def _merge_capacity_recommendations(
@@ -198,7 +211,7 @@ class PredictiveAnalytics:
         """
         samples = self._get_disk_samples(host_id)
 
-        if len(samples) < 2:
+        if len(samples) < _MIN_DISK_SAMPLES:
             return {
                 "host_id": host_id,
                 "days_until_full": None,
@@ -275,10 +288,7 @@ class PredictiveAnalytics:
         urgency = _cert_renewal_urgency(days_remaining)
 
         renewal_history = cert_info.get("renewal_history", [])
-        avg_renewal_days = (
-            sum(renewal_history) / len(renewal_history)
-            if renewal_history else 30
-        )
+        avg_renewal_days = sum(renewal_history) / len(renewal_history) if renewal_history else 30
 
         return {
             "service_id": service_id,
@@ -307,7 +317,7 @@ class PredictiveAnalytics:
         """
         samples = self._get_capacity_samples(cluster_id)
 
-        if len(samples) < 3:
+        if len(samples) < _MIN_CAPACITY_SAMPLES:
             return {
                 "cluster_id": cluster_id,
                 "growth_trend": "unknown",
@@ -372,9 +382,7 @@ class PredictiveAnalytics:
             "historical_failure_factor": 0.20,
         }
 
-        raw_sum = sum(
-            factors.get(f, 0.0) * w for f, w in weights.items()
-        )
+        raw_sum = sum(factors.get(f, 0.0) * w for f, w in weights.items())
         if math.isnan(raw_sum) or math.isinf(raw_sum):
             raw_sum = 0.0
         probability = min(1.0, max(0.0, raw_sum))
@@ -419,50 +427,63 @@ class PredictiveAnalytics:
             return {"biased": False, "checks": [], "message": "No predictions to analyse"}
 
         confidences = [
-            p.get("confidence", 0.0) for p in predictions
-            if isinstance(p.get("confidence"), (int, float))
-            and not math.isnan(p["confidence"])
+            p.get("confidence", 0.0)
+            for p in predictions
+            if isinstance(p.get("confidence"), (int, float)) and not math.isnan(p["confidence"])
         ]
 
         checks: list[dict[str, Any]] = []
 
         if confidences:
             mean_conf = sum(confidences) / len(confidences)
-            if mean_conf > 0.95:
-                checks.append({
-                    "check": "overconfidence",
-                    "result": "WARNING",
-                    "detail": f"Mean confidence {mean_conf:.3f} is suspiciously high",
-                })
-            elif mean_conf < 0.1:
-                checks.append({
-                    "check": "underconfidence",
-                    "result": "WARNING",
-                    "detail": f"Mean confidence {mean_conf:.3f} is suspiciously low",
-                })
+            if mean_conf > _OVERCONFIDENCE_THRESHOLD:
+                checks.append(
+                    {
+                        "check": "overconfidence",
+                        "result": "WARNING",
+                        "detail": f"Mean confidence {mean_conf:.3f} is suspiciously high",
+                    }
+                )
+            elif mean_conf < _UNDERCONFIDENCE_THRESHOLD:
+                checks.append(
+                    {
+                        "check": "underconfidence",
+                        "result": "WARNING",
+                        "detail": f"Mean confidence {mean_conf:.3f} is suspiciously low",
+                    }
+                )
             else:
-                checks.append({
-                    "check": "confidence_range",
-                    "result": "PASS",
-                    "detail": f"Mean confidence {mean_conf:.3f} is within expected range",
-                })
+                checks.append(
+                    {
+                        "check": "confidence_range",
+                        "result": "PASS",
+                        "detail": f"Mean confidence {mean_conf:.3f} is within expected range",
+                    }
+                )
 
-            if len({round(c, 2) for c in confidences}) == 1 and len(confidences) > 3:
-                checks.append({
-                    "check": "variance_collapse",
-                    "result": "WARNING",
-                    "detail": "All confidence scores are identical — model may not be calibrated",
-                })
+            if (
+                len({round(c, 2) for c in confidences}) == 1
+                and len(confidences) > _MIN_VARIANCE_CHECK_SAMPLES
+            ):
+                checks.append(
+                    {
+                        "check": "variance_collapse",
+                        "result": "WARNING",
+                        "detail": "All confidence scores are identical — model may not be calibrated",  # noqa: E501
+                    }
+                )
 
         risk_levels = [p.get("risk_level") for p in predictions if "risk_level" in p]
         if risk_levels:
             unique_levels = set(risk_levels)
-            if len(unique_levels) == 1 and len(risk_levels) > 5:
-                checks.append({
-                    "check": "risk_distribution",
-                    "result": "WARNING",
-                    "detail": f"All predictions classified as '{risk_levels[0]}' — possible label bias",
-                })
+            if len(unique_levels) == 1 and len(risk_levels) > _MIN_RISK_DISTRIBUTION_SAMPLES:
+                checks.append(
+                    {
+                        "check": "risk_distribution",
+                        "result": "WARNING",
+                        "detail": f"All predictions classified as '{risk_levels[0]}' — possible label bias",  # noqa: E501
+                    }
+                )
 
         biased = any(c["result"] == "WARNING" for c in checks)
         return {

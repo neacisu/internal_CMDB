@@ -28,12 +28,13 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import platform
 import time
 from collections import OrderedDict
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from internalcmdb.nervous.event_bus import Event, EventBus
 from internalcmdb.retrieval.task_types import RiskClass
@@ -96,7 +97,9 @@ class ReactiveLoop:
         """
         logger.info(
             "reactor.start | group=%s consumer=%s stream=%s",
-            CONSUMER_GROUP, CONSUMER_NAME, STREAM_SENSOR_INGEST,
+            CONSUMER_GROUP,
+            CONSUMER_NAME,
+            STREAM_SENSOR_INGEST,
         )
 
         while not self._shutdown.is_set():
@@ -136,7 +139,8 @@ class ReactiveLoop:
             self.stats_errors += 1
             logger.exception(
                 "reactor.event.error | event_id=%s type=%s",
-                event.event_id, event.event_type,
+                event.event_id,
+                event.event_type,
             )
             return
 
@@ -187,7 +191,9 @@ class ReactiveLoop:
         else:
             logger.warning(
                 "reactor.unknown_event_type | ts=%s event_id=%s type=%s",
-                ts, event.event_id, event.event_type,
+                ts,
+                event.event_id,
+                event.event_type,
             )
 
     # ------------------------------------------------------------------
@@ -208,7 +214,10 @@ class ReactiveLoop:
         await self._bus.publish(STREAM_CORTEX_ANOMALY, anomaly_event)
         logger.info(
             "reactor.ingest.forwarded | ts=%s event_id=%s corr=%s → %s",
-            ts, event.event_id, event.correlation_id, STREAM_CORTEX_ANOMALY,
+            ts,
+            event.event_id,
+            event.correlation_id,
+            STREAM_CORTEX_ANOMALY,
         )
 
     # ------------------------------------------------------------------
@@ -223,7 +232,9 @@ class ReactiveLoop:
             logger.error(
                 "reactor.anomaly.unknown_risk | ts=%s event_id=%s raw=%s "
                 "— routing to consciousness:alert as safety fallback",
-                ts, event.event_id, event.risk_class,
+                ts,
+                event.event_id,
+                event.risk_class,
             )
             await self._route_rc4_block_alert(event, ts)
             return
@@ -244,7 +255,7 @@ class ReactiveLoop:
         if raw is None:
             return None
         for rc in RiskClass:
-            if raw == rc.value or raw == rc.name or raw == rc:
+            if raw in {rc.value, rc.name, rc}:
                 return rc
         return None
 
@@ -267,7 +278,10 @@ class ReactiveLoop:
         await self._bus.publish(STREAM_MOTOR_ACTION, action_event)
         logger.info(
             "reactor.rc1.auto_execute | ts=%s event_id=%s corr=%s → %s",
-            ts, event.event_id, event.correlation_id, STREAM_MOTOR_ACTION,
+            ts,
+            event.event_id,
+            event.correlation_id,
+            STREAM_MOTOR_ACTION,
         )
 
     async def _route_hitl(self, event: Event, risk_class: RiskClass, ts: str) -> None:
@@ -291,8 +305,12 @@ class ReactiveLoop:
         await self._bus.publish(STREAM_IMMUNE_HITL, hitl_event)
         logger.info(
             "reactor.%s.hitl_submit | ts=%s event_id=%s corr=%s approvals=%d → %s",
-            risk_class.value, ts, event.event_id, event.correlation_id,
-            approval_required, STREAM_IMMUNE_HITL,
+            risk_class.value,
+            ts,
+            event.event_id,
+            event.correlation_id,
+            approval_required,
+            STREAM_IMMUNE_HITL,
         )
 
     async def _route_rc4_block_alert(self, event: Event, ts: str) -> None:
@@ -314,7 +332,10 @@ class ReactiveLoop:
         await self._bus.publish(STREAM_CONSCIOUSNESS_ALERT, alert_event)
         logger.warning(
             "reactor.rc4.block_alert | ts=%s event_id=%s corr=%s → %s",
-            ts, event.event_id, event.correlation_id, STREAM_CONSCIOUSNESS_ALERT,
+            ts,
+            event.event_id,
+            event.correlation_id,
+            STREAM_CONSCIOUSNESS_ALERT,
         )
 
     # ------------------------------------------------------------------
@@ -323,7 +344,5 @@ class ReactiveLoop:
 
     async def _sleep_or_shutdown(self, seconds: float) -> None:
         """Sleep for *seconds* unless shutdown is requested sooner."""
-        try:
+        with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(self._shutdown.wait(), timeout=seconds)
-        except asyncio.TimeoutError:
-            pass

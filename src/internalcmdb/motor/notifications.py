@@ -63,11 +63,13 @@ class WebhookNotifier:
             except Exception:
                 logger.warning(
                     "Webhook attempt %d/%d to %s failed",
-                    attempt, _MAX_RETRIES, url,
+                    attempt,
+                    _MAX_RETRIES,
+                    url,
                     exc_info=True,
                 )
                 if attempt < _MAX_RETRIES:
-                    await asyncio.sleep(_BACKOFF_BASE ** attempt)
+                    await asyncio.sleep(_BACKOFF_BASE**attempt)
 
         logger.error("Webhook delivery to %s failed after %d attempts", url, _MAX_RETRIES)
         return False
@@ -82,7 +84,9 @@ class EmailNotifier:
         subject = payload.get("subject", "HITL Notification")
         logger.info(
             "[EMAIL-PLACEHOLDER] Would send to=%s subject='%s' body_keys=%s",
-            to, subject, list(payload.keys()),
+            to,
+            subject,
+            list(payload.keys()),
         )
         return True
 
@@ -95,7 +99,8 @@ class SlackNotifier:
         channel = config.get("channel", "#hitl-alerts")
         logger.info(
             "[SLACK-PLACEHOLDER] Would post to channel=%s text='%s'",
-            channel, payload.get("text", "(no text)"),
+            channel,
+            payload.get("text", "(no text)"),
         )
         return True
 
@@ -149,9 +154,9 @@ class NotificationDispatcher:
         payload["escalation_level"] = escalation_level
 
         channels_to_notify: list[str] = ["webhook"]
-        if escalation_level >= 2:
+        if escalation_level >= 2:  # noqa: PLR2004
             channels_to_notify.append("email")
-        if escalation_level >= 3:
+        if escalation_level >= 3:  # noqa: PLR2004
             channels_to_notify.append("slack")
 
         results: list[bool] = []
@@ -179,7 +184,7 @@ def _build_payload(hitl_item: dict[str, Any], *, event_type: str) -> dict[str, A
         "risk_class": hitl_item.get("risk_class"),
         "priority": hitl_item.get("priority"),
         "status": hitl_item.get("status"),
-        "subject": f"HITL {event_type}: {hitl_item.get('risk_class')} — {hitl_item.get('item_type')}",
+        "subject": f"HITL {event_type}: {hitl_item.get('risk_class')} — {hitl_item.get('item_type')}",  # noqa: E501
         "text": (
             f"HITL item {hitl_item.get('item_id')} ({hitl_item.get('risk_class')}) "
             f"requires attention. Status: {hitl_item.get('status')}"
@@ -196,11 +201,7 @@ def _default_config_for(channel: str, hitl_item: dict[str, Any]) -> dict[str, An
         return {"url": os.getenv("HITL_WEBHOOK_URL", "")}
     if channel == "email":
         default_to = os.getenv("HITL_EMAIL_TO", "platform-team@internal")
-        to = (
-            hitl_item.get("notify_to")
-            or hitl_item.get("assignee_email")
-            or default_to
-        )
+        to = hitl_item.get("notify_to") or hitl_item.get("assignee_email") or default_to
         return {"to": str(to) if to else default_to}
     if channel == "slack":
         ch = hitl_item.get("slack_channel") or os.getenv("HITL_SLACK_CHANNEL", "#hitl-alerts")

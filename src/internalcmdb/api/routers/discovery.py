@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from internalcmdb.models.collectors import CollectorAgent, CollectorSnapshot
@@ -25,6 +26,16 @@ from ..schemas.domain import (
     EvidenceArtifactOut,
     ObservedFactOut,
 )
+
+
+@dataclass
+class FactFilterParams:
+    """Query-parameter filter group for observed fact listing."""
+
+    run_id: uuid.UUID | None = None
+    entity_id: uuid.UUID | None = None
+    fact_namespace: str | None = None
+
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -59,21 +70,19 @@ def get_run(run_id: uuid.UUID, db: Annotated[Session, Depends(get_db)]) -> Colle
 
 
 @router.get("/facts", response_model=Page[ObservedFactOut])
-def list_facts(  # noqa: PLR0913
+def list_facts(
     db: Annotated[Session, Depends(get_db)],
+    filters: Annotated[FactFilterParams, Depends()],
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    run_id: uuid.UUID | None = None,
-    entity_id: uuid.UUID | None = None,
-    fact_namespace: str | None = None,
 ) -> Page[ObservedFactOut]:
     q = db.query(ObservedFact)
-    if run_id is not None:
-        q = q.filter(ObservedFact.collection_run_id == run_id)
-    if entity_id is not None:
-        q = q.filter(ObservedFact.entity_id == entity_id)
-    if fact_namespace is not None:
-        q = q.filter(ObservedFact.fact_namespace == fact_namespace)
+    if filters.run_id is not None:
+        q = q.filter(ObservedFact.collection_run_id == filters.run_id)
+    if filters.entity_id is not None:
+        q = q.filter(ObservedFact.entity_id == filters.entity_id)
+    if filters.fact_namespace is not None:
+        q = q.filter(ObservedFact.fact_namespace == filters.fact_namespace)
     q = q.order_by(ObservedFact.observed_at.desc())
     items, total = paginate(q, page, page_size)
     return Page(items=items, meta=PageMeta(page=page, page_size=page_size, total=total))
@@ -111,10 +120,14 @@ def discovery_stats(
     ).all()
     fact_namespaces = [{"namespace": r[0], "count": r[1]} for r in fact_ns_rows]
 
-    agent_count = db.scalar(
-        select(func.count()).select_from(CollectorAgent)
-        .where(CollectorAgent.is_active.is_(True))
-    ) or 0
+    agent_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(CollectorAgent)
+            .where(CollectorAgent.is_active.is_(True))
+        )
+        or 0
+    )
     snapshot_count = db.scalar(select(func.count()).select_from(CollectorSnapshot)) or 0
 
     snap_kind_rows = db.execute(
@@ -125,9 +138,7 @@ def discovery_stats(
     snapshot_kinds = [{"kind": r[0], "count": r[1]} for r in snap_kind_rows]
 
     latest_run = db.execute(
-        select(CollectionRun.started_at)
-        .order_by(CollectionRun.started_at.desc())
-        .limit(1)
+        select(CollectionRun.started_at).order_by(CollectionRun.started_at.desc()).limit(1)
     ).scalar()
 
     latest_snapshot = db.execute(

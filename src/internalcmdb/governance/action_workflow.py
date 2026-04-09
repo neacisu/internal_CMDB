@@ -115,21 +115,22 @@ class ActionWorkflow:
 
     async def _submit_to_hitl(self, plan: RemediationPlan) -> WorkflowResult:
         """Submit an RC-2/RC-3 plan for HITL review."""
-        item_id = await self._hitl.submit({
-            "item_type": "remediation_review",
-            "risk_class": plan.risk_class,
-            "source_event_id": plan.insight_id,
-            "correlation_id": plan.plan_id,
-            "context": {
-                "plan_id": plan.plan_id,
-                "actions": [
-                    {"type": a.action_type, "target": a.target_entity}
-                    for a in plan.actions
-                ],
-                "confidence": plan.confidence,
-                "explanation": plan.explanation,
-            },
-        })
+        item_id = await self._hitl.submit(
+            {
+                "item_type": "remediation_review",
+                "risk_class": plan.risk_class,
+                "source_event_id": plan.insight_id,
+                "correlation_id": plan.plan_id,
+                "context": {
+                    "plan_id": plan.plan_id,
+                    "actions": [
+                        {"type": a.action_type, "target": a.target_entity} for a in plan.actions
+                    ],
+                    "confidence": plan.confidence,
+                    "explanation": plan.explanation,
+                },
+            }
+        )
         logger.info("Plan %s submitted for HITL review as item %s", plan.plan_id, item_id)
         return WorkflowResult(plan_id=plan.plan_id, executed=False, hitl_item_id=item_id)
 
@@ -143,12 +144,16 @@ class ActionWorkflow:
                 window_seconds=max(action.estimated_duration_s * 2, 300),
             )
             if not token:
-                logger.warning("Lock denied for %s on %s.", action.action_type, action.target_entity)
+                logger.warning(
+                    "Lock denied for %s on %s.", action.action_type, action.target_entity
+                )
                 for ent, act, tok in lock_tokens:
                     await self._lock.release(ent, act, tok)
                 return WorkflowResult(
-                    plan_id=plan.plan_id, executed=False,
-                    lock_denied=True, blocked_reason="Execution already in progress for target",
+                    plan_id=plan.plan_id,
+                    executed=False,
+                    lock_denied=True,
+                    blocked_reason="Execution already in progress for target",
                 )
             lock_tokens.append((action.target_entity, action.action_type, token))
 
@@ -168,12 +173,16 @@ class ActionWorkflow:
 
             pb_result = await self._executor.execute(action.action_type, action.params)
             combined[action.action_type] = {
-                "success": pb_result.success, "output": pb_result.output, "error": pb_result.error,
+                "success": pb_result.success,
+                "output": pb_result.output,
+                "error": pb_result.error,
             }
             if not pb_result.success:
                 logger.error("Playbook %s failed: %s", action.action_type, pb_result.error)
                 return WorkflowResult(
-                    plan_id=plan.plan_id, executed=False, playbook_result=combined,
+                    plan_id=plan.plan_id,
+                    executed=False,
+                    playbook_result=combined,
                     blocked_reason=f"Playbook {action.action_type} failed: {pb_result.error}",
                 )
         return WorkflowResult(plan_id=plan.plan_id, executed=True, playbook_result=combined)

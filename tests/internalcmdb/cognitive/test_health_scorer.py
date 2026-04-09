@@ -1,14 +1,34 @@
 """Tests for cognitive.health_scorer."""
+
 from __future__ import annotations
+
+import pytest
+
 from internalcmdb.cognitive.health_scorer import FleetHealthScore, HealthScore, HealthScorer
 
-_PERFECT = {"host_id": "h1", "cpu_usage_pct": 10.0, "memory_usage_pct": 20.0, "disk_usage_pct": 30.0, "services_total": 5, "services_healthy": 5}
-_CRITICAL = {"host_id": "h2", "cpu_usage_pct": 99.0, "memory_usage_pct": 98.0, "disk_usage_pct": 97.0, "services_total": 10, "services_healthy": 1}
+_PERFECT = {
+    "host_id": "h1",
+    "cpu_usage_pct": 10.0,
+    "memory_usage_pct": 20.0,
+    "disk_usage_pct": 30.0,
+    "services_total": 5,
+    "services_healthy": 5,
+}
+_CRITICAL = {
+    "host_id": "h2",
+    "cpu_usage_pct": 99.0,
+    "memory_usage_pct": 98.0,
+    "disk_usage_pct": 97.0,
+    "services_total": 10,
+    "services_healthy": 1,
+}
 
 
 def test_score_host_returns_health_score():
     r = HealthScorer().score_host(_PERFECT)
-    assert isinstance(r, HealthScore) and r.entity_id == "h1" and r.score > 0
+    assert isinstance(r, HealthScore)
+    assert r.entity_id == "h1"
+    assert r.score > 0
 
 
 def test_score_host_high_utilisation_low_score():
@@ -25,18 +45,34 @@ def test_score_host_critical_classification():
 
 
 def test_score_host_missing_cpu_penalised():
-    host = {"host_id": "h3", "cpu_usage_pct": None, "memory_usage_pct": 20.0, "disk_usage_pct": 30.0, "services_total": 5, "services_healthy": 5}
+    host = {
+        "host_id": "h3",
+        "cpu_usage_pct": None,
+        "memory_usage_pct": 20.0,
+        "disk_usage_pct": 30.0,
+        "services_total": 5,
+        "services_healthy": 5,
+    }
     r = HealthScorer().score_host(host)
-    assert "missing_metrics" in r.breakdown and "cpu_usage_pct" in r.breakdown["missing_metrics"]
+    assert "missing_metrics" in r.breakdown
+    assert "cpu_usage_pct" in r.breakdown["missing_metrics"]
 
 
 def test_score_host_all_metrics_missing():
     r = HealthScorer().score_host({"host_id": "h4"})
-    assert r.score >= 0 and len(r.breakdown.get("missing_metrics", [])) == 3
+    assert r.score >= 0
+    assert len(r.breakdown.get("missing_metrics", [])) == 3
 
 
 def test_score_host_fallback_entity_id():
-    host = {"entity_id": "ent-999", "cpu_usage_pct": 10.0, "memory_usage_pct": 10.0, "disk_usage_pct": 10.0, "services_total": 0, "services_healthy": 0}
+    host = {
+        "entity_id": "ent-999",
+        "cpu_usage_pct": 10.0,
+        "memory_usage_pct": 10.0,
+        "disk_usage_pct": 10.0,
+        "services_total": 0,
+        "services_healthy": 0,
+    }
     assert HealthScorer().score_host(host).entity_id == "ent-999"
 
 
@@ -51,18 +87,34 @@ def test_score_host_gpu_capable_no_metrics():
 
 
 def test_score_host_invalid_numeric():
-    host = {"host_id": "h5", "cpu_usage_pct": "bad", "memory_usage_pct": float("nan"), "disk_usage_pct": float("inf"), "services_total": 3, "services_healthy": 2}
+    host = {
+        "host_id": "h5",
+        "cpu_usage_pct": "bad",
+        "memory_usage_pct": float("nan"),
+        "disk_usage_pct": float("inf"),
+        "services_total": 3,
+        "services_healthy": 2,
+    }
     assert HealthScorer().score_host(host).score >= 0
 
 
 def test_score_host_no_services_full_service_score():
-    host = {"host_id": "h6", "cpu_usage_pct": 20.0, "memory_usage_pct": 20.0, "disk_usage_pct": 20.0, "services_total": 0, "services_healthy": 0}
+    host = {
+        "host_id": "h6",
+        "cpu_usage_pct": 20.0,
+        "memory_usage_pct": 20.0,
+        "disk_usage_pct": 20.0,
+        "services_total": 0,
+        "services_healthy": 0,
+    }
     assert HealthScorer().score_host(host).breakdown["service_health"] == 25
 
 
 def test_score_fleet_empty():
     r = HealthScorer().score_fleet([])
-    assert isinstance(r, FleetHealthScore) and r.total_hosts == 0 and r.average_score == 0.0
+    assert isinstance(r, FleetHealthScore)
+    assert r.total_hosts == 0
+    assert r.average_score == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_score_fleet_counts():
@@ -109,18 +161,20 @@ def test_status_label_critical():
 
 
 def test_safe_metric_none():
-    missing = []
+    missing: list[str] = []
     val = HealthScorer._safe_metric(None, "cpu", missing)
-    assert val == 0.0 and "cpu" in missing
+    assert val == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]
+    assert "cpu" in missing
 
 
 def test_safe_metric_valid():
-    missing = []
-    assert HealthScorer._safe_metric(42.5, "cpu", missing) == 42.5 and missing == []
+    missing: list[str] = []
+    assert HealthScorer._safe_metric(42.5, "cpu", missing) == pytest.approx(42.5)  # pyright: ignore[reportUnknownMemberType]
+    assert missing == []
 
 
 def test_safe_metric_nan():
-    import math
-    missing = []
+    missing: list[str] = []
     val = HealthScorer._safe_metric(float("nan"), "cpu", missing)
-    assert val == 0.0 and "cpu" in missing
+    assert val == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]
+    assert "cpu" in missing

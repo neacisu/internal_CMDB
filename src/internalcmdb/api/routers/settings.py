@@ -18,19 +18,18 @@ import hashlib
 import json
 import logging
 import os
-import platform
 import sys
 import time
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import text
+from sqlalchemy import CursorResult, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from internalcmdb.api.deps import get_async_session
-from internalcmdb.api.middleware.rbac import _DEV_MODE, _decode_jwt_claims, _get_bearer_token, require_role  # noqa: PLC2701
+from internalcmdb.api.middleware.rbac import AUTH_DEV_MODE, require_role
 from internalcmdb.api.schemas.settings import (
     AppSettingOut,
     AppSettingUpdate,
@@ -67,10 +66,18 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 _READER_ROLES = ("admin", "operator", "viewer")
 _TOOL_ALLOWLIST = [
-    "query_registry", "list_hosts", "list_services", "get_host_facts",
-    "get_service_instances", "search_documents", "get_health_score",
-    "list_insights", "generate_report", "check_drift",
-    "run_collector", "list_evidence_packs",
+    "query_registry",
+    "list_hosts",
+    "list_services",
+    "get_host_facts",
+    "get_service_instances",
+    "search_documents",
+    "get_health_score",
+    "list_insights",
+    "generate_report",
+    "check_drift",
+    "run_collector",
+    "list_evidence_packs",
 ]
 _MAX_ACTIONS: dict[str, int] = {
     "agent-audit": 50,
@@ -80,31 +87,41 @@ _MAX_ACTIONS: dict[str, int] = {
     "default": 15,
 }
 _TOKEN_BUDGET_CALLERS = [
-    "agent_audit", "agent_capacity", "agent_security",
-    "cognitive_query", "report_generator", "chaos_engine", "default",
+    "agent_audit",
+    "agent_capacity",
+    "agent_security",
+    "cognitive_query",
+    "report_generator",
+    "chaos_engine",
+    "default",
 ]
-_LLM_PROBE_TIMEOUT = 3.0   # seconds per health probe
+_LLM_PROBE_TIMEOUT = 3.0  # seconds per health probe
 
 # ---------------------------------------------------------------------------
 # Setting-key constants (S1192 — prevent duplicate literal violations)
 # ---------------------------------------------------------------------------
-_SK_GUARD_URL          = "llm.guard.url"
-_SK_OBS_DEBUG          = "obs.debug_enabled"
+_SK_GUARD_URL = "llm.guard.url"
+_SK_OBS_DEBUG = "obs.debug_enabled"
 _MSG_CHANNEL_NOT_FOUND = "Notification channel not found"
 
 # Default values for each LLM backend: (url, model_id, timeout_s).
 # Single source of truth — used by _resolve_llm_backend and get_system_info.
+# SONAR-HOTSPOT REVIEWED: S1075 / S5332 — These are private LAN addresses for
+# self-hosted Proxmox LXC containers (RFC-1918, not publicly routable).
+# All values are overridable via DB SettingsStore.  HTTP over internal LAN only.
+# Mirrors _DEFAULT_*_URL constants in internalcmdb.llm.client.  ACCEPTED.
 _LLM_BACKEND_DEFAULTS: dict[str, tuple[str, str, int]] = {
-    "reasoning": ("http://10.0.1.10:49001",  "Qwen/QwQ-32B-AWQ",                  120),
-    "fast":      ("http://10.0.1.10:49002",  "Qwen/Qwen2.5-14B-Instruct-AWQ",      60),
-    "embed":     ("http://10.0.1.10:49003",  "qwen3-embedding-8b-q5km",             30),
-    "guard":     ("http://10.0.1.115:8000",  "llm-guard",                           15),
+    "reasoning": ("http://10.0.1.10:49001", "Qwen/QwQ-32B-AWQ", 120),
+    "fast": ("http://10.0.1.10:49002", "Qwen/Qwen2.5-14B-Instruct-AWQ", 60),
+    "embed": ("http://10.0.1.10:49003", "qwen3-embedding-8b-q5km", 30),
+    "guard": ("http://10.0.1.115:8000", "llm-guard", 15),
 }
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _store() -> SettingsStore:
     return get_settings_store()
@@ -113,17 +130,29 @@ def _store() -> SettingsStore:
 def _user_id_from_request(request: Request) -> str:
     """Extract user_id from JWT sub claim.
 
-    Falls back to 'dev' when RBAC is in dev mode (ZITADEL_ISSUER not set).
+    Cookie is checked first, then Bearer header.
+    Falls back to 'dev' in AUTH_DEV_MODE, otherwise 'anonymous'.
     This prevents BOLA — user_id is NEVER taken from request body.
     """
-    if _DEV_MODE:
+    from internalcmdb.api.config import get_settings  # noqa: PLC0415
+    from internalcmdb.auth.security import decode_access_token  # noqa: PLC0415
+
+    if AUTH_DEV_MODE:
         return "dev"
-    auth = request.headers.get("authorization", "")
-    if auth.startswith("Bearer "):
-        claims = _decode_jwt_claims(auth[7:])
-        sub = claims.get("sub")
-        if sub:
-            return str(sub)
+
+    settings = get_settings()
+    token: str | None = request.cookies.get(settings.jwt_cookie_name)
+    if not token:
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+
+    if token:
+        try:
+            payload = decode_access_token(token)
+            return payload.sub
+        except Exception:
+            logger.debug("JWT decode failed, defaulting to anonymous", exc_info=True)
     return "anonymous"
 
 
@@ -145,15 +174,20 @@ async def _probe_llm_backend(name: str, url: str, model: str) -> LLMBackendStatu
             resp = await client.get(check_url)
         ms = int((time.monotonic() - start) * 1000)
         return LLMBackendStatus(
-            name=name, model=model, url=url,
-            reachable=resp.status_code < 500,
+            name=name,
+            model=model,
+            url=url,
+            reachable=resp.status_code < 500,  # noqa: PLR2004
             response_ms=ms,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         ms = int((time.monotonic() - start) * 1000)
         return LLMBackendStatus(
-            name=name, model=model, url=url,
-            reachable=False, response_ms=ms,
+            name=name,
+            model=model,
+            url=url,
+            reachable=False,
+            response_ms=ms,
             error=type(exc).__name__,
         )
 
@@ -166,8 +200,8 @@ async def _resolve_llm_backend(store: SettingsStore, name: str) -> LLMModelConfi
     repeated ``store.get("llm.<name>.<field>")`` calls across multiple functions.
     """
     default_url, default_mid, default_tmo = _LLM_BACKEND_DEFAULTS[name]
-    url       = await store.get(f"llm.{name}.url")      or default_url
-    model_id  = await store.get(f"llm.{name}.model_id") or default_mid
+    url = await store.get(f"llm.{name}.url") or default_url
+    model_id = await store.get(f"llm.{name}.model_id") or default_mid
     timeout_s = await store.get(f"llm.{name}.timeout_s") or default_tmo
     return LLMModelConfig(url=str(url), model_id=str(model_id), timeout_s=int(timeout_s))
 
@@ -175,6 +209,7 @@ async def _resolve_llm_backend(store: SettingsStore, name: str) -> LLMModelConfi
 # ---------------------------------------------------------------------------
 # Generic raw settings (for operator inspection)
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "",
@@ -212,15 +247,17 @@ async def get_settings_group(group: str) -> SettingGroupOut:
     dependencies=[Depends(require_role("admin"))],
     summary="Update a single setting value",
 )
-async def update_setting(setting_key: str, body: AppSettingUpdate, request: Request) -> AppSettingOut:
+async def update_setting(
+    setting_key: str, body: AppSettingUpdate, request: Request
+) -> AppSettingOut:
     # Reject keys that contain path traversal patterns
     if ".." in setting_key or "/" in setting_key:
         raise HTTPException(status_code=400, detail="Invalid setting key")
     user = _user_id_from_request(request)
     try:
         row = await _store().set(setting_key, body.value, updated_by=user)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Setting '{setting_key}' not found")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Setting '{setting_key}' not found") from exc
     return AppSettingOut.from_row(row)
 
 
@@ -235,14 +272,15 @@ async def reset_setting(setting_key: str) -> AppSettingOut:
         raise HTTPException(status_code=400, detail="Invalid setting key")
     try:
         row = await _store().reset_to_default(setting_key)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Setting '{setting_key}' not found")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Setting '{setting_key}' not found") from exc
     return AppSettingOut.from_row(row)
 
 
 # ---------------------------------------------------------------------------
 # LLM configuration
 # ---------------------------------------------------------------------------
+
 
 async def _build_llm_config() -> LLMConfigOut:
     store = _store()
@@ -281,23 +319,23 @@ async def update_llm_config(body: LLMConfigUpdate, request: Request) -> LLMConfi
     store = _store()
     user = _user_id_from_request(request)
     field_map: dict[str, str] = {
-        "reasoning_url":          "llm.reasoning.url",
-        "fast_url":               "llm.fast.url",
-        "embed_url":              "llm.embed.url",
-        "guard_url":              _SK_GUARD_URL,
-        "reasoning_model_id":     "llm.reasoning.model_id",
-        "fast_model_id":          "llm.fast.model_id",
-        "embed_model_id":         "llm.embed.model_id",
-        "reasoning_timeout_s":    "llm.reasoning.timeout_s",
-        "fast_timeout_s":         "llm.fast.timeout_s",
-        "embed_timeout_s":        "llm.embed.timeout_s",
-        "guard_timeout_s":        "llm.guard.timeout_s",
-        "guard_token":            "llm.guard.token",
-        "circuit_breaker_threshold":  "llm.circuit_breaker.threshold",
+        "reasoning_url": "llm.reasoning.url",
+        "fast_url": "llm.fast.url",
+        "embed_url": "llm.embed.url",
+        "guard_url": _SK_GUARD_URL,
+        "reasoning_model_id": "llm.reasoning.model_id",
+        "fast_model_id": "llm.fast.model_id",
+        "embed_model_id": "llm.embed.model_id",
+        "reasoning_timeout_s": "llm.reasoning.timeout_s",
+        "fast_timeout_s": "llm.fast.timeout_s",
+        "embed_timeout_s": "llm.embed.timeout_s",
+        "guard_timeout_s": "llm.guard.timeout_s",
+        "guard_token": "llm.guard.token",
+        "circuit_breaker_threshold": "llm.circuit_breaker.threshold",
         "circuit_breaker_cooldown_s": "llm.circuit_breaker.cooldown_s",
-        "max_connections":        "llm.pool.max_connections",
-        "max_keepalive":          "llm.pool.max_keepalive",
-        "max_retries":            "llm.max_retries",
+        "max_connections": "llm.pool.max_connections",
+        "max_keepalive": "llm.pool.max_keepalive",
+        "max_retries": "llm.max_retries",
     }
     for field_name, setting_key in field_map.items():
         val = getattr(body, field_name)
@@ -310,6 +348,7 @@ async def update_llm_config(body: LLMConfigUpdate, request: Request) -> LLMConfi
 # ---------------------------------------------------------------------------
 # Token budgets
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/token-budgets",
@@ -324,11 +363,13 @@ async def get_token_budgets() -> list[TokenBudgetConfig]:
     for caller in _TOKEN_BUDGET_CALLERS:
         key = f"budget.{caller}"
         val = await store.get(key) or 100000
-        result.append(TokenBudgetConfig(
-            caller=caller.replace("_", "-"),
-            tokens_per_hour=int(val),
-            spike_multiplier=float(spike),
-        ))
+        result.append(
+            TokenBudgetConfig(
+                caller=caller.replace("_", "-"),
+                tokens_per_hour=int(val),
+                spike_multiplier=float(spike),
+            )
+        )
     return result
 
 
@@ -338,7 +379,9 @@ async def get_token_budgets() -> list[TokenBudgetConfig]:
     dependencies=[Depends(require_role("admin"))],
     summary="Update one caller's hourly token budget",
 )
-async def update_token_budget(caller: str, body: TokenBudgetUpdate, request: Request) -> TokenBudgetConfig:
+async def update_token_budget(
+    caller: str, body: TokenBudgetUpdate, request: Request
+) -> TokenBudgetConfig:
     normalized = caller.replace("-", "_")
     if normalized not in _TOKEN_BUDGET_CALLERS:
         raise HTTPException(status_code=404, detail=f"Caller '{caller}' not found")
@@ -357,6 +400,7 @@ async def update_token_budget(caller: str, body: TokenBudgetUpdate, request: Req
 # ---------------------------------------------------------------------------
 # Guard & safety
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/guard",
@@ -397,6 +441,7 @@ async def update_guard_config(body: GuardConfigUpdate, request: Request) -> Guar
 # ---------------------------------------------------------------------------
 # HITL governance
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/hitl",
@@ -439,6 +484,7 @@ async def update_hitl_config(body: HITLConfigUpdate, request: Request) -> HITLCo
 # Self-heal
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/self-heal",
     response_model=SelfHealConfig,
@@ -466,7 +512,9 @@ async def update_self_heal_config(body: SelfHealConfigUpdate, request: Request) 
     if body.disk_threshold_pct is not None:
         await store.set("self_heal.disk_threshold_pct", body.disk_threshold_pct, updated_by=user)
     if body.log_auto_truncate_bytes is not None:
-        await store.set("self_heal.log_auto_truncate_bytes", body.log_auto_truncate_bytes, updated_by=user)
+        await store.set(
+            "self_heal.log_auto_truncate_bytes", body.log_auto_truncate_bytes, updated_by=user
+        )
     if body.log_hitl_bytes is not None:
         await store.set("self_heal.log_hitl_bytes", body.log_hitl_bytes, updated_by=user)
     store.invalidate_all()
@@ -476,6 +524,7 @@ async def update_self_heal_config(body: SelfHealConfigUpdate, request: Request) 
 # ---------------------------------------------------------------------------
 # Retention
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/retention",
@@ -505,12 +554,12 @@ async def update_retention_config(body: RetentionConfigUpdate, request: Request)
     store = _store()
     user = _user_id_from_request(request)
     field_map = {
-        "job_history_days":   "retention.job_history_days",
-        "audit_events_days":  "retention.audit_events_days",
-        "snapshots_days":     "retention.snapshots_days",
-        "llm_calls_days":     "retention.llm_calls_days",
+        "job_history_days": "retention.job_history_days",
+        "audit_events_days": "retention.audit_events_days",
+        "snapshots_days": "retention.snapshots_days",
+        "llm_calls_days": "retention.llm_calls_days",
         "metric_points_days": "retention.metric_points_days",
-        "insights_days":      "retention.insights_days",
+        "insights_days": "retention.insights_days",
     }
     for field_name, key in field_map.items():
         val = getattr(body, field_name)
@@ -524,6 +573,7 @@ async def update_retention_config(body: RetentionConfigUpdate, request: Request)
 # Observability
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/observability",
     response_model=ObservabilityConfig,
@@ -533,7 +583,9 @@ async def update_retention_config(body: RetentionConfigUpdate, request: Request)
 async def get_observability_config() -> ObservabilityConfig:
     store = _store()
     cors_raw = await store.get("obs.cors_origins")
-    cors = cors_raw if isinstance(cors_raw, list) else ["http://localhost:3333"]
+    cors: list[str] = (
+        [str(c) for c in cors_raw] if isinstance(cors_raw, list) else ["http://localhost:3333"]
+    )
     insecure_val = await store.get("obs.otlp_insecure")
     sample_val = await store.get("obs.sample_rate")
     debug_val = await store.get(_SK_OBS_DEBUG)
@@ -554,17 +606,19 @@ async def get_observability_config() -> ObservabilityConfig:
     dependencies=[Depends(require_role("admin"))],
     summary="Update observability configuration (most fields require restart)",
 )
-async def update_observability_config(body: ObservabilityConfigUpdate, request: Request) -> ObservabilityConfig:
+async def update_observability_config(
+    body: ObservabilityConfigUpdate, request: Request
+) -> ObservabilityConfig:
     store = _store()
     user = _user_id_from_request(request)
     field_map = {
         "otlp_endpoint": "obs.otlp_endpoint",
         "otlp_protocol": "obs.otlp_protocol",
         "otlp_insecure": "obs.otlp_insecure",
-        "sample_rate":   "obs.sample_rate",
-        "log_level":     "obs.log_level",
+        "sample_rate": "obs.sample_rate",
+        "log_level": "obs.log_level",
         "debug_enabled": _SK_OBS_DEBUG,
-        "cors_origins":  "obs.cors_origins",
+        "cors_origins": "obs.cors_origins",
     }
     for field_name, key in field_map.items():
         val = getattr(body, field_name)
@@ -577,6 +631,7 @@ async def update_observability_config(body: ObservabilityConfigUpdate, request: 
 # ---------------------------------------------------------------------------
 # Notification channels
 # ---------------------------------------------------------------------------
+
 
 def _channel_row_to_out(row: dict[str, Any]) -> NotificationChannelOut:
     return NotificationChannelOut(
@@ -599,7 +654,7 @@ def _channel_row_to_out(row: dict[str, Any]) -> NotificationChannelOut:
     summary="List all notification channels",
 )
 async def list_notification_channels(
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> list[NotificationChannelOut]:
     result = await session.execute(
         text("""
@@ -621,7 +676,7 @@ async def list_notification_channels(
 )
 async def create_notification_channel(
     body: NotificationChannelCreate,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> NotificationChannelOut:
     hmac_hash = _sha256_hex(body.hmac_secret) if body.hmac_secret else None
     result = await session.execute(
@@ -643,6 +698,8 @@ async def create_notification_channel(
     )
     await session.commit()
     row = result.fetchone()
+    if row is None:  # INSERT … RETURNING must always yield a row; guard for type safety
+        raise HTTPException(status_code=500, detail="Channel creation failed unexpectedly")
     return _channel_row_to_out(dict(row._mapping))
 
 
@@ -654,7 +711,7 @@ async def create_notification_channel(
 )
 async def get_notification_channel(
     channel_id: str,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> NotificationChannelOut:
     _validate_uuid(channel_id)
     result = await session.execute(
@@ -681,7 +738,7 @@ async def get_notification_channel(
 async def update_notification_channel(
     channel_id: str,
     body: NotificationChannelUpdate,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> NotificationChannelOut:
     _validate_uuid(channel_id)
     updates: list[str] = ["updated_at = now()"]
@@ -702,14 +759,13 @@ async def update_notification_channel(
         updates.append("is_active = :active")
         params["active"] = body.is_active
 
+    sql = (
+        "UPDATE config.notification_channel SET " + ", ".join(updates) + " WHERE channel_id = :cid"
+        " RETURNING channel_id, name, channel_type, target_url,"
+        "           hmac_secret_hash, events, is_active, created_at, updated_at"
+    )
     result = await session.execute(
-        text(f"""
-            UPDATE config.notification_channel
-               SET {", ".join(updates)}
-             WHERE channel_id = :cid
-            RETURNING channel_id, name, channel_type, target_url,
-                      hmac_secret_hash, events, is_active, created_at, updated_at
-        """),
+        text(sql),
         params,
     )
     await session.commit()
@@ -727,7 +783,7 @@ async def update_notification_channel(
 )
 async def delete_notification_channel(
     channel_id: str,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> None:
     _validate_uuid(channel_id)
     result = await session.execute(
@@ -735,7 +791,7 @@ async def delete_notification_channel(
         {"cid": channel_id},
     )
     await session.commit()
-    if result.rowcount == 0:
+    if cast(CursorResult[Any], result).rowcount == 0:
         raise HTTPException(status_code=404, detail=_MSG_CHANNEL_NOT_FOUND)
 
 
@@ -745,13 +801,16 @@ async def delete_notification_channel(
     dependencies=[Depends(require_role("admin"))],
     summary="Send a test event to a notification channel",
 )
-async def test_notification_channel(
+async def probe_notification_channel(
     channel_id: str,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> TestNotificationResult:
     _validate_uuid(channel_id)
     result = await session.execute(
-        text("SELECT target_url, hmac_secret_hash FROM config.notification_channel WHERE channel_id = :cid"),
+        text(
+            "SELECT target_url, hmac_secret_hash "
+            "FROM config.notification_channel WHERE channel_id = :cid"
+        ),
         {"cid": channel_id},
     )
     row = result.fetchone()
@@ -775,11 +834,11 @@ async def test_notification_channel(
             resp = await client.post(target_url, content=payload, headers=headers)
         ms = int((time.monotonic() - start) * 1000)
         return TestNotificationResult(
-            success=resp.status_code < 400,
+            success=resp.status_code < 400,  # noqa: PLR2004
             status_code=resp.status_code,
             latency_ms=ms,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         ms = int((time.monotonic() - start) * 1000)
         return TestNotificationResult(
             success=False,
@@ -792,6 +851,7 @@ async def test_notification_channel(
 # User preferences
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/preferences",
     response_model=list[UserPreferenceOut],
@@ -799,7 +859,7 @@ async def test_notification_channel(
 )
 async def get_user_preferences(
     request: Request,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> list[UserPreferenceOut]:
     user_id = _user_id_from_request(request)
     result = await session.execute(
@@ -830,7 +890,7 @@ async def update_user_preference(
     preference_key: str,
     body: UserPreferenceUpdate,
     request: Request,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> UserPreferenceOut:
     if ".." in preference_key or "/" in preference_key:
         raise HTTPException(status_code=400, detail="Invalid preference key")
@@ -847,6 +907,8 @@ async def update_user_preference(
     )
     await session.commit()
     row = result.fetchone()
+    if row is None:  # INSERT … RETURNING must always yield a row; guard for type safety
+        raise HTTPException(status_code=500, detail="Preference update failed unexpectedly")
     return UserPreferenceOut(preference_key=row[0], value=row[1], updated_at=row[2])
 
 
@@ -858,7 +920,7 @@ async def update_user_preference(
 async def delete_user_preference(
     preference_key: str,
     request: Request,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> None:
     if ".." in preference_key or "/" in preference_key:
         raise HTTPException(status_code=400, detail="Invalid preference key")
@@ -873,6 +935,7 @@ async def delete_user_preference(
 # ---------------------------------------------------------------------------
 # System info (read-only, live health probes)
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/system-info",
@@ -898,21 +961,21 @@ async def get_system_info() -> SystemInfoOut:
     redis_url = app_settings.redis_url
     try:
         from urllib.parse import urlsplit  # noqa: PLC0415
+
         r = urlsplit(redis_url)
         redis_host = f"{r.hostname}:{r.port or 6379}"
-    except Exception:  # noqa: BLE001
+    except Exception:
         redis_host = redis_url.split("@")[-1] if "@" in redis_url else redis_url
 
     # LLM backend probes — all in parallel, 3s timeout each.
     # _resolve_llm_backend reads URL/model_id from settings with fallback to _LLM_BACKEND_DEFAULTS.
     llm_cfgs = {name: await _resolve_llm_backend(store, name) for name in _LLM_BACKEND_DEFAULTS}
     probe_tasks = [
-        _probe_llm_backend(name, cfg.url, cfg.model_id)
-        for name, cfg in llm_cfgs.items()
+        _probe_llm_backend(name, cfg.url, cfg.model_id) for name, cfg in llm_cfgs.items()
     ]
     try:
         backends: list[LLMBackendStatus] = await asyncio.gather(*probe_tasks)
-    except Exception:  # noqa: BLE001
+    except Exception:
         backends = []
 
     # Cron job descriptions
@@ -944,9 +1007,10 @@ async def get_system_info() -> SystemInfoOut:
 # Utility
 # ---------------------------------------------------------------------------
 
+
 def _validate_uuid(value: str) -> None:
     """Raise 400 if value is not a valid UUID — prevents SQL injection via path params."""
     try:
         uuid.UUID(value)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid UUID format")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid UUID format") from exc

@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import uuid
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import APIRouter
+from starlette.routing import Route, WebSocketRoute
 
+from internalcmdb.api.routers.realtime import (
+    _HEARTBEAT_INTERVAL,
+    _HITL_PUSH_INTERVAL,
+    _INSIGHTS_PUSH_INTERVAL,
+    _MAX_SEEN_IDS,
+    _METRICS_PUSH_INTERVAL,
+    _authenticate_ws,
+    _filter_new_insights,
+    _safe_json,
+    router,
+)
+from internalcmdb.auth import security as sec
 
 # ---------------------------------------------------------------------------
 # _safe_json
@@ -16,8 +30,6 @@ import pytest
 
 
 def test_safe_json_basic():
-    from internalcmdb.api.routers.realtime import _safe_json
-
     row = MagicMock()
     row._mapping.items.return_value = [("key", "value"), ("num", 42)]
     result = _safe_json(row)
@@ -26,9 +38,7 @@ def test_safe_json_basic():
 
 
 def test_safe_json_datetime_converted_to_isoformat():
-    from internalcmdb.api.routers.realtime import _safe_json
-
-    dt = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+    dt = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
     row = MagicMock()
     row._mapping.items.return_value = [("created_at", dt)]
     result = _safe_json(row)
@@ -36,8 +46,6 @@ def test_safe_json_datetime_converted_to_isoformat():
 
 
 def test_safe_json_uuid_converted_to_str():
-    from internalcmdb.api.routers.realtime import _safe_json
-
     uid = uuid.uuid4()
     row = MagicMock()
     row._mapping.items.return_value = [("id", uid)]
@@ -46,8 +54,6 @@ def test_safe_json_uuid_converted_to_str():
 
 
 def test_safe_json_none_value_preserved():
-    from internalcmdb.api.routers.realtime import _safe_json
-
     row = MagicMock()
     row._mapping.items.return_value = [("field", None)]
     result = _safe_json(row)
@@ -55,8 +61,6 @@ def test_safe_json_none_value_preserved():
 
 
 def test_safe_json_bool_preserved():
-    from internalcmdb.api.routers.realtime import _safe_json
-
     row = MagicMock()
     row._mapping.items.return_value = [("active", True), ("deleted", False)]
     result = _safe_json(row)
@@ -65,17 +69,13 @@ def test_safe_json_bool_preserved():
 
 
 def test_safe_json_float_preserved():
-    from internalcmdb.api.routers.realtime import _safe_json
-
     row = MagicMock()
     row._mapping.items.return_value = [("score", 3.14)]
     result = _safe_json(row)
-    assert result["score"] == pytest.approx(3.14)
+    assert result["score"] == pytest.approx(3.14)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_safe_json_mixed_types():
-    from internalcmdb.api.routers.realtime import _safe_json
-
     dt = datetime(2025, 1, 1)
     uid = uuid.uuid4()
     row = MagicMock()
@@ -93,7 +93,7 @@ def test_safe_json_mixed_types():
     assert result["id"] == str(uid)
     assert result["label"] == "hello"
     assert result["count"] == 7
-    assert result["ratio"] == pytest.approx(0.5)
+    assert result["ratio"] == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
     assert result["flag"] is False
     assert result["nothing"] is None
 
@@ -105,23 +105,22 @@ def test_safe_json_mixed_types():
 
 @pytest.mark.asyncio
 async def test_authenticate_ws_dev_mode_returns_true():
-    from internalcmdb.api.routers.realtime import _authenticate_ws
-
     ws = MagicMock()
-    with patch("internalcmdb.api.middleware.rbac._DEV_MODE", True):
+    ws.cookies = {}
+    ws.query_params = {}
+    with patch("internalcmdb.api.middleware.rbac.AUTH_DEV_MODE", True):
         result = await _authenticate_ws(ws)
     assert result is True
 
 
 @pytest.mark.asyncio
 async def test_authenticate_ws_no_token_closes_and_returns_false():
-    from internalcmdb.api.routers.realtime import _authenticate_ws
-
     ws = MagicMock()
+    ws.cookies = {}
     ws.query_params = {}
     ws.close = AsyncMock()
 
-    with patch("internalcmdb.api.middleware.rbac._DEV_MODE", False):
+    with patch("internalcmdb.api.middleware.rbac.AUTH_DEV_MODE", False):
         result = await _authenticate_ws(ws)
 
     assert result is False
@@ -129,37 +128,46 @@ async def test_authenticate_ws_no_token_closes_and_returns_false():
 
 
 @pytest.mark.asyncio
-async def test_authenticate_ws_invalid_token_closes_and_returns_false():
-    from internalcmdb.api.routers.realtime import _authenticate_ws
+async def test_authenticate_ws_invalid_token_closes_and_returns_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "a" * 32)
+    sec.invalidate_jwt_secret_cache()
 
     ws = MagicMock()
+    ws.cookies = {}
     ws.query_params = {"token": "bad-token"}
     ws.close = AsyncMock()
 
-    with (
-        patch("internalcmdb.api.middleware.rbac._DEV_MODE", False),
-        patch("internalcmdb.api.middleware.rbac._decode_jwt_claims", return_value=None),
-    ):
+    with patch("internalcmdb.api.middleware.rbac.AUTH_DEV_MODE", False):
         result = await _authenticate_ws(ws)
 
     assert result is False
     ws.close.assert_awaited_once_with(code=4003, reason="Invalid auth token")
+    sec.invalidate_jwt_secret_cache()
 
 
 @pytest.mark.asyncio
-async def test_authenticate_ws_valid_token_returns_true():
-    from internalcmdb.api.routers.realtime import _authenticate_ws
+async def test_authenticate_ws_valid_token_returns_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET_KEY", "a" * 32)
+    sec.invalidate_jwt_secret_cache()
+
+    token, _, _ = sec.create_access_token(sec.TokenClaims("u1", "u@e.com", "u", "admin"))
 
     ws = MagicMock()
-    ws.query_params = {"token": "valid-token"}
+    ws.cookies = {}
+    ws.query_params = {"token": token}
 
     with (
-        patch("internalcmdb.api.middleware.rbac._DEV_MODE", False),
-        patch("internalcmdb.api.middleware.rbac._decode_jwt_claims", return_value={"sub": "user1"}),
+        patch("internalcmdb.api.middleware.rbac.AUTH_DEV_MODE", False),
+        patch("internalcmdb.api.routers.realtime.is_revoked", return_value=False),
     ):
         result = await _authenticate_ws(ws)
 
     assert result is True
+    sec.invalidate_jwt_secret_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -168,8 +176,6 @@ async def test_authenticate_ws_valid_token_returns_true():
 
 
 def test_filter_new_insights_returns_only_new():
-    from internalcmdb.api.routers.realtime import _filter_new_insights
-
     seen: deque[str] = deque(maxlen=500)
     seen.append("existing-id")
 
@@ -189,8 +195,6 @@ def test_filter_new_insights_returns_only_new():
 
 
 def test_filter_new_insights_updates_seen_ids():
-    from internalcmdb.api.routers.realtime import _filter_new_insights
-
     seen: deque[str] = deque(maxlen=500)
 
     row = MagicMock()
@@ -201,8 +205,6 @@ def test_filter_new_insights_updates_seen_ids():
 
 
 def test_filter_new_insights_empty_rows():
-    from internalcmdb.api.routers.realtime import _filter_new_insights
-
     seen: deque[str] = deque(maxlen=500)
     result = _filter_new_insights([], seen)
     assert result == []
@@ -214,23 +216,15 @@ def test_filter_new_insights_empty_rows():
 
 
 def test_router_is_api_router():
-    from fastapi import APIRouter
-
-    from internalcmdb.api.routers.realtime import router
-
     assert isinstance(router, APIRouter)
 
 
 def test_router_has_realtime_tag():
-    from internalcmdb.api.routers.realtime import router
-
     assert "realtime" in router.tags
 
 
 def test_router_has_websocket_routes():
-    from internalcmdb.api.routers.realtime import router
-
-    paths = {r.path for r in router.routes}
+    paths: set[str] = {r.path for r in router.routes if isinstance(r, (Route, WebSocketRoute))}
     assert "/ws/metrics" in paths
     assert "/ws/events" in paths
     assert "/ws/insights" in paths
@@ -238,14 +232,6 @@ def test_router_has_websocket_routes():
 
 
 def test_constants_have_expected_values():
-    from internalcmdb.api.routers.realtime import (
-        _HEARTBEAT_INTERVAL,
-        _HITL_PUSH_INTERVAL,
-        _INSIGHTS_PUSH_INTERVAL,
-        _MAX_SEEN_IDS,
-        _METRICS_PUSH_INTERVAL,
-    )
-
     assert _HEARTBEAT_INTERVAL > 0
     assert _METRICS_PUSH_INTERVAL > 0
     assert _INSIGHTS_PUSH_INTERVAL > 0

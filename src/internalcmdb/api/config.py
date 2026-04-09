@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -41,10 +42,18 @@ class Settings(BaseSettings):
     otlp_endpoint: str = "http://localhost:4317"
     otlp_protocol: str = "grpc"  # "grpc" or "http"
     otlp_insecure: bool = True
-    otel_sample_rate: float = 1.0  # 0.0–1.0; 1.0 = trace everything
+    otel_sample_rate: float = 1.0  # 0.0-1.0; 1.0 = trace everything
 
     # Debug endpoints
     debug_enabled: bool = True
+
+    # Auth / JWT (non-secret config only — JWT_SECRET_KEY is managed by SecretProvider)
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 120
+    jwt_cookie_name: str = "cmdb_session"
+    jwt_cookie_secure: bool = True
+    jwt_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    jwt_cookie_httponly: bool = True
 
     @property
     def database_url(self) -> str:

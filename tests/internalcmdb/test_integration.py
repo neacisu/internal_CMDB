@@ -7,9 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from internalcmdb.governance.guard_gate import RC_4, GateDecision
+from internalcmdb.governance.guard_gate import RC_4
 from internalcmdb.nervous.event_bus import Event
-
 
 # ---------------------------------------------------------------------------
 # test_eventbus_flow: publish → subscribe → ack cycle
@@ -30,9 +29,7 @@ async def test_eventbus_flow(mock_event_bus: Any) -> None:
     assert msg_id.startswith("mock-")
     assert len(mock_event_bus.published) == 1
 
-    events = await mock_event_bus.subscribe(
-        "sensor:ingest", "test-group", "consumer-1", count=10
-    )
+    events = await mock_event_bus.subscribe("sensor:ingest", "test-group", "consumer-1", count=10)
     assert len(events) == 1
     assert events[0].event_type == "sensor:ingest"
     assert events[0].payload.get("cpu_pct") == pytest.approx(85.0)
@@ -65,14 +62,16 @@ async def test_hitl_flow() -> None:
 
     wf = HITLWorkflow(session)
 
-    item_id = await wf.submit({
-        "item_type": "action_review",
-        "risk_class": "RC-2",
-        "context": {"action": "restart_container"},
-        "llm_suggestion": {"decision": "approved"},
-        "llm_confidence": 0.85,
-        "llm_model_used": "mock-fast",
-    })
+    item_id = await wf.submit(
+        {
+            "item_type": "action_review",
+            "risk_class": "RC-2",
+            "context": {"action": "restart_container"},
+            "llm_suggestion": {"decision": "approved"},
+            "llm_confidence": 0.85,
+            "llm_model_used": "mock-fast",
+        }
+    )
     assert item_id
     assert session.commit.call_count == 1
 
@@ -225,14 +224,16 @@ async def test_hitl_reject_flow() -> None:
 
     wf = HITLWorkflow(session)
 
-    item_id = await wf.submit({
-        "item_type": "action_review",
-        "risk_class": "RC-3",
-        "context": {"action": "delete_database"},
-        "llm_suggestion": {"decision": "rejected"},
-        "llm_confidence": 0.3,
-        "llm_model_used": "mock-fast",
-    })
+    item_id = await wf.submit(
+        {
+            "item_type": "action_review",
+            "risk_class": "RC-3",
+            "context": {"action": "delete_database"},
+            "llm_suggestion": {"decision": "rejected"},
+            "llm_confidence": 0.3,
+            "llm_model_used": "mock-fast",
+        }
+    )
     assert item_id
 
     fetch_row = MagicMock()
@@ -251,7 +252,5 @@ async def test_hitl_reject_flow() -> None:
 @pytest.mark.asyncio
 async def test_eventbus_empty_subscribe(mock_event_bus: Any) -> None:
     """Subscribe on a stream with no messages returns empty list."""
-    events = await mock_event_bus.subscribe(
-        "cortex:anomaly", "test-group", "consumer-1", count=10
-    )
+    events = await mock_event_bus.subscribe("cortex:anomaly", "test-group", "consumer-1", count=10)
     assert events == []

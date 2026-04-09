@@ -1,9 +1,16 @@
 """Tests for observability.logging."""
+
 from __future__ import annotations
+
 import json
 import logging
+
 from internalcmdb.observability.logging import (
-    JSONFormatter, _DevFormatter, get_correlation_id, set_correlation_id, setup_logging
+    JSONFormatter,
+    _DevFormatter,
+    get_correlation_id,
+    set_correlation_id,
+    setup_logging,
 )
 
 
@@ -24,7 +31,8 @@ def test_set_correlation_id_none():
 def test_json_formatter_valid_json():
     f = JSONFormatter()
     data = json.loads(f.format(_record()))
-    assert data["message"] == "test" and data["level"] == "INFO"
+    assert data["message"] == "test"
+    assert data["level"] == "INFO"
 
 
 def test_json_formatter_correlation_id():
@@ -35,7 +43,8 @@ def test_json_formatter_correlation_id():
 
 
 def test_json_formatter_exception():
-    import sys
+    import sys  # noqa: PLC0415
+
     try:
         raise ValueError("test error")
     except ValueError:
@@ -43,7 +52,8 @@ def test_json_formatter_exception():
     r = _record()
     r.exc_info = exc_info
     data = json.loads(JSONFormatter().format(r))
-    assert "exception" in data and "ValueError" in data["exception"]
+    assert "exception" in data
+    assert "ValueError" in data["exception"]
 
 
 def test_json_formatter_extra_fields():
@@ -63,7 +73,8 @@ def test_json_formatter_oversized_extra():
 
 def test_dev_formatter_produces_string():
     out = _DevFormatter().format(_record())
-    assert "test" in out and isinstance(out, str)
+    assert "test" in out
+    assert isinstance(out, str)
 
 
 def test_dev_formatter_includes_extra():

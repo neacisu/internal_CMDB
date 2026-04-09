@@ -5,17 +5,27 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import AnyHttpUrl, field_validator, model_validator
+from pydantic import field_validator, model_validator
 
 from internalcmdb.api.schemas.common import OrmBase
 
 # Accepted URL schemes for all endpoint URL fields (OWASP A03 — prevent non-HTTP injection)
 _HTTP_SCHEMES: tuple[str, str] = ("http://", "https://")
 
+# TokenBudget: minimum tokens per hour
+_MIN_TOKENS_PER_HOUR = 1000
+# SelfHeal disk threshold range (%)
+_DISK_THRESHOLD_MIN_PCT = 50
+_DISK_THRESHOLD_MAX_PCT = 99
+# Retention days range
+_RETENTION_DAYS_MIN = 7
+_RETENTION_DAYS_MAX = 1825
+
 
 # ---------------------------------------------------------------------------
 # Generic app_setting DTOs
 # ---------------------------------------------------------------------------
+
 
 class AppSettingOut(OrmBase):
     """Public representation of a single config.app_setting row."""
@@ -64,6 +74,7 @@ class SettingGroupOut(OrmBase):
 # LLM configuration
 # ---------------------------------------------------------------------------
 
+
 class LLMModelConfig(OrmBase):
     """Config for a single LLM backend."""
 
@@ -79,7 +90,7 @@ class LLMConfigOut(OrmBase):
     fast: LLMModelConfig
     embed: LLMModelConfig
     guard: LLMModelConfig
-    guard_token_set: bool          # True when llm.guard.token is non-empty
+    guard_token_set: bool  # True when llm.guard.token is non-empty
     circuit_breaker_threshold: int
     circuit_breaker_cooldown_s: int
     max_connections: int
@@ -123,6 +134,7 @@ class LLMConfigUpdate(OrmBase):
 # Token budgets
 # ---------------------------------------------------------------------------
 
+
 class TokenBudgetConfig(OrmBase):
     """Per-caller token budget entry."""
 
@@ -139,7 +151,7 @@ class TokenBudgetUpdate(OrmBase):
     @field_validator("tokens_per_hour")
     @classmethod
     def _positive(cls, v: int) -> int:
-        if v < 1000:
+        if v < _MIN_TOKENS_PER_HOUR:
             raise ValueError("tokens_per_hour must be at least 1000")
         return v
 
@@ -148,12 +160,22 @@ class TokenBudgetUpdate(OrmBase):
 # Guard & safety
 # ---------------------------------------------------------------------------
 
-_ALLOWED_TOOL_CALLS: frozenset[str] = frozenset({
-    "query_registry", "list_hosts", "list_services", "get_host_facts",
-    "get_service_instances", "search_documents", "get_health_score",
-    "list_insights", "generate_report", "check_drift",
-    "run_collector", "list_evidence_packs",
-})
+_ALLOWED_TOOL_CALLS: frozenset[str] = frozenset(
+    {
+        "query_registry",
+        "list_hosts",
+        "list_services",
+        "get_host_facts",
+        "get_service_instances",
+        "search_documents",
+        "get_health_score",
+        "list_insights",
+        "generate_report",
+        "check_drift",
+        "run_collector",
+        "list_evidence_packs",
+    }
+)
 
 
 class GuardConfig(OrmBase):
@@ -182,6 +204,7 @@ class GuardConfigUpdate(OrmBase):
 # HITL governance
 # ---------------------------------------------------------------------------
 
+
 class HITLConfig(OrmBase):
     """HITL escalation thresholds and limits."""
 
@@ -199,8 +222,12 @@ class HITLConfigUpdate(OrmBase):
 
     @model_validator(mode="after")
     def _positive_values(self) -> HITLConfigUpdate:
-        for field_name in ("rc4_escalation_minutes", "rc3_escalation_minutes",
-                           "rc2_escalation_hours", "max_escalations"):
+        for field_name in (
+            "rc4_escalation_minutes",
+            "rc3_escalation_minutes",
+            "rc2_escalation_hours",
+            "max_escalations",
+        ):
             val = getattr(self, field_name)
             if val is not None and val < 1:
                 raise ValueError(f"{field_name} must be at least 1")
@@ -210,6 +237,7 @@ class HITLConfigUpdate(OrmBase):
 # ---------------------------------------------------------------------------
 # Self-heal
 # ---------------------------------------------------------------------------
+
 
 class SelfHealConfig(OrmBase):
     """Self-healing thresholds for disk and container log management."""
@@ -227,7 +255,7 @@ class SelfHealConfigUpdate(OrmBase):
     @field_validator("disk_threshold_pct")
     @classmethod
     def _disk_range(cls, v: int | None) -> int | None:
-        if v is not None and not (50 <= v <= 99):
+        if v is not None and not (_DISK_THRESHOLD_MIN_PCT <= v <= _DISK_THRESHOLD_MAX_PCT):
             raise ValueError("disk_threshold_pct must be between 50 and 99")
         return v
 
@@ -236,15 +264,14 @@ class SelfHealConfigUpdate(OrmBase):
         auto = self.log_auto_truncate_bytes
         hitl = self.log_hitl_bytes
         if auto is not None and hitl is not None and hitl >= auto:
-            raise ValueError(
-                "log_hitl_bytes must be less than log_auto_truncate_bytes"
-            )
+            raise ValueError("log_hitl_bytes must be less than log_auto_truncate_bytes")
         return self
 
 
 # ---------------------------------------------------------------------------
 # Retention
 # ---------------------------------------------------------------------------
+
 
 class RetentionConfig(OrmBase):
     """Per-table data retention windows (days)."""
@@ -269,7 +296,7 @@ class RetentionConfigUpdate(OrmBase):
     def _days_range(self) -> RetentionConfigUpdate:
         for field_name in type(self).model_fields:
             val = getattr(self, field_name)
-            if val is not None and not (7 <= val <= 1825):
+            if val is not None and not (_RETENTION_DAYS_MIN <= val <= _RETENTION_DAYS_MAX):
                 raise ValueError(f"{field_name} must be between 7 and 1825 days")
         return self
 
@@ -277,6 +304,7 @@ class RetentionConfigUpdate(OrmBase):
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------
+
 
 class ObservabilityConfig(OrmBase):
     """OTLP, logging, and application runtime configuration."""
@@ -335,6 +363,7 @@ class ObservabilityConfigUpdate(OrmBase):
 # Notification channels
 # ---------------------------------------------------------------------------
 
+
 class NotificationChannelOut(OrmBase):
     """Public representation of a notification channel (no secret)."""
 
@@ -344,7 +373,7 @@ class NotificationChannelOut(OrmBase):
     target_url: str | None = None
     events: list[str]
     is_active: bool
-    hmac_configured: bool        # True when hmac_secret_hash is set
+    hmac_configured: bool  # True when hmac_secret_hash is set
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -354,7 +383,7 @@ class NotificationChannelCreate(OrmBase):
 
     name: str
     target_url: str
-    hmac_secret: str | None = None     # stored as SHA-256 hash, never returned
+    hmac_secret: str | None = None  # stored as SHA-256 hash, never returned
     events: list[str]
     is_active: bool = True
 
@@ -407,6 +436,7 @@ class TestNotificationResult(OrmBase):
 # User preferences
 # ---------------------------------------------------------------------------
 
+
 class UserPreferenceOut(OrmBase):
     """A single user preference entry."""
 
@@ -424,6 +454,7 @@ class UserPreferenceUpdate(OrmBase):
 # ---------------------------------------------------------------------------
 # System info
 # ---------------------------------------------------------------------------
+
 
 class LLMBackendStatus(OrmBase):
     """Live health status for one LLM backend."""
@@ -445,7 +476,7 @@ class SystemInfoOut(OrmBase):
     db_port: int
     db_name: str
     db_ssl_mode: str
-    redis_url_host: str            # host:port only, no credentials
+    redis_url_host: str  # host:port only, no credentials
     llm_backends: list[LLMBackendStatus]
     cognitive_tasks: list[str]
     cron_jobs: list[str]

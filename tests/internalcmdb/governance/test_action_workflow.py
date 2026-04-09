@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from internalcmdb.governance.action_workflow import ActionWorkflow, WorkflowResult
 from internalcmdb.motor.remediation import RC_1, RC_2, RC_3
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -50,13 +48,19 @@ def _make_workflow() -> tuple[ActionWorkflow, MagicMock, MagicMock, MagicMock, M
     redis_url = "redis://localhost:6379"
 
     with (
-        patch("internalcmdb.governance.action_workflow.PolicyEnforcer") as MockPolicy,
-        patch("internalcmdb.governance.action_workflow.HITLWorkflow") as MockHITL,
-        patch("internalcmdb.governance.action_workflow.PlaybookExecutor") as MockExecutor,
-        patch("internalcmdb.governance.action_workflow.ExecutionLock") as MockLock,
+        patch("internalcmdb.governance.action_workflow.PolicyEnforcer") as MockPolicy,  # noqa: N806
+        patch("internalcmdb.governance.action_workflow.HITLWorkflow") as MockHITL,  # noqa: N806
+        patch("internalcmdb.governance.action_workflow.PlaybookExecutor") as MockExecutor,  # noqa: N806
+        patch("internalcmdb.governance.action_workflow.ExecutionLock") as MockLock,  # noqa: N806
     ):
         wf = ActionWorkflow(db_session, async_session, redis_url)
-        return wf, MockPolicy.return_value, MockHITL.return_value, MockExecutor.return_value, MockLock.return_value
+        return (
+            wf,
+            MockPolicy.return_value,
+            MockHITL.return_value,
+            MockExecutor.return_value,
+            MockLock.return_value,
+        )
 
 
 # ---------------------------------------------------------------------------

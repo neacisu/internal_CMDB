@@ -1,4 +1,4 @@
-"""Tests for the debug router (async get_async_session, platform_admin RBAC bypassed in dev mode)."""
+"""Tests for the debug router (async get_async_session, platform_admin RBAC bypassed in dev mode)."""  # noqa: E501
 
 from __future__ import annotations
 

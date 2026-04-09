@@ -139,7 +139,7 @@ _AI_INVENTORY: list[AISystemEntry] = [
 def _parse_entity_uuid(entity_id: str) -> uuid.UUID | None:
     try:
         return uuid.UUID(entity_id.strip())
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return None
 
 
@@ -197,7 +197,7 @@ class AIComplianceManager:
         try:
             result = await self._session.execute(sql)
             return {str(r[0]): int(r[1]) for r in result.fetchall()}
-        except (ProgrammingError, DBAPIError):
+        except ProgrammingError, DBAPIError:
             logger.exception(
                 "ai_compliance: telemetry.llm_call_log aggregate failed; "
                 "inventory returned without call counts",
@@ -268,15 +268,19 @@ class AIComplianceManager:
         return high_risk
 
     def _report_risk_management_section(
-        self, lines: list[str], high_risk: list[AISystemEntry],
+        self,
+        lines: list[str],
+        high_risk: list[AISystemEntry],
     ) -> None:
-        lines.extend([
-            "## 2. Risk Management (Article 9)",
-            "",
-            f"Total AI systems registered: **{len(self._inventory)}**",
-            f"High-risk systems: **{len(high_risk)}**",
-            "",
-        ])
+        lines.extend(
+            [
+                "## 2. Risk Management (Article 9)",
+                "",
+                f"Total AI systems registered: **{len(self._inventory)}**",
+                f"High-risk systems: **{len(high_risk)}**",
+                "",
+            ]
+        )
         for sys in high_risk:
             lines.append(
                 f"- **{sys.system_name}**: classified as high-risk. "
@@ -289,56 +293,68 @@ class AIComplianceManager:
         all_data_types: set[str] = set()
         for entry in self._inventory:
             all_data_types.update(entry.data_types)
-        lines.extend([
-            "## 3. Data Governance (Article 10)",
-            "",
-            f"Data categories in scope: {', '.join(sorted(all_data_types))}",
-            "",
-            "- All training/inference data sourced from internal CMDB registry",
-            "- No personal data processed (infrastructure telemetry only)",
-            "- Data lineage tracked via evidence packs and provenance chains",
-            "- RAG content scanned for injection patterns before use",
-            "",
-        ])
+        lines.extend(
+            [
+                "## 3. Data Governance (Article 10)",
+                "",
+                f"Data categories in scope: {', '.join(sorted(all_data_types))}",
+                "",
+                "- All training/inference data sourced from internal CMDB registry",
+                "- No personal data processed (infrastructure telemetry only)",
+                "- Data lineage tracked via evidence packs and provenance chains",
+                "- RAG content scanned for injection patterns before use",
+                "",
+            ]
+        )
 
     @staticmethod
     def _report_article_12_section(
-        lines: list[str], article_12: dict[str, Any],
+        lines: list[str],
+        article_12: dict[str, Any],
     ) -> None:
-        pf = lambda v: "PASS" if v else "FAIL"  # noqa: E731
-        lines.extend([
-            "## 4. Record-Keeping (Article 12)",
-            "",
-            f"- Audit trail: **{pf(article_12['audit_trail'])}**",
-            f"- Decision logging: **{pf(article_12['decision_logging'])}**",
-            f"- Model versioning: **{pf(article_12['model_versioning'])}**",
-            f"- Data lineage: **{pf(article_12['data_lineage'])}**",
-            f"- HITL feedback loop: **{pf(article_12['hitl_feedback'])}**",
-            "",
-        ])
+        def pf(v):
+            return "PASS" if v else "FAIL"
+        lines.extend(
+            [
+                "## 4. Record-Keeping (Article 12)",
+                "",
+                f"- Audit trail: **{pf(article_12['audit_trail'])}**",
+                f"- Decision logging: **{pf(article_12['decision_logging'])}**",
+                f"- Model versioning: **{pf(article_12['model_versioning'])}**",
+                f"- Data lineage: **{pf(article_12['data_lineage'])}**",
+                f"- HITL feedback loop: **{pf(article_12['hitl_feedback'])}**",
+                "",
+            ]
+        )
 
     @staticmethod
     def _report_human_oversight_section(lines: list[str]) -> None:
-        lines.extend([
-            "## 5. Human Oversight (Article 14)",
-            "",
-            "- All high-risk actions require HITL approval (RC-3/RC-4)",
-            "- Guard Gate provides 5-level defence-in-depth evaluation",
-            "- LLM outputs are validated before execution",
-            "- Operator can override or abort any AI-initiated action",
-            "",
-        ])
+        lines.extend(
+            [
+                "## 5. Human Oversight (Article 14)",
+                "",
+                "- All high-risk actions require HITL approval (RC-3/RC-4)",
+                "- Guard Gate provides 5-level defence-in-depth evaluation",
+                "- LLM outputs are validated before execution",
+                "- Operator can override or abort any AI-initiated action",
+                "",
+            ]
+        )
 
     @staticmethod
     def _report_article_52_section(
-        lines: list[str], article_52: dict[str, Any],
+        lines: list[str],
+        article_52: dict[str, Any],
     ) -> None:
-        pf = lambda v: "PASS" if v else "FAIL"  # noqa: E731
-        lines.extend([
-            "## 6. Transparency Obligations (Article 52)",
-            "",
-            f"- Overall: **{pf(article_52['overall_compliant'])}**",
-        ])
+        def pf(v):
+            return "PASS" if v else "FAIL"
+        lines.extend(
+            [
+                "## 6. Transparency Obligations (Article 52)",
+                "",
+                f"- Overall: **{pf(article_52['overall_compliant'])}**",
+            ]
+        )
         for sr in article_52.get("systems", []):
             t = "✓" if sr["transparency_marker"] else "✗"
             p = "✓" if sr["purpose_documented"] else "✗"
@@ -348,14 +364,18 @@ class AIComplianceManager:
 
     @staticmethod
     def _report_article_15_section(
-        lines: list[str], article_15: dict[str, Any],
+        lines: list[str],
+        article_15: dict[str, Any],
     ) -> None:
-        pf = lambda v: "PASS" if v else "FAIL"  # noqa: E731
-        lines.extend([
-            "## 7. Accuracy, Robustness, and Cybersecurity (Article 15)",
-            "",
-            f"- Overall: **{pf(article_15['overall_compliant'])}**",
-        ])
+        def pf(v):
+            return "PASS" if v else "FAIL"
+        lines.extend(
+            [
+                "## 7. Accuracy, Robustness, and Cybersecurity (Article 15)",
+                "",
+                f"- Overall: **{pf(article_15['overall_compliant'])}**",
+            ]
+        )
         for hr in article_15.get("high_risk_systems", []):
             a = "✓" if hr["has_recent_audit"] else "✗"
             o = "✓" if hr["full_human_oversight"] else "✗"
@@ -379,15 +399,17 @@ class AIComplianceManager:
             not schedule_overdue,
         ]
         overall = "COMPLIANT" if all(overall_parts) else "REVIEW NEEDED"
-        lines.extend([
-            "## 8. Overall Assessment",
-            "",
-            f"**Status: {overall}**",
-            "",
-            f"Regulation: {_REGULATION_VERSION}",
-            f"Compliance schedule: {'ON TIME' if not schedule_overdue else 'OVERDUE'}",
-            f"Report generated at {now} by AIComplianceManager.",
-        ])
+        lines.extend(
+            [
+                "## 8. Overall Assessment",
+                "",
+                f"**Status: {overall}**",
+                "",
+                f"Regulation: {_REGULATION_VERSION}",
+                f"Compliance schedule: {'ON TIME' if not schedule_overdue else 'OVERDUE'}",
+                f"Report generated at {now} by AIComplianceManager.",
+            ]
+        )
 
     # ------------------------------------------------------------------
     # Data lineage audit
@@ -514,20 +536,16 @@ class AIComplianceManager:
             r1 = await self._session.execute(sql_observed, {"eid": entity_uuid})
             row1 = r1.one()
             out["observed_fact_count"] = int(row1[0])
-            out["observed_fact_last_at"] = (
-                row1[1].isoformat() if row1[1] is not None else None
-            )
+            out["observed_fact_last_at"] = row1[1].isoformat() if row1[1] is not None else None
 
             r2 = await self._session.execute(sql_metrics, {"eid": entity_uuid})
             row2 = r2.one()
             out["metric_point_count_90d"] = int(row2[0])
-            out["metric_point_last_at"] = (
-                row2[1].isoformat() if row2[1] is not None else None
-            )
+            out["metric_point_last_at"] = row2[1].isoformat() if row2[1] is not None else None
 
             r3 = await self._session.execute(sql_audit, {"eid": entity_uuid})
             out["audit_event_count_90d_target"] = int(r3.scalar_one())
-        except (ProgrammingError, DBAPIError):
+        except ProgrammingError, DBAPIError:
             logger.exception(
                 "ai_compliance: lineage evidence query failed for entity_id=%s",
                 entity_uuid,
@@ -568,9 +586,7 @@ class AIComplianceManager:
         Returns FAIL for all checks to avoid false compliance signals.
         A session must be attached for genuine verification.
         """
-        _detail = (
-            "No DB session — UNVERIFIED. Attach AsyncSession for live verification."
-        )
+        _detail = "No DB session — UNVERIFIED. Attach AsyncSession for live verification."
         checks: dict[str, Any] = {
             "audit_trail": False,
             "audit_trail_detail": f"{_detail} Checks governance.audit_event.",
@@ -687,20 +703,25 @@ class AIComplianceManager:
             has_transparency = entry.human_oversight_level in ("full", "partial")
             has_purpose = bool(entry.purpose)
             has_risk_classification = entry.risk_level in (
-                "minimal", "limited", "high", "unacceptable",
+                "minimal",
+                "limited",
+                "high",
+                "unacceptable",
             )
 
             entry_pass = has_transparency and has_purpose and has_risk_classification
             if not entry_pass:
                 all_pass = False
 
-            results.append({
-                "system_name": entry.system_name,
-                "transparency_marker": has_transparency,
-                "purpose_documented": has_purpose,
-                "risk_classified": has_risk_classification,
-                "compliant": entry_pass,
-            })
+            results.append(
+                {
+                    "system_name": entry.system_name,
+                    "transparency_marker": has_transparency,
+                    "purpose_documented": has_purpose,
+                    "risk_classified": has_risk_classification,
+                    "compliant": entry_pass,
+                }
+            )
 
         return {
             "article": "Article 52 — Transparency Obligations",
@@ -731,12 +752,14 @@ class AIComplianceManager:
         for entry in high_risk:
             has_audit = entry.last_audit is not None
             has_oversight = entry.human_oversight_level == "full"
-            checks.append({
-                "system_name": entry.system_name,
-                "has_recent_audit": has_audit,
-                "full_human_oversight": has_oversight,
-                "compliant": has_audit and has_oversight,
-            })
+            checks.append(
+                {
+                    "system_name": entry.system_name,
+                    "has_recent_audit": has_audit,
+                    "full_human_oversight": has_oversight,
+                    "compliant": has_audit and has_oversight,
+                }
+            )
 
         all_pass = all(c["compliant"] for c in checks) if checks else True
 

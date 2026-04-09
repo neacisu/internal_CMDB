@@ -1,8 +1,12 @@
 """Tests for motor.concurrency — TokenBucket and try_acquire_within_deadline."""
+
 from __future__ import annotations
+
 import asyncio
 import contextlib
+
 import pytest
+
 from internalcmdb.motor.concurrency import TokenBucket, try_acquire_within_deadline
 
 
@@ -13,17 +17,17 @@ def test_token_bucket_initial_tokens():
 
 
 def test_token_bucket_invalid_max_tokens():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="max_tokens must be"):
         TokenBucket(max_tokens=0)
 
 
 def test_token_bucket_invalid_refill_rate():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="refill_rate must be"):
         TokenBucket(max_tokens=5, refill_rate=0)
 
 
 def test_token_bucket_invalid_refill_interval():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="refill_interval must be"):
         TokenBucket(max_tokens=5, refill_interval=0)
 
 
@@ -81,7 +85,7 @@ async def test_try_acquire_within_deadline_success():
     bucket = TokenBucket(max_tokens=10, refill_rate=10, refill_interval=0.1)
     await bucket.start()
     try:
-        result = await try_acquire_within_deadline(bucket, deadline=1.0)
+        result = await try_acquire_within_deadline(bucket, deadline_seconds=1.0)
         assert result is True
     finally:
         with contextlib.suppress(asyncio.CancelledError):

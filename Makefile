@@ -1,6 +1,6 @@
 PYTHON ?= python
 
-.PHONY: help init install lint format type test test-cov security audit check build clean run \
+.PHONY: help init install lint format type test test-cov security audit semgrep semgrep-update check build clean run \
         api ui worker migrate-worker migrate-check dev-up dev-down \
         build-frontend-dev \
         start stop restart status logs \
@@ -18,6 +18,8 @@ help:
 	@echo "  test-cov      - Run pytest with coverage"
 	@echo "  security      - Run Bandit on source"
 	@echo "  audit         - Run pip-audit for dependencies"
+	@echo "  semgrep       - Run Semgrep SAST (local rule library — offline)"
+	@echo "  semgrep-update - Download/refresh full Semgrep rule library from semgrep.dev"
 	@echo "  check         - Run all quality gates"
 	@echo "  shellcheck    - Lint all bash scripts"
 	@echo "  frontend-test - Vitest + coverage (requires: cd frontend && pnpm install)"
@@ -52,6 +54,22 @@ init:
 	. .venv/bin/activate && pip install --upgrade pip
 	. .venv/bin/activate && pip install -e ".[dev]"
 	. .venv/bin/activate && pre-commit install
+	@echo "=== Installing semgrep in isolated venv (avoids opentelemetry conflict) ==="
+	@if ! command -v semgrep >/dev/null 2>&1; then \
+	    python3 -m venv /opt/semgrep-venv && \
+	    /opt/semgrep-venv/bin/pip install --upgrade pip -q && \
+	    /opt/semgrep-venv/bin/pip install semgrep -q && \
+	    ln -sf /opt/semgrep-venv/bin/semgrep /usr/local/bin/semgrep && \
+	    echo "semgrep $$(semgrep --version 2>&1 | head -1) installed → /usr/local/bin/semgrep"; \
+	else \
+	    echo "semgrep already available: $$(semgrep --version 2>&1 | head -1)"; \
+	fi
+	@echo "=== Downloading Semgrep rule library (50 packs, ~15K rules) ==="
+	@if [ ! -d .semgrep/registry ] || [ ! -f .semgrep/registry/_last_update.txt ]; then \
+	    bash scripts/semgrep_update_rules.sh; \
+	else \
+	    echo "Rule library already present ($$(date -r .semgrep/registry/_last_update.txt)). Run 'make semgrep-update' to refresh."; \
+	fi
 
 install:
 	pip install --upgrade pip
@@ -75,10 +93,27 @@ test-cov:
 security:
 	bandit -c pyproject.toml -r src
 
+semgrep:
+	@command -v semgrep >/dev/null 2>&1 || (echo "semgrep not found. Run: python3 -m venv /opt/semgrep-venv && /opt/semgrep-venv/bin/pip install semgrep && ln -sf /opt/semgrep-venv/bin/semgrep /usr/local/bin/semgrep"; exit 1)
+	@[ -d .semgrep/registry ] || (echo "Local rule library missing. Run: make semgrep-update"; exit 1)
+	semgrep scan \
+	        --config .semgrep/rules.yml \
+	        --config .semgrep/typescript.yml \
+	        --config .semgrep/business-logic.yml \
+	        --config .semgrep/registry/ \
+	        --severity WARNING \
+	        --error \
+	        --metrics=off \
+	        src frontend/src
+
+semgrep-update:
+	@command -v semgrep >/dev/null 2>&1 || (echo "semgrep not found."; exit 1)
+	bash scripts/semgrep_update_rules.sh
+
 audit:
 	pip-audit
 
-check: lint type test security audit
+check: lint type test security semgrep audit
 
 shellcheck:
 	@command -v shellcheck >/dev/null 2>&1 || (echo "Install shellcheck: apt install shellcheck"; exit 1)

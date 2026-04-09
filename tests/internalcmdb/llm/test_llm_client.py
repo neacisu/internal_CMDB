@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from internalcmdb.llm.client import (
-    LLMClient,
-    _BACKOFF_BASE,
     _CIRCUIT_BREAKER_THRESHOLD,
-    _CircuitState,
     _MAX_RETRIES,
+    LLMClient,
+    _CircuitState,
 )
-
 
 # ---------------------------------------------------------------------------
 # CircuitState unit tests
@@ -131,9 +127,7 @@ class TestLLMClient:
         assert result["choices"][0]["message"]["content"] == "ok"
 
     @pytest.mark.asyncio
-    async def test_circuit_breaker_fallback_reason_to_fast(
-        self, client: LLMClient
-    ) -> None:
+    async def test_circuit_breaker_fallback_reason_to_fast(self, client: LLMClient) -> None:
         for _ in range(_CIRCUIT_BREAKER_THRESHOLD):
             client._circuits["reasoning"].record_failure("reasoning")
         assert client._circuits["reasoning"].degraded is True

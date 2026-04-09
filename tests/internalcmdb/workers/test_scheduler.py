@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,7 +10,6 @@ import pytest
 
 from internalcmdb.workers.models import JobHistory, WorkerSchedule
 from internalcmdb.workers.scheduler import CronScheduler
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -48,8 +46,10 @@ def _make_scheduler(**kwargs) -> CronScheduler:
         "database_url": "postgresql+psycopg://user:pass@localhost/db",
     }
     defaults.update(kwargs)
-    with patch("internalcmdb.workers.scheduler.create_engine"), \
-         patch("internalcmdb.workers.scheduler.sessionmaker"):
+    with (
+        patch("internalcmdb.workers.scheduler.create_engine"),
+        patch("internalcmdb.workers.scheduler.sessionmaker"),
+    ):
         return CronScheduler(**defaults)
 
 
@@ -60,8 +60,10 @@ def _make_scheduler(**kwargs) -> CronScheduler:
 
 class TestSchedulerConstructor:
     def test_scheduler_constructor(self):
-        with patch("internalcmdb.workers.scheduler.create_engine") as mock_engine, \
-             patch("internalcmdb.workers.scheduler.sessionmaker") as mock_sm:
+        with (
+            patch("internalcmdb.workers.scheduler.create_engine"),
+            patch("internalcmdb.workers.scheduler.sessionmaker"),
+        ):
             scheduler = CronScheduler(
                 redis_url="redis://localhost:6379",
                 database_url="postgresql+psycopg://user:pass@localhost/db",
@@ -77,8 +79,10 @@ class TestSchedulerConstructor:
         assert not scheduler._shutdown_event.is_set()
 
     def test_scheduler_constructor_defaults(self):
-        with patch("internalcmdb.workers.scheduler.create_engine"), \
-             patch("internalcmdb.workers.scheduler.sessionmaker"):
+        with (
+            patch("internalcmdb.workers.scheduler.create_engine"),
+            patch("internalcmdb.workers.scheduler.sessionmaker"),
+        ):
             scheduler = CronScheduler(
                 redis_url="redis://localhost:6379",
                 database_url="postgresql+psycopg://user:pass@localhost/db",
@@ -211,8 +215,10 @@ class TestConnectRedis:
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(side_effect=ConnectionRefusedError("refused"))
 
-        with patch("internalcmdb.workers.scheduler.Redis") as mock_redis_cls, \
-             patch("internalcmdb.workers.scheduler.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("internalcmdb.workers.scheduler.Redis") as mock_redis_cls,
+            patch("internalcmdb.workers.scheduler.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mock_redis_cls.from_url.return_value = mock_redis
             with pytest.raises(ConnectionError, match="Failed to connect to Redis"):
                 await scheduler._connect_redis()
@@ -222,12 +228,12 @@ class TestConnectRedis:
         scheduler = _make_scheduler()
 
         mock_redis = AsyncMock()
-        mock_redis.ping = AsyncMock(
-            side_effect=[ConnectionRefusedError("refused"), True]
-        )
+        mock_redis.ping = AsyncMock(side_effect=[ConnectionRefusedError("refused"), True])
 
-        with patch("internalcmdb.workers.scheduler.Redis") as mock_redis_cls, \
-             patch("internalcmdb.workers.scheduler.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("internalcmdb.workers.scheduler.Redis") as mock_redis_cls,
+            patch("internalcmdb.workers.scheduler.asyncio.sleep", new_callable=AsyncMock),
+        ):
             mock_redis_cls.from_url.return_value = mock_redis
             result = await scheduler._connect_redis()
 
@@ -267,9 +273,13 @@ class TestEnqueueSync:
         redis_mock = MagicMock()
         now = datetime.now(tz=UTC)
 
-        with patch("internalcmdb.workers.scheduler.asyncio.get_running_loop",
-                   side_effect=RuntimeError("no loop")), \
-             patch("redis.from_url") as mock_sync_redis_from_url:
+        with (
+            patch(
+                "internalcmdb.workers.scheduler.asyncio.get_running_loop",
+                side_effect=RuntimeError("no loop"),
+            ),
+            patch("redis.from_url") as mock_sync_redis_from_url,
+        ):
             mock_sync_conn = MagicMock()
             mock_sync_redis_from_url.return_value = mock_sync_conn
 

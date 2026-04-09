@@ -19,7 +19,8 @@ import asyncio
 import logging
 import os
 import time
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +31,29 @@ _VAULT_PATH = os.getenv("VAULT_SECRET_PATH", "internalcmdb")
 _VAULT_TIMEOUT = int(os.getenv("VAULT_TIMEOUT", "10"))
 _VAULT_CACHE_TTL = int(os.getenv("VAULT_CACHE_TTL", "300"))
 
-_MANAGED_SECRETS = frozenset({
-    "SECRET_KEY",
-    "POSTGRES_PASSWORD",
-    "REDIS_PASSWORD",
-})
+_MANAGED_SECRETS = frozenset(
+    {
+        "SECRET_KEY",
+        "POSTGRES_PASSWORD",
+        "REDIS_PASSWORD",
+        "JWT_SECRET_KEY",
+    }
+)
+
+
+@dataclass
+class VaultConfig:
+    """Connection and routing configuration for the OpenBao/Vault backend.
+
+    All fields default to the corresponding ``VAULT_*`` environment variables
+    so that ``VaultConfig()`` is valid in production without any arguments.
+    """
+
+    addr: str = _VAULT_ADDR
+    token: str = _VAULT_TOKEN
+    mount: str = _VAULT_MOUNT
+    path: str = _VAULT_PATH
+    timeout: int = _VAULT_TIMEOUT
 
 
 class SecretProvider:
@@ -47,18 +66,16 @@ class SecretProvider:
 
     def __init__(
         self,
-        vault_addr: str = _VAULT_ADDR,
-        vault_token: str = _VAULT_TOKEN,
-        mount: str = _VAULT_MOUNT,
-        path: str = _VAULT_PATH,
-        timeout: int = _VAULT_TIMEOUT,
+        config: VaultConfig | None = None,
+        *,
         cache_ttl: int = _VAULT_CACHE_TTL,
     ) -> None:
-        self._vault_addr = vault_addr
-        self._vault_token = vault_token
-        self._mount = mount
-        self._path = path
-        self._timeout = timeout
+        cfg = config or VaultConfig()
+        self._vault_addr = cfg.addr
+        self._vault_token = cfg.token
+        self._mount = cfg.mount
+        self._path = cfg.path
+        self._timeout = cfg.timeout
         self._cache_ttl = cache_ttl
         self._cache: dict[str, str] = {}
         self._cache_ts: float = 0.0
@@ -88,7 +105,7 @@ class SecretProvider:
             if vault_value is not None:
                 return vault_value
 
-            env_value = os.environ.get(key, "")
+            env_value = os.environ.get(key) or ""
             if env_value:
                 self._cache[key] = env_value
                 return env_value
@@ -115,7 +132,9 @@ class SecretProvider:
 
         try:
             client = _get_vault_client(
-                self._vault_addr, self._vault_token, timeout=self._timeout,
+                self._vault_addr,
+                self._vault_token,
+                timeout=self._timeout,
             )
             if client is None:
                 self._vault_available = False
@@ -125,17 +144,18 @@ class SecretProvider:
                 path=self._path,
                 mount_point=self._mount,
             )
-            data: dict[str, Any] = response.get("data", {}).get("data", {})
+            data: Any = response.get("data", {}).get("data", {})
             if not isinstance(data, dict):
                 logger.warning("Vault returned unexpected format for path %s", self._path)
                 self._vault_available = False
                 return None
 
+            vault_data = cast("dict[str, Any]", data)
             self._vault_available = True
-            self._cache = {str(k): str(v) for k, v in data.items()}
+            self._cache = {str(k): str(v) for k, v in vault_data.items()}
             self._cache_ts = time.monotonic()
 
-            return str(data[key]) if key in data else None
+            return str(vault_data[key]) if key in vault_data else None
 
         except Exception:
             if self._vault_available is not False:
@@ -154,7 +174,6 @@ class SecretProvider:
 
 
 _vault_client_cache: dict[str, Any] = {}
-_vault_client_ts: float = 0.0
 _VAULT_CLIENT_TTL = 600
 
 
@@ -165,18 +184,15 @@ def _invalidate_vault_client() -> None:
 
 def _get_vault_client(addr: str, token: str, *, timeout: int = 10) -> Any:
     """Construct or return a cached hvac client with TTL-based refresh."""
-    global _vault_client_ts  # noqa: PLW0603
-
     cache_key = f"{addr}|{token}"
     if (
         cache_key in _vault_client_cache
-        and (time.monotonic() - _vault_client_ts) < _VAULT_CLIENT_TTL
+        and (time.monotonic() - _vault_client_cache.get("__ts__", 0.0)) < _VAULT_CLIENT_TTL
     ):
         return _vault_client_cache[cache_key]
 
     try:
-        import hvac  # noqa: PLC0415
-        from hvac.adapters import RawAdapter  # noqa: PLC0415
+        import hvac  # type: ignore[import-untyped]  # noqa: PLC0415
 
         session_kwargs: dict[str, Any] = {}
         try:
@@ -193,7 +209,7 @@ def _get_vault_client(addr: str, token: str, *, timeout: int = 10) -> Any:
             logger.info("Connected to OpenBao/Vault at %s", addr)
             _vault_client_cache.clear()
             _vault_client_cache[cache_key] = client
-            _vault_client_ts = time.monotonic()
+            _vault_client_cache["__ts__"] = time.monotonic()
             return client
         logger.warning("Vault authentication failed at %s", addr)
         return None

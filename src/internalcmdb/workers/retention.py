@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import create_engine, text
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +55,10 @@ _RETENTION_RULES: list[dict[str, str]] = [
     },
 ]
 
-import re  # noqa: E402, PLC0415
-
 _SAFE_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_.]{0,62}$")
+
+_PARTITION_MONTHS_AHEAD = 2  # number of future months to pre-create partitions
+_MONTHS_PER_YEAR = 12  # calendar months in a year
 
 
 def _validate_identifier(name: str, label: str) -> None:
@@ -65,7 +70,7 @@ def _validate_identifier(name: str, label: str) -> None:
 def _table_exists(conn: Any, table: str) -> bool:
     """Check if a table exists in the database."""
     parts = table.split(".", 1)
-    if len(parts) == 2:
+    if len(parts) == _PARTITION_MONTHS_AHEAD:
         schema, tbl = parts
     else:
         schema, tbl = "public", parts[0]
@@ -80,7 +85,10 @@ def _table_exists(conn: Any, table: str) -> bool:
 
 
 def _drop_old_partitions(
-    conn: Any, parent_table: str, ts_column: str, interval: str,
+    conn: Any,
+    parent_table: str,
+    ts_column: str,
+    interval: str,
 ) -> int:
     """Drop child partitions whose upper bound is older than the retention window.
 
@@ -95,9 +103,9 @@ def _drop_old_partitions(
 
     rows = conn.execute(
         text(
-            "SELECT inhrelid::regclass::text FROM pg_inherits "
-            f"WHERE inhparent = '{parent_table}'::regclass"
-        )
+            "SELECT inhrelid::regclass::text FROM pg_inherits WHERE inhparent = :parent::regclass"
+        ),
+        {"parent": parent_table},
     ).fetchall()
 
     total_partitions = len(rows)
@@ -110,20 +118,19 @@ def _drop_old_partitions(
         if total_partitions - dropped <= 1:
             logger.info("Keeping last partition %s for %s", child, parent_table)
             break
-        result = conn.execute(
-            text(f"""
-                SELECT EXISTS (
-                    SELECT 1
-                      FROM {child}
-                     WHERE {ts_column} >= NOW() - INTERVAL '{interval}'
-                     LIMIT 1
-                )
-            """)
+        check_sql = (
+            "SELECT EXISTS (SELECT 1 FROM "
+            + child
+            + " WHERE "
+            + ts_column
+            + " >= NOW() - INTERVAL :retention_interval LIMIT 1)"
         )
+        result = conn.execute(text(check_sql), {"retention_interval": interval})
         has_recent = result.scalar()
         if not has_recent:
             logger.info("Dropping expired partition %s", child)
-            conn.execute(text(f"DROP TABLE IF EXISTS {child}"))
+            drop_sql = "DROP TABLE IF EXISTS " + child
+            conn.execute(text(drop_sql))
             dropped += 1
     return dropped
 
@@ -132,9 +139,10 @@ def _delete_old_rows(conn: Any, table: str, ts_column: str, interval: str) -> in
     """DELETE rows older than the retention interval (non-partitioned tables)."""
     _validate_identifier(table, "table")
     _validate_identifier(ts_column, "ts_column")
-    result = conn.execute(
-        text(f"DELETE FROM {table} WHERE {ts_column} < NOW() - INTERVAL '{interval}'")
+    delete_sql = (
+        "DELETE FROM " + table + " WHERE " + ts_column + " < NOW() - INTERVAL :retention_interval"
     )
+    result = conn.execute(text(delete_sql), {"retention_interval": interval})
     return result.rowcount or 0
 
 
@@ -155,17 +163,14 @@ def _ensure_future_partitions(conn: Any, parent_table: str, _ts_column: str = ""
     for offset in (0, 1):
         m = now.month + offset
         y = now.year
-        if m > 12:
-            m -= 12
+        if m > _MONTHS_PER_YEAR:
+            m -= _MONTHS_PER_YEAR
             y += 1
         p_start = f"{y}-{m:02d}-01"
-        if m == 12:
-            p_end = f"{y + 1}-01-01"
-        else:
-            p_end = f"{y}-{m + 1:02d}-01"
+        p_end = f"{y + 1}-01-01" if m == _MONTHS_PER_YEAR else f"{y}-{m + 1:02d}-01"
 
-        schema = parent_table.split(".")[0] if "." in parent_table else "public"
-        base = parent_table.split(".")[-1]
+        schema = parent_table.split(".", maxsplit=1)[0] if "." in parent_table else "public"
+        base = parent_table.rsplit(".", maxsplit=1)[-1]
         part_name = f"{schema}.{base}_{y}_{m:02d}"
         _validate_identifier(part_name, "partition_name")
 
@@ -209,6 +214,59 @@ def _refresh_materialized_views(conn: Any) -> list[dict[str, str]]:
     return results
 
 
+def _apply_one_rule(
+    engine: Engine,
+    rule: dict[str, Any],
+    report: dict[str, Any],
+) -> None:
+    """Apply one retention rule against the database.
+
+    Handles table-existence guard, partitioned vs row-deletion dispatch, vacuum,
+    and appends the result (or error) to *report* in-place.
+    """
+    table = rule["table"]
+    ts_col = rule["ts_column"]
+    interval = rule["interval"]
+    is_partitioned = rule["partitioned"] == "true"
+
+    try:
+        with engine.connect() as conn:
+            if not _table_exists(conn, table):
+                logger.warning("Retention: table %s does not exist — skipping.", table)
+                report["errors"].append({"table": table, "error": "table does not exist"})
+                return
+
+            if is_partitioned:
+                created = _ensure_future_partitions(conn, table, ts_col)
+                if created:
+                    report["partitions_created"].extend(created)
+                count = _drop_old_partitions(conn, table, ts_col, interval)
+                action = "partitions_dropped"
+            else:
+                count = _delete_old_rows(conn, table, ts_col, interval)
+                action = "rows_deleted"
+
+            _vacuum_table(conn, table)
+
+            entry: dict[str, Any] = {"table": table, "interval": interval, action: count}
+            report["rules_applied"].append(entry)
+            logger.info("Retention: %s — %s=%d", table, action, count)
+
+    except Exception as exc:
+        logger.exception("Retention failed for %s", table)
+        report["errors"].append({"table": table, "error": str(exc)})
+
+
+def _run_view_refresh(engine: Engine, report: dict[str, Any]) -> None:
+    """Refresh all materialized views and append results to *report*."""
+    try:
+        with engine.connect() as conn:
+            report["views_refreshed"] = _refresh_materialized_views(conn)
+    except Exception as exc:
+        logger.exception("Materialized view refresh failed")
+        report["errors"].append({"table": "materialized_views", "error": str(exc)})
+
+
 def run_retention(database_url: str) -> dict[str, Any]:
     """Execute all retention rules and return a summary report.
 
@@ -224,45 +282,9 @@ def run_retention(database_url: str) -> dict[str, Any]:
     }
 
     for rule in _RETENTION_RULES:
-        table = rule["table"]
-        ts_col = rule["ts_column"]
-        interval = rule["interval"]
-        is_partitioned = rule["partitioned"] == "true"
+        _apply_one_rule(engine, rule, report)
 
-        try:
-            with engine.connect() as conn:
-                if not _table_exists(conn, table):
-                    logger.warning("Retention: table %s does not exist — skipping.", table)
-                    report["errors"].append({"table": table, "error": "table does not exist"})
-                    continue
-
-                if is_partitioned:
-                    created = _ensure_future_partitions(conn, table, ts_col)
-                    if created:
-                        report["partitions_created"].extend(created)
-                    count = _drop_old_partitions(conn, table, ts_col, interval)
-                    action = "partitions_dropped"
-                else:
-                    count = _delete_old_rows(conn, table, ts_col, interval)
-                    action = "rows_deleted"
-
-                _vacuum_table(conn, table)
-
-                entry = {"table": table, "interval": interval, action: count}
-                report["rules_applied"].append(entry)
-                logger.info("Retention: %s — %s=%d", table, action, count)
-
-        except Exception as exc:
-            logger.exception("Retention failed for %s", table)
-            report["errors"].append({"table": table, "error": str(exc)})
-
-    try:
-        with engine.connect() as conn:
-            report["views_refreshed"] = _refresh_materialized_views(conn)
-    except Exception as exc:
-        logger.exception("Materialized view refresh failed")
-        report["errors"].append({"table": "materialized_views", "error": str(exc)})
-
+    _run_view_refresh(engine, report)
     return report
 
 

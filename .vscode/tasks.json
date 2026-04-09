@@ -1,0 +1,71 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        // ── ESLint: scanare completă frontend ─────────────────────────────────
+        // Rulează `eslint src` și raportează TOATE findings în Problems panel,
+        // indiferent de ce fișiere sunt deschise în editor.
+        //
+        // Trigger: Ctrl+Shift+B  (task-ul de build implicit)
+        // Auto-run la deschidere workspace: runOptions.runOn = folderOpen
+        //
+        // NOTĂ: ESLint 10 are doar formatorul `stylish` în core.
+        //       VS Code $eslint-stylish îl parsează nativ (multiline matcher).
+        {
+            "label": "ESLint: Lint Frontend (all files)",
+            "type": "shell",
+            "command": "node_modules/.bin/eslint",
+            "args": [
+                "src",
+                "--ext",
+                ".ts,.tsx",
+                "--max-warnings",
+                "0"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/frontend"
+            },
+            // $eslint-stylish este built-in în VS Code — parsează formatul stylish:
+            // /path/file.ts
+            //    44:32  error  message  rule-name
+            "problemMatcher": "$eslint-stylish",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            // silent = panelul terminal nu sare în față, Problems se populează
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            // Rulează automat la deschiderea workspace-ului
+            "runOptions": {
+                "runOn": "folderOpen"
+            }
+        },
+        // ── ESLint: fix automat ────────────────────────────────────────────────
+        // Aplică toate fix-urile automate (consistent-type-imports etc.)
+        {
+            "label": "ESLint: Fix Frontend",
+            "type": "shell",
+            "command": "node_modules/.bin/eslint",
+            "args": [
+                "src",
+                "--ext",
+                ".ts,.tsx",
+                "--fix"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/frontend"
+            },
+            "problemMatcher": "$eslint-stylish",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        }
+    ]
+}

@@ -7,15 +7,18 @@ import json
 import logging
 import time
 from collections import deque
-from typing import Annotated, Any
+from collections.abc import Sequence
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..deps import get_async_session
-from ..middleware.rate_limit import limiter
+from internalcmdb.auth.revocation import is_revoked
+from internalcmdb.auth.security import decode_access_token
+
+from ..middleware import rbac as _rbac_module
+from ..middleware.rate_limit import rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -35,23 +38,31 @@ _MAX_SEEN_IDS = 500
 
 
 async def _authenticate_ws(ws: WebSocket) -> bool:
-    """Validate WS auth via query param token or first message.
+    """Validate WS auth via session cookie, query param token, or first message.
 
-    In dev mode (RBAC_DEV_MODE=true / ZITADEL_ISSUER unset), accepts all
-    connections.  In production, checks the ``token`` query parameter.
+    In AUTH_DEV_MODE, accepts all connections.  In production, checks the
+    ``cmdb_session`` cookie first, then the ``token`` query parameter.
     """
-    from ..middleware.rbac import _DEV_MODE, _decode_jwt_claims  # noqa: PLC0415
+    from internalcmdb.api.config import get_settings  # noqa: PLC0415
 
-    if _DEV_MODE:
+    if _rbac_module.AUTH_DEV_MODE:
         return True
 
-    token = ws.query_params.get("token")
+    settings = get_settings()
+    token: str | None = ws.cookies.get(settings.jwt_cookie_name)
+    if not token:
+        token = ws.query_params.get("token")
+
     if not token:
         await ws.close(code=4001, reason="Missing auth token")
         return False
 
-    claims = _decode_jwt_claims(token)
-    if not claims:
+    try:
+        payload = decode_access_token(token)
+        if is_revoked(payload.jti):
+            await ws.close(code=4003, reason="Session revoked")
+            return False
+    except Exception:
         await ws.close(code=4003, reason="Invalid auth token")
         return False
 
@@ -79,7 +90,9 @@ def _safe_json(row: Any) -> dict[str, Any]:
     for k, v in mapping.items():
         if hasattr(v, "isoformat"):
             result[k] = v.isoformat()
-        elif hasattr(v, "__str__") and not isinstance(v, (str, int, float, bool, type(None), dict, list)):
+        elif hasattr(v, "__str__") and not isinstance(
+            v, (str, int, float, bool, type(None), dict, list)
+        ):
             result[k] = str(v)
         else:
             result[k] = v
@@ -106,7 +119,8 @@ async def ws_metrics(ws: WebSocket) -> None:
 
                 factory = _get_async_session_factory()
                 async with factory() as session:
-                    result = await session.execute(text("""
+                    result = await session.execute(
+                        text("""
                         SELECT
                             COUNT(*) FILTER (WHERE ca.status = 'online')  AS online,
                             COUNT(*) FILTER (WHERE ca.status = 'degraded') AS degraded,
@@ -114,9 +128,14 @@ async def ws_metrics(ws: WebSocket) -> None:
                             COUNT(*) AS total
                         FROM collectors.collector_agent ca
                         WHERE ca.is_active = true
-                    """))
+                    """)
+                    )
                     row = result.fetchone()
-                    data = _safe_json(row) if row else {"online": 0, "degraded": 0, "offline": 0, "total": 0}
+                    data = (
+                        _safe_json(row)
+                        if row
+                        else {"online": 0, "degraded": 0, "offline": 0, "total": 0}
+                    )
 
                 await ws.send_json({"type": "metrics", "data": data, "ts": time.time()})
             except WebSocketDisconnect:
@@ -151,9 +170,11 @@ async def ws_events(ws: WebSocket) -> None:
         try:
             raw = await asyncio.wait_for(ws.receive_text(), timeout=2.0)
             filters = json.loads(raw)
-        # ``asyncio.TimeoutError`` is ``TimeoutError`` ⊂ ``Exception`` (S5713).
         except Exception:
-            pass
+            logger.debug(
+                "No WS filter message received within timeout, proceeding unfiltered",
+                exc_info=True,
+            )
 
         while True:
             try:
@@ -193,7 +214,7 @@ async def ws_events(ws: WebSocket) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _filter_new_insights(rows: list[Any], seen_ids: deque[str]) -> list[dict[str, Any]]:
+def _filter_new_insights(rows: Sequence[Any], seen_ids: deque[str]) -> list[dict[str, Any]]:
     """Return only insight rows not already seen, updating *seen_ids* in-place."""
     new_items: list[dict[str, Any]] = []
     for r in rows:
@@ -221,14 +242,16 @@ async def ws_insights(ws: WebSocket) -> None:
 
                 factory = _get_async_session_factory()
                 async with factory() as session:
-                    result = await session.execute(text("""
+                    result = await session.execute(
+                        text("""
                         SELECT insight_id, severity, category, title, description,
                                entity_id, entity_type, status, created_at
                         FROM cognitive.insight
                         WHERE status = 'active'
                         ORDER BY created_at DESC
                         LIMIT 20
-                    """))
+                    """)
+                    )
                     rows = result.fetchall()
 
                 new_items = _filter_new_insights(rows, seen_ids)
@@ -268,7 +291,8 @@ async def ws_hitl(ws: WebSocket) -> None:
 
                 factory = _get_async_session_factory()
                 async with factory() as session:
-                    result = await session.execute(text("""
+                    result = await session.execute(
+                        text("""
                         SELECT item_id, item_type, risk_class, priority,
                                status, llm_confidence, created_at, expires_at,
                                EXTRACT(EPOCH FROM (expires_at - NOW())) AS seconds_remaining
@@ -283,7 +307,8 @@ async def ws_hitl(ws: WebSocket) -> None:
                             END,
                             created_at ASC
                         LIMIT 50
-                    """))
+                    """)
+                    )
                     rows = [_safe_json(r) for r in result.fetchall()]
 
                 await ws.send_json({"type": "hitl", "data": rows, "ts": time.time()})
@@ -305,7 +330,7 @@ async def ws_hitl(ws: WebSocket) -> None:
 
 
 @router.get("/cognitive/chat/stream")
-@limiter.limit("10/minute")
+@rate_limit("10/minute")
 async def chat_stream(
     request: Request,
     question: str = Query(..., min_length=1, max_length=2000),
@@ -335,7 +360,13 @@ async def chat_stream(
                     yield f"data: {json.dumps({'type': 'chunk', 'content': chunk + ' '})}\n\n"
                     await asyncio.sleep(0.05)
 
-                yield f"data: {json.dumps({'type': 'sources', 'sources': result.sources, 'confidence': result.confidence, 'tokens_used': result.tokens_used})}\n\n"
+                _sources_payload = {
+                    "type": "sources",
+                    "sources": result.sources,
+                    "confidence": result.confidence,
+                    "tokens_used": result.tokens_used,
+                }
+                yield f"data: {json.dumps(_sources_payload)}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
 

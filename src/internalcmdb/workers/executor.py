@@ -36,7 +36,9 @@ def run_script(job_id: uuid.UUID, task_name: str, extra_args: list[str] | None =
     if str(script_abs).endswith(".sh"):
         args = ["bash", str(script_abs)] + (script_def.default_args or []) + (extra_args or [])
     else:
-        args = [sys.executable, str(script_abs)] + (script_def.default_args or []) + (extra_args or [])
+        args = (
+            [sys.executable, str(script_abs)] + (script_def.default_args or []) + (extra_args or [])
+        )
 
     db = _db_session()
     job: JobHistory | None = None

@@ -82,7 +82,9 @@ const DEBUG_TRACE_SKELETON_KEYS = [
 
 async function fetchTraces(): Promise<TraceEntry[]> {
   try {
-    const res = await fetch(`${BASE}/governance/changelog?page_size=20`);
+    const res = await fetch(`${BASE}/governance/changelog?page_size=20`, {
+      credentials: "include",
+    });
     if (!res.ok) return [];
     const data = await res.json();
     const items = data.items ?? data;
@@ -102,7 +104,9 @@ async function fetchTraces(): Promise<TraceEntry[]> {
 
 async function fetchGuardBlocks(): Promise<GuardBlock[]> {
   try {
-    const res = await fetch(`${BASE}/hitl/queue?status=blocked&page_size=20`);
+    const res = await fetch(`${BASE}/hitl/queue?status=blocked&page_size=20`, {
+      credentials: "include",
+    });
     if (!res.ok) return [];
     const data = await res.json();
     return (data as Record<string, unknown>[]).map((r) => ({
@@ -237,7 +241,7 @@ export default function DebugPage() {
         <TabsContent value="traces" className="mt-4">
           <Card>
             <CardContent className="p-0">
-              <ScrollArea className="h-[500px]">
+              <ScrollArea className="h-125">
                 {tracesLoading ? (
                   <div className="p-4 space-y-2">
                     {DEBUG_TRACE_SKELETON_KEYS.map((skKey) => (

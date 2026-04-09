@@ -497,9 +497,11 @@ class TestExitIfEmptyTermMap:
         _exit_if_empty_term_map({("x", "y"): uuid.uuid4()})
 
     def test_empty_calls_exit(self) -> None:
-        with patch.object(sys, "exit", side_effect=RuntimeError("exit")) as mock_exit:
-            with pytest.raises(RuntimeError, match="exit"):
-                _exit_if_empty_term_map({})
+        with (
+            patch.object(sys, "exit", side_effect=RuntimeError("exit")) as mock_exit,
+            pytest.raises(RuntimeError, match="exit"),
+        ):
+            _exit_if_empty_term_map({})
         mock_exit.assert_called_once_with(1)
 
 

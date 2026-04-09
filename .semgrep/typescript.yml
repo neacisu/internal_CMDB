@@ -1,0 +1,297 @@
+rules:
+  # =========================================================================
+  # TypeScript / JavaScript / React / Next.js rules
+  # Targeted at the internalCMDB frontend (Next.js 15 App Router, pnpm).
+  # =========================================================================
+
+  # -------------------------------------------------------------------------
+  # RULE TS-01: dangerouslySetInnerHTML with a non-literal value
+  #
+  # Risk: XSS. Any variable, expression, or function call passed to __html
+  # bypasses React's DOM sanitisation. OWASP A03/A07.
+  # -------------------------------------------------------------------------
+  - id: react-dangerous-inner-html
+    pattern-regex: 'dangerouslySetInnerHTML=\{\{\s*__html:\s*[^"\`\{][^}]+\}\}'
+    message: >
+      [HIGH] dangerouslySetInnerHTML receives a non-literal value.
+      If this value contains any user-controlled data it is a direct XSS
+      vector. Use DOMPurify.sanitize() or strip HTML server-side.
+    languages: [typescript, javascript]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation"
+      owasp: "A03:2021 - Injection"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE TS-02: Sensitive data written to localStorage / sessionStorage
+  #
+  # Risk: Tokens, JWTs, and credentials in Web Storage are accessible to any
+  # JavaScript on the page (XSS, third-party scripts). OWASP A02/A07.
+  # -------------------------------------------------------------------------
+  - id: sensitive-data-in-web-storage
+    patterns:
+      - pattern: $STORAGE.setItem($KEY, ...)
+      - metavariable-regex:
+          metavariable: $STORAGE
+          regex: "^(localStorage|sessionStorage)$"
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: "(?i)(token|jwt|auth|session|secret|key|password|passwd|credential|bearer)"
+    message: >
+      [HIGH] Security token or credential stored in $STORAGE under key $KEY.
+      Web Storage is accessible to all JS on the page — XSS can steal it.
+      Use httpOnly cookies (managed server-side) for session tokens instead.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-312: Cleartext Storage of Sensitive Information"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE TS-03: fetch() call without checking response.ok
+  #
+  # Risk: Silently swallowing HTTP 4xx/5xx responses leads to incorrect
+  # application state, ignored auth failures, and misleading UI.
+  # -------------------------------------------------------------------------
+  - id: fetch-without-ok-check
+    patterns:
+      - pattern: |
+          const $RES = await fetch(...);
+          $RES.json()
+      - pattern-not: |
+          const $RES = await fetch(...);
+          if (!$RES.ok) { ... }
+          $RES.json()
+      - pattern-not: |
+          const $RES = await fetch(...);
+          if ($RES.ok) { ... }
+    message: >
+      [MEDIUM] fetch() result used directly without a $RES.ok guard.
+      HTTP errors (401, 403, 500 …) are silently treated as successful
+      responses. Check `if (!res.ok) throw new Error(res.statusText)` before
+      calling .json() or .text().
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: correctness
+      cwe: "CWE-390: Detection of Error Condition Without Action"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE TS-04: Open redirect via window.location / router.push with user input
+  #
+  # Risk: Redirecting to a URL derived from a URL parameter, query string, or
+  # user-controlled value can be used for phishing. OWASP A01.
+  # -------------------------------------------------------------------------
+  - id: open-redirect-window-location
+    patterns:
+      - pattern: window.location.href = $URL
+      - pattern-not: window.location.href = "..."
+      - pattern-not: "window.location.href = `...`"
+      - pattern-not: |
+          if ($URL.startsWith("/") || ...) { window.location.href = $URL; }
+    message: >
+      [HIGH] window.location.href assigned a non-literal URL ($URL).
+      If $URL originates from query parameters or user input this is an open
+      redirect (OWASP A01). Validate that $URL is a relative path beginning
+      with '/' before redirecting.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-601: URL Redirection to Untrusted Site (Open Redirect)"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE TS-05: eval() in TypeScript / JavaScript
+  # -------------------------------------------------------------------------
+  - id: ts-eval-usage
+    pattern: eval($X)
+    message: >
+      [CRITICAL] eval() executes arbitrary JavaScript. Remove it and
+      implement the required functionality without dynamic code evaluation.
+    languages: [typescript, javascript]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE TS-06: new Function() dynamic code execution
+  # -------------------------------------------------------------------------
+  - id: ts-new-function
+    patterns:
+      - pattern: new Function(...)
+      - pattern-not: new Function()
+    message: >
+      [CRITICAL] new Function(string) compiles and runs arbitrary JS at
+      runtime — equivalent to eval(). Replace with explicit logic.
+    languages: [typescript, javascript]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE TS-07: console.log / console.debug with sensitive variable names
+  #
+  # Risk: Token, password, or key values logged to the browser console are
+  # visible in DevTools and any JS-based error aggregation tool.
+  # -------------------------------------------------------------------------
+  - id: console-log-sensitive-data
+    patterns:
+      - pattern: console.$METHOD($SENSITIVE)
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: "^(log|debug|info|warn|error)$"
+      - metavariable-regex:
+          metavariable: $SENSITIVE
+          regex: "(?i)(token|jwt|password|passwd|secret|apikey|api_key|credential|auth)"
+    message: >
+      [MEDIUM] console.$METHOD called with a variable named $SENSITIVE.
+      Logging credentials to the console exposes them in DevTools and
+      browser-side telemetry. Remove this log or redact the value.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-312: Cleartext Storage of Sensitive Information"
+      owasp: "A09:2021 - Security Logging and Monitoring Failures"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE TS-08: JSON.parse() without a try/catch wrapper
+  #
+  # Risk: JSON.parse() throws SyntaxError on malformed input. Uncaught
+  # exceptions crash the calling function and may expose stack traces.
+  # -------------------------------------------------------------------------
+  - id: json-parse-without-try-catch
+    patterns:
+      - pattern: JSON.parse($INPUT)
+      - pattern-not-inside: |
+          try { ... } catch ($E) { ... }
+    message: >
+      [MEDIUM] JSON.parse() called outside a try/catch block. Malformed or
+      attacker-controlled input throws a SyntaxError that will crash this
+      code path. Wrap in try/catch and handle parse failures explicitly.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: reliability
+      cwe: "CWE-755: Improper Handling of Exceptional Conditions"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE TS-09: document.write() usage
+  # -------------------------------------------------------------------------
+  - id: document-write-xss
+    pattern: document.write(...)
+    message: >
+      [HIGH] document.write() can introduce XSS if any argument originates
+      from user input or an external source. Replace with safe DOM APIs
+      (createElement, textContent, insertAdjacentText).
+    languages: [typescript, javascript]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-79: Cross-site Scripting"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE TS-10: postMessage origin not validated
+  #
+  # Risk: Accepting messages from any origin allows hostile frames/windows to
+  # send crafted data. OWASP A01.
+  # -------------------------------------------------------------------------
+  - id: postmessage-origin-not-checked
+    patterns:
+      - pattern: |
+          window.addEventListener("message", function($EVENT) { ... })
+      - pattern-not: |
+          window.addEventListener("message", function($EVENT) {
+            if ($EVENT.origin !== ...) { ... }
+            ...
+          })
+      - pattern-not: |
+          window.addEventListener("message", function($EVENT) {
+            if ($EVENT.origin === ...) { ... }
+            ...
+          })
+    message: >
+      [HIGH] window.addEventListener("message", ...) handler does not
+      validate event.origin. Any cross-origin window can send arbitrary data
+      to this handler. Add `if (event.origin !== EXPECTED_ORIGIN) return;`
+      as the first statement.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-346: Origin Validation Error"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE TS-11: Hardcoded credentials / tokens in TypeScript source
+  # -------------------------------------------------------------------------
+  - id: ts-hardcoded-secret
+    patterns:
+      - pattern: const $VAR = "$SECRET"
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: "(?i)(password|passwd|secret|token|api_key|apikey|auth_key|private_key|jwt)"
+      - metavariable-regex:
+          metavariable: $SECRET
+          regex: "^.{8,}$"
+      - pattern-not: const $VAR = ""
+      - pattern-not: const $VAR = "..."
+    message: >
+      [HIGH] Apparent hardcoded credential ($VAR). Credentials committed to
+      source are exposed to all repository readers and remain in git history.
+      Load from environment variables (process.env.XXX) instead.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      owasp: "A07:2021 - Identification and Authentication Failures"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE TS-12: Unhandled promise rejection — async function without try/catch
+  #             in Next.js Server Action or API Route context
+  # -------------------------------------------------------------------------
+  - id: nextjs-server-action-no-error-handling
+    patterns:
+      - pattern: |
+          export async function $ACTION(...) {
+            ...
+            await $CALL(...)
+            ...
+          }
+      - pattern-not: |
+          export async function $ACTION(...) {
+            try { ... } catch ($E) { ... }
+          }
+      - pattern-not-inside: |
+          try { ... } catch ($E) { ... }
+    message: >
+      [MEDIUM] Exported async function $ACTION performs an awaited call but
+      has no top-level try/catch. Unhandled rejection in a Next.js Server
+      Action or API Route returns an opaque 500 to the client and logs a
+      full stack trace that may leak internal details.
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      category: reliability
+      cwe: "CWE-755: Improper Handling of Exceptional Conditions"
+      confidence: LOW

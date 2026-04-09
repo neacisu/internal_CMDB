@@ -1,7 +1,11 @@
 """Tests for llm.budget — TokenBudgetManager."""
+
 from __future__ import annotations
+
 import asyncio
+
 import pytest
+
 from internalcmdb.llm.budget import TokenBudgetManager
 
 
@@ -71,7 +75,8 @@ async def test_get_usage_stats_remaining(mgr):
 
 @pytest.mark.asyncio
 async def test_spike_detection_logs_warning(mgr, caplog):
-    import logging
+    import logging  # noqa: PLC0415
+
     caplog.set_level(logging.WARNING, logger="internalcmdb.llm.budget")
     for _ in range(5):
         await mgr.record_usage("cognitive-query", 100)

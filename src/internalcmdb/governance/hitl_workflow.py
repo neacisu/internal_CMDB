@@ -27,9 +27,10 @@ import logging
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ def _sanitize_log(value: object, max_len: int = 200) -> str:
     if len(sanitized) > max_len:
         sanitized = sanitized[:max_len] + "...[truncated]"
     return sanitized
+
 
 # ---------------------------------------------------------------------------
 # Escalation configuration
@@ -80,6 +82,7 @@ async def _get_escalation_config() -> tuple[dict[str, timedelta], int]:
     """
     try:
         from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+
         store = get_settings_store()
         rc4_m = await store.get("hitl.rc4.escalation_minutes") or 15
         rc3_m = await store.get("hitl.rc3.escalation_minutes") or 60
@@ -91,7 +94,7 @@ async def _get_escalation_config() -> tuple[dict[str, timedelta], int]:
             "RC-2": timedelta(hours=int(rc2_h)),
         }
         return thresholds, int(max_esc)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return _ESCALATION_THRESHOLDS, _MAX_ESCALATIONS
 
 
@@ -115,25 +118,20 @@ class HITLWorkflow:
         priority = _PRIORITY_MAP.get(risk_class, "medium")
 
         threshold = _ESCALATION_THRESHOLDS.get(risk_class)
-        expires_at_expr = (
-            f"now() + interval '{int(threshold.total_seconds())} seconds'"
-            if threshold
-            else "NULL"
-        )
+        expires_at = (datetime.now(tz=UTC) + threshold) if threshold else None
 
         await self._session.execute(
-            text(f"""
-                INSERT INTO governance.hitl_item
-                    (item_id, item_type, risk_class, priority, status,
-                     source_event_id, correlation_id, context_jsonb,
-                     llm_suggestion, llm_confidence, llm_model_used,
-                     expires_at)
-                VALUES
-                    (:item_id, :item_type, :risk_class, :priority, 'pending',
-                     :source_event_id, :correlation_id, :context_jsonb::jsonb,
-                     :llm_suggestion::jsonb, :llm_confidence, :llm_model_used,
-                     {expires_at_expr})
-            """),
+            text(
+                "INSERT INTO governance.hitl_item"
+                "    (item_id, item_type, risk_class, priority, status,"
+                "     source_event_id, correlation_id, context_jsonb,"
+                "     llm_suggestion, llm_confidence, llm_model_used, expires_at)"
+                " VALUES"
+                "    (:item_id, :item_type, :risk_class, :priority, 'pending',"
+                "     :source_event_id, :correlation_id, :context_jsonb::jsonb,"
+                "     :llm_suggestion::jsonb, :llm_confidence, :llm_model_used,"
+                "     :expires_at)"
+            ),
             {
                 "item_id": item_id,
                 "item_type": item_data.get("item_type", "action_review"),
@@ -145,17 +143,29 @@ class HITLWorkflow:
                 "llm_suggestion": _json_or_none(item_data.get("llm_suggestion")),
                 "llm_confidence": item_data.get("llm_confidence"),
                 "llm_model_used": item_data.get("llm_model_used"),
+                "expires_at": expires_at,
             },
         )
         await self._session.commit()
-        logger.info("HITL item submitted: %s (%s / %s)", item_id, _sanitize_log(risk_class), priority)
+        # Log with static format string; user-controlled data stays in structured extra={}.
+        logger.info(
+            "HITL item submitted",
+            extra={
+                "item_id": _sanitize_log(item_id),
+                "risk_class": _sanitize_log(risk_class),
+                "priority": _sanitize_log(priority),
+            },
+        )
 
-        await _notify("submitted", {
-            "item_id": item_id,
-            "risk_class": risk_class,
-            "priority": priority,
-            "item_type": item_data.get("item_type", "action_review"),
-        })
+        await _notify(
+            "submitted",
+            {
+                "item_id": _sanitize_log(item_id),
+                "risk_class": _sanitize_log(risk_class),
+                "priority": _sanitize_log(priority),
+                "item_type": _sanitize_log(item_data.get("item_type", "action_review")),
+            },
+        )
 
         return item_id
 
@@ -207,18 +217,30 @@ class HITLWorkflow:
         if row is None:
             return False
         await self._session.commit()
+        # Sanitize all DB-derived string values to prevent log injection (S5145).
         esc_count, new_status, risk_class = row
+        s_item_id = _sanitize_log(item_id)
+        s_new_status = _sanitize_log(str(new_status))
+        s_risk_class = _sanitize_log(str(risk_class))
         logger.info(
-            "HITL item escalated: %s (count=%d, status=%s, risk=%s)",
-            _sanitize_log(item_id), esc_count, _sanitize_log(new_status), _sanitize_log(risk_class),
+            "HITL item escalated",
+            extra={
+                "item_id": s_item_id,
+                "escalation_count": int(esc_count),
+                "status": s_new_status,
+                "risk_class": s_risk_class,
+            },
         )
 
-        await _notify(new_status, {
-            "item_id": item_id,
-            "risk_class": risk_class,
-            "status": new_status,
-            "escalation_count": esc_count,
-        })
+        await _notify(
+            s_new_status,
+            {
+                "item_id": s_item_id,
+                "risk_class": s_risk_class,
+                "status": s_new_status,
+                "escalation_count": int(esc_count),
+            },
+        )
 
         return True
 
@@ -249,25 +271,34 @@ class HITLWorkflow:
                 """),
                 {"rc": risk_class, "cutoff": cutoff, "max_esc": max_escalations},
             )
-            total_escalated += result.rowcount  # type: ignore[operator]
+            total_escalated += cast(CursorResult[Any], result).rowcount
 
         if total_escalated:
             await self._session.commit()
-            logger.info("Auto-escalated %d HITL items", total_escalated)
-            await _notify("escalated", {
-                "item_id": "batch",
-                "risk_class": "mixed",
-                "status": "escalated",
-                "auto_escalated_count": total_escalated,
-            })
+            # Cast to plain Python int; log with static format, count in extra= (S5145).
+            n_escalated: int = int(total_escalated)
+            logger.info("HITL auto-escalation batch complete", extra={"count": n_escalated})
+            await _notify(
+                "escalated",
+                {
+                    "item_id": "batch",
+                    "risk_class": "mixed",
+                    "status": "escalated",
+                    "auto_escalated_count": n_escalated,
+                },
+            )
 
         return total_escalated
 
     # ── internal helpers ────────────────────────────────────────────────
 
-    _VALID_DECISIONS = frozenset({
-        "approved", "rejected", "approved_with_modifications",
-    })
+    _VALID_DECISIONS = frozenset(
+        {
+            "approved",
+            "rejected",
+            "approved_with_modifications",
+        }
+    )
 
     async def _decide(
         self,
@@ -277,8 +308,15 @@ class HITLWorkflow:
         reason: str,
         decision_jsonb: dict[str, Any] | None = None,
     ) -> bool:
-        if decision not in self._VALID_DECISIONS:
-            logger.warning("Invalid decision value: %s", _sanitize_log(decision))
+        # Sanitize user-controlled strings at the top of _decide to break every
+        # possible taint chain before any value reaches a log sink (S5145).
+        s_item_id = _sanitize_log(item_id)
+        s_decision = _sanitize_log(decision)
+        s_decided_by = _sanitize_log(decided_by)
+        s_reason = _sanitize_log(reason)
+
+        if s_decision not in self._VALID_DECISIONS:
+            logger.warning("Invalid decision value", extra={"decision": s_decision})
             return False
 
         result = await self._session.execute(
@@ -295,10 +333,10 @@ class HITLWorkflow:
                 RETURNING item_id
             """),
             {
-                "item_id": item_id,
-                "decision": decision,
-                "decided_by": decided_by,
-                "reason": reason,
+                "item_id": s_item_id,
+                "decision": s_decision,
+                "decided_by": s_decided_by,
+                "reason": s_reason,
                 "decision_jsonb": _json_or_none(decision_jsonb),
             },
         )
@@ -307,16 +345,22 @@ class HITLWorkflow:
             return False
 
         try:
-            await self._record_feedback(item_id, decided_by, decision)
+            await self._record_feedback(s_item_id, s_decided_by, s_decision)
         except Exception:
-            logger.error("Failed to record feedback for %s — decision still saved", _sanitize_log(item_id), exc_info=True)
+            logger.error(
+                "Failed to record feedback — decision still saved",
+                extra={"item_id": s_item_id},
+                exc_info=True,
+            )
         await self._session.commit()
-        logger.info("HITL item %s: %s by %s", _sanitize_log(decision), _sanitize_log(item_id), _sanitize_log(decided_by))
+        # Log with static format; sanitized decision metadata goes into extra= (S5145).
+        logger.info(
+            "HITL item decided",
+            extra={"action": s_decision, "item_id": s_item_id, "actor": s_decided_by},
+        )
         return True
 
-    async def _record_feedback(
-        self, item_id: str, decided_by: str, decision: str
-    ) -> None:
+    async def _record_feedback(self, item_id: str, decided_by: str, decision: str) -> None:
         """Record an LLM-vs-human feedback row for accuracy tracking."""
         row = await self._session.execute(
             text("""
@@ -330,11 +374,13 @@ class HITLWorkflow:
             return
 
         llm_suggestion = item_row[0]
-        llm_decision_val = None
+        llm_decision_val: str | None = None
         if isinstance(llm_suggestion, dict):
-            llm_decision_val = llm_suggestion.get("decision")
+            _typed: dict[str, object] = cast("dict[str, object]", llm_suggestion)
+            _raw: object = _typed.get("decision")
+            llm_decision_val = str(_raw) if _raw is not None else None
 
-        agreement = llm_decision_val == decision if llm_decision_val else None
+        agreement: bool | None = (llm_decision_val == decision) if llm_decision_val else None
 
         import json as _json  # noqa: PLC0415
 
@@ -382,4 +428,8 @@ async def _notify(event_type: str, payload: dict[str, Any]) -> None:
 
         await notify_hitl_event(event_type, payload)
     except Exception:
-        logger.debug("Notification dispatch failed for %s", event_type, exc_info=True)
+        logger.debug(
+            "Notification dispatch failed for %s",
+            _sanitize_log(event_type),
+            exc_info=True,
+        )

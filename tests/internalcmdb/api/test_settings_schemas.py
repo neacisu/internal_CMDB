@@ -9,8 +9,6 @@ import pytest
 
 from internalcmdb.api.schemas.settings import (
     AppSettingOut,
-    AppSettingUpdate,
-    GuardConfigUpdate,
     HITLConfigUpdate,
     LLMConfigUpdate,
     NotificationChannelCreate,
@@ -20,7 +18,6 @@ from internalcmdb.api.schemas.settings import (
     TokenBudgetUpdate,
     UserPreferenceUpdate,
 )
-
 
 # ---------------------------------------------------------------------------
 # AppSettingOut.from_row
@@ -52,7 +49,7 @@ def test_app_setting_out_from_row_basic() -> None:
 
 
 def test_app_setting_out_from_row_with_timestamp() -> None:
-    ts = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    ts = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
     out = AppSettingOut.from_row(_base_row(updated_at=ts, updated_by="admin"))
     assert out.updated_by == "admin"
 
@@ -74,7 +71,7 @@ def test_llm_config_update_valid_https_url() -> None:
 
 def test_llm_config_update_rejects_javascript_url() -> None:
     with pytest.raises(ValueError, match="http"):
-        LLMConfigUpdate(reasoning_url="javascript:alert(1)")  # noqa: S608
+        LLMConfigUpdate(reasoning_url="javascript:alert(1)")
 
 
 def test_llm_config_update_rejects_file_url() -> None:
@@ -95,8 +92,8 @@ def test_llm_config_update_empty_is_ok() -> None:
 
 def test_self_heal_update_valid() -> None:
     u = SelfHealConfigUpdate(
-        log_hitl_bytes=524_288_000,           # 500 MB
-        log_auto_truncate_bytes=2_147_483_648, # 2 GB
+        log_hitl_bytes=524_288_000,  # 500 MB
+        log_auto_truncate_bytes=2_147_483_648,  # 2 GB
     )
     assert u.log_hitl_bytes == 524_288_000
 
@@ -127,12 +124,12 @@ def test_hitl_update_valid() -> None:
 
 
 def test_hitl_update_rejects_zero_minutes() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="at least 1"):
         HITLConfigUpdate(rc4_escalation_minutes=0)
 
 
 def test_hitl_update_rejects_zero_max_escalations() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="at least 1"):
         HITLConfigUpdate(max_escalations=0)
 
 
@@ -147,12 +144,12 @@ def test_retention_update_valid() -> None:
 
 
 def test_retention_update_rejects_below_min() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="between 7 and 1825"):
         RetentionConfigUpdate(job_history_days=1)
 
 
 def test_retention_update_rejects_above_max() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="between 7 and 1825"):
         RetentionConfigUpdate(audit_events_days=9999)
 
 
@@ -173,16 +170,16 @@ def test_observability_update_rejects_invalid_log_level() -> None:
 
 def test_observability_update_valid_sample_rate() -> None:
     u = ObservabilityConfigUpdate(sample_rate=0.5)
-    assert u.sample_rate == pytest.approx(0.5)
+    assert u.sample_rate == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_observability_update_rejects_negative_sample_rate() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"between 0\.0 and 1\.0"):
         ObservabilityConfigUpdate(sample_rate=-0.1)
 
 
 def test_observability_update_rejects_sample_rate_above_one() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"between 0\.0 and 1\.0"):
         ObservabilityConfigUpdate(sample_rate=1.1)
 
 
@@ -210,7 +207,7 @@ def test_notification_create_rejects_javascript_url() -> None:
     with pytest.raises(ValueError, match="http"):
         NotificationChannelCreate(
             name="evil",
-            target_url="javascript:alert(0)",  # noqa: S608
+            target_url="javascript:alert(0)",
             events=[],
             is_active=True,
         )
@@ -227,7 +224,7 @@ def test_token_budget_update_minimum_valid() -> None:
 
 
 def test_token_budget_update_rejects_zero() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="at least 1000"):
         TokenBudgetUpdate(tokens_per_hour=0)
 
 

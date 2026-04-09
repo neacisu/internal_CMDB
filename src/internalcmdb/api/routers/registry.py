@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -37,27 +38,34 @@ from ..schemas.registry import (
 router = APIRouter(prefix="/registry", tags=["registry"])
 
 
+@dataclass
+class HostFilterParams:
+    """Query-parameter filter group for host listing."""
+
+    cluster_id: uuid.UUID | None = None
+    gpu_capable: bool | None = None
+    docker_host: bool | None = None
+
+
 @router.get("/clusters", response_model=list[ClusterOut])
 def list_clusters(db: Annotated[Session, Depends(get_db)]) -> list[Cluster]:
     return db.scalars(select(Cluster).order_by(Cluster.name)).all()  # type: ignore[return-value]
 
 
 @router.get("/hosts", response_model=Page[HostOut])
-def list_hosts(  # noqa: PLR0913
+def list_hosts(
     db: Annotated[Session, Depends(get_db)],
+    filters: Annotated[HostFilterParams, Depends()],
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    cluster_id: uuid.UUID | None = None,
-    gpu_capable: bool | None = None,
-    docker_host: bool | None = None,
 ) -> Page[HostOut]:
     q = db.query(Host)
-    if cluster_id is not None:
-        q = q.filter(Host.cluster_id == cluster_id)
-    if gpu_capable is not None:
-        q = q.filter(Host.is_gpu_capable == gpu_capable)
-    if docker_host is not None:
-        q = q.filter(Host.is_docker_host == docker_host)
+    if filters.cluster_id is not None:
+        q = q.filter(Host.cluster_id == filters.cluster_id)
+    if filters.gpu_capable is not None:
+        q = q.filter(Host.is_gpu_capable == filters.gpu_capable)
+    if filters.docker_host is not None:
+        q = q.filter(Host.is_docker_host == filters.docker_host)
     q = q.order_by(Host.hostname)
     items, total = paginate(q, page, page_size)
     return Page(items=items, meta=PageMeta(page=page, page_size=page_size, total=total))

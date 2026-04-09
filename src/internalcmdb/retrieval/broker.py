@@ -541,7 +541,9 @@ class RetrievalBroker:
                     ChunkEmbedding.document_chunk_id == DocumentChunk.document_chunk_id,
                 )
                 .order_by(
-                    text(f"retrieval.chunk_embedding.embedding_vector <=> '{vec_literal}'::vector")
+                    text(
+                        "retrieval.chunk_embedding.embedding_vector <=> CAST(:vec AS vector)"
+                    ).bindparams(vec=vec_literal)
                 )
                 .limit(request.max_items_per_stage)
             )

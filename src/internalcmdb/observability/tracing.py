@@ -14,9 +14,21 @@ Integration::
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class LlmSpanAttrs:
+    """GenAI span attribute bundle for ``record_llm_span_attributes``."""
+
+    model: str = ""
+    system: str = "vllm"
+    input_tokens: int = 0
+    output_tokens: int = 0
+    finish_reasons: list[str] | None = None
 
 
 def setup_tracing(
@@ -36,7 +48,7 @@ def setup_tracing(
     Args:
         otlp_protocol: ``"grpc"`` (default) or ``"http"`` for HTTP/protobuf.
         otlp_insecure: ``False`` to require TLS on the exporter connection.
-        sample_rate: 0.0–1.0 ratio-based sampling (1.0 = trace everything).
+        sample_rate: 0.0-1.0 ratio-based sampling (1.0 = trace everything).
     """
     try:
         from opentelemetry import trace  # noqa: PLC0415
@@ -51,7 +63,9 @@ def setup_tracing(
         logger.info("OpenTelemetry SDK not installed — tracing disabled")
         return None
 
-    sampler = DEFAULT_ON if sample_rate >= 1.0 else TraceIdRatioBased(max(0.0, min(sample_rate, 1.0)))
+    sampler = (
+        DEFAULT_ON if sample_rate >= 1.0 else TraceIdRatioBased(max(0.0, min(sample_rate, 1.0)))
+    )
 
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource, sampler=sampler)
@@ -70,7 +84,10 @@ def setup_tracing(
 
     logger.info(
         "OpenTelemetry tracing enabled: service=%s endpoint=%s protocol=%s sample_rate=%.2f",
-        service_name, otlp_endpoint, otlp_protocol, sample_rate,
+        service_name,
+        otlp_endpoint,
+        otlp_protocol,
+        sample_rate,
     )
     return provider
 
@@ -82,6 +99,7 @@ def _create_exporter(endpoint: str, protocol: str, insecure: bool) -> Any:
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # noqa: PLC0415
                 OTLPSpanExporter as HTTPExporter,
             )
+
             return HTTPExporter(endpoint=endpoint)
         except ImportError:
             logger.warning("opentelemetry-exporter-otlp-proto-http not installed, trying gRPC")
@@ -90,6 +108,7 @@ def _create_exporter(endpoint: str, protocol: str, insecure: bool) -> Any:
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: PLC0415
             OTLPSpanExporter as GRPCExporter,
         )
+
         return GRPCExporter(endpoint=endpoint, insecure=insecure)
     except ImportError:
         logger.error("No OTLP exporter package installed (grpc or http)")
@@ -98,12 +117,7 @@ def _create_exporter(endpoint: str, protocol: str, insecure: bool) -> Any:
 
 def record_llm_span_attributes(
     span: Any,
-    *,
-    system: str = "vllm",
-    model: str = "",
-    input_tokens: int = 0,
-    output_tokens: int = 0,
-    finish_reasons: list[str] | None = None,
+    attrs: LlmSpanAttrs | None = None,
 ) -> None:
     """Set GenAI semantic convention attributes on an OTel span.
 
@@ -112,16 +126,18 @@ def record_llm_span_attributes(
     """
     if span is None:
         return
+    if attrs is None:
+        attrs = LlmSpanAttrs()
     try:
-        span.set_attribute("gen_ai.system", system)
-        if model:
-            span.set_attribute("gen_ai.request.model", model)
-        if input_tokens:
-            span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
-        if output_tokens:
-            span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
-        if finish_reasons:
-            span.set_attribute("gen_ai.response.finish_reasons", finish_reasons)
+        span.set_attribute("gen_ai.system", attrs.system)
+        if attrs.model:
+            span.set_attribute("gen_ai.request.model", attrs.model)
+        if attrs.input_tokens:
+            span.set_attribute("gen_ai.usage.input_tokens", attrs.input_tokens)
+        if attrs.output_tokens:
+            span.set_attribute("gen_ai.usage.output_tokens", attrs.output_tokens)
+        if attrs.finish_reasons:
+            span.set_attribute("gen_ai.response.finish_reasons", attrs.finish_reasons)
     except Exception:
         logger.debug("Failed to set GenAI span attributes", exc_info=True)
 

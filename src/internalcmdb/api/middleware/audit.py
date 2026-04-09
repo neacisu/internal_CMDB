@@ -16,11 +16,18 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
+
+try:
+    from internalcmdb.observability.logging import set_correlation_id
+except ImportError:  # pragma: no cover — missing in minimal test envs
+
+    def set_correlation_id(cid: str | None) -> None:  # type: ignore[misc]
+        pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +44,6 @@ class AuditMiddleware(BaseHTTPMiddleware):
         correlation_id = request.headers.get("x-correlation-id") or str(uuid.uuid4())
         request.state.correlation_id = correlation_id
 
-        from internalcmdb.observability.logging import set_correlation_id
-
         set_correlation_id(correlation_id)
 
         start = time.monotonic()
@@ -51,7 +56,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
             status_code = response.status_code if response else 500
 
             try:
-                from internalcmdb.observability.metrics import API_REQUEST_DURATION
+                from internalcmdb.observability.metrics import API_REQUEST_DURATION  # noqa: PLC0415
 
                 API_REQUEST_DURATION.labels(
                     method=request.method,
@@ -59,7 +64,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     status=str(status_code),
                 ).observe(duration_ms / 1000)
             except Exception:
-                pass
+                logger.debug("Metrics observation skipped", exc_info=True)
 
             await self._record(request, correlation_id, duration_ms, status_code)
 
@@ -76,11 +81,11 @@ class AuditMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         try:
-            from internalcmdb.api.deps import _get_async_session_factory
+            from internalcmdb.api.deps import _get_async_session_factory  # noqa: PLC0415
 
             factory = _get_async_session_factory()
             async with factory() as session:
-                from sqlalchemy import text
+                from sqlalchemy import text  # noqa: PLC0415
 
                 await session.execute(
                     text("""
@@ -104,7 +109,10 @@ class AuditMiddleware(BaseHTTPMiddleware):
                 )
                 await session.commit()
         except Exception:
-            logger.warning("Audit write failed — event lost (table may not exist yet)", exc_info=True)
+            logger.warning(
+                "Audit write failed — event lost (table may not exist yet)",
+                exc_info=True,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -113,23 +121,40 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
 
 def _extract_actor(request: Request) -> str | None:
-    """Extract caller identity from the Authorization header or API key."""
+    """Extract caller identity from the session cookie first, then Bearer header."""
+    from internalcmdb.api.config import get_settings  # noqa: PLC0415
+
+    settings = get_settings()
+
+    # 1. Try session cookie (preferred — local JWT auth)
+    cookie_val = request.cookies.get(settings.jwt_cookie_name)
+    if cookie_val:
+        try:
+            from internalcmdb.auth.security import decode_access_token  # noqa: PLC0415
+
+            payload = decode_access_token(cookie_val)
+            return payload.sub
+        except Exception:
+            logger.debug("Malformed session cookie, falling through", exc_info=True)
+
+    # 2. Fall back to Bearer header — verified HMAC decode only; untrusted tokens
+    #    must NOT contribute identity to the audit trail (OWASP ASVS 8.3.7).
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer "):
         token = auth[7:]
         try:
-            import base64
-            import json
+            from internalcmdb.auth.security import decode_access_token  # noqa: PLC0415
 
-            payload_b64 = token.split(".")[1]
-            padding = 4 - len(payload_b64) % 4
-            payload_b64 += "=" * padding
-            claims: dict[str, Any] = json.loads(base64.urlsafe_b64decode(payload_b64))
-            return claims.get("sub") or claims.get("preferred_username") or claims.get("email")
+            payload = decode_access_token(token)
+            return payload.sub
         except Exception:
-            return "bearer-token-unreadable"
+            # Signature invalid, expired, or malformed — record the state accurately;
+            # do NOT trust any claim from an unverified token.
+            return "bearer-token-unverified"
+
     if auth:
         return "authenticated"
+
     return request.headers.get("x-api-key-user")
 
 

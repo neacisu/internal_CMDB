@@ -108,8 +108,7 @@ class AlertFatigueManager:
         flap = self._flapping[key]
         flap.transitions.append((now, state))
         flap.transitions = [
-            (ts, s) for ts, s in flap.transitions
-            if now - ts <= _FLAP_WINDOW_SECONDS
+            (ts, s) for ts, s in flap.transitions if now - ts <= _FLAP_WINDOW_SECONDS
         ]
 
         state_changes = 0
@@ -176,20 +175,22 @@ class AlertFatigueManager:
             if len(incident.alerts) == 1:
                 result.append(incident.alerts[0])
             else:
-                result.append({
-                    "type": "incident",
-                    "incident_id": incident.incident_id,
-                    "alert_count": len(incident.alerts),
-                    "entity_ids": list(incident.entity_ids),
-                    "metrics": list(incident.metrics),
-                    "severity": self._max_severity(incident.alerts),
-                    "summary": (
-                        f"Incident with {len(incident.alerts)} alerts across "
-                        f"{len(incident.entity_ids)} entities"
-                    ),
-                    "first_alert": incident.alerts[0],
-                    "created_at": datetime.now(tz=UTC).isoformat(),
-                })
+                result.append(
+                    {
+                        "type": "incident",
+                        "incident_id": incident.incident_id,
+                        "alert_count": len(incident.alerts),
+                        "entity_ids": list(incident.entity_ids),
+                        "metrics": list(incident.metrics),
+                        "severity": self._max_severity(incident.alerts),
+                        "summary": (
+                            f"Incident with {len(incident.alerts)} alerts across "
+                            f"{len(incident.entity_ids)} entities"
+                        ),
+                        "first_alert": incident.alerts[0],
+                        "created_at": datetime.now(tz=UTC).isoformat(),
+                    }
+                )
 
         logger.info(
             "Deduplicated %d alerts → %d unique → %d output (incidents merged)",
@@ -209,12 +210,12 @@ class AlertFatigueManager:
         return {
             "suppressed_total": self._suppressed_count,
             "active_cooldowns": sum(
-                1 for c in self._cooldowns.values()
+                1
+                for c in self._cooldowns.values()
                 if time.monotonic() - c.last_alerted < _COOLDOWN_SECONDS
             ),
             "flapping_entities": sum(
-                1 for f in self._flapping.values()
-                if len(f.transitions) >= _FLAP_THRESHOLD
+                1 for f in self._flapping.values() if len(f.transitions) >= _FLAP_THRESHOLD
             ),
             "incident_groups": len(self._incidents),
             "timestamp": datetime.now(tz=UTC).isoformat(),
@@ -233,11 +234,9 @@ class AlertFatigueManager:
             str(alert.get("state", "")),
             str(alert.get("severity", "")),
         ]
-        return hashlib.md5("|".join(key_parts).encode()).hexdigest()
+        return hashlib.md5("|".join(key_parts).encode(), usedforsecurity=False).hexdigest()
 
-    def _group_into_incidents(
-        self, alerts: list[dict[str, Any]]
-    ) -> list[_IncidentGroup]:
+    def _group_into_incidents(self, alerts: list[dict[str, Any]]) -> list[_IncidentGroup]:
         """Group related alerts into incident clusters.
 
         Alerts are related if they share entity_id, metric, or fire
@@ -265,15 +264,17 @@ class AlertFatigueManager:
                 matched_group.metrics.add(metric)
             else:
                 incident_id = hashlib.md5(
-                    f"{entity_id}:{metric}:{now}".encode()
+                    f"{entity_id}:{metric}:{now}".encode(), usedforsecurity=False
                 ).hexdigest()[:12]
-                groups.append(_IncidentGroup(
-                    incident_id=f"INC-{incident_id}",
-                    alerts=[alert],
-                    created_at=now,
-                    entity_ids={entity_id},
-                    metrics={metric},
-                ))
+                groups.append(
+                    _IncidentGroup(
+                        incident_id=f"INC-{incident_id}",
+                        alerts=[alert],
+                        created_at=now,
+                        entity_ids={entity_id},
+                        metrics={metric},
+                    )
+                )
 
         self._incidents.extend(groups)
         return groups

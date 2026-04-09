@@ -10,8 +10,11 @@ DEFAULT_TARGETS: list[str] = [
     "127.0.0.1",
 ]
 
-_LOSS_RE = re.compile(r"(\d+(?:\.\d+)?)% packet loss")
-_RTT_RE = re.compile(r"rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)")
+# Bounded patterns prevent catastrophic backtracking (S2631 ReDoS hotspot).
+# Loss: 0-99999 integer digits, optional 1-3 decimal places -- matches ping output.
+# RTT:  explicit \d+\.\d+ (no [\d.]+ overlap) -- avoids ambiguity in character class.
+_LOSS_RE = re.compile(r"(\d{1,6}(?:\.\d{1,3})?)% packet loss")
+_RTT_RE = re.compile(r"rtt min/avg/max/mdev = (\d+\.\d+)/(\d+\.\d+)/(\d+\.\d+)/(\d+\.\d+)")
 
 
 def _ping(host: str, count: int = 5, timeout: int = 5) -> dict[str, Any]:
@@ -43,11 +46,21 @@ def _ping(host: str, count: int = 5, timeout: int = 5) -> dict[str, Any]:
             "reachable": loss_pct < 100.0,  # noqa: PLR2004
         }
     except FileNotFoundError:
-        return {"target": host, "latency_ms": None, "loss_pct": 100.0, "reachable": False,
-                "error": "ping not found"}
+        return {
+            "target": host,
+            "latency_ms": None,
+            "loss_pct": 100.0,
+            "reachable": False,
+            "error": "ping not found",
+        }
     except subprocess.TimeoutExpired:
-        return {"target": host, "latency_ms": None, "loss_pct": 100.0, "reachable": False,
-                "error": "timeout"}
+        return {
+            "target": host,
+            "latency_ms": None,
+            "loss_pct": 100.0,
+            "reachable": False,
+            "error": "timeout",
+        }
 
 
 _MAX_TARGETS = 50

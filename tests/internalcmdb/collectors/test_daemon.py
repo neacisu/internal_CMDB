@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -18,7 +13,8 @@ def _make_daemon(**kwargs):
         "host_code": "lxc-test-01",
     }
     defaults.update(kwargs)
-    from internalcmdb.collectors.agent.daemon import AgentDaemon
+    from internalcmdb.collectors.agent.daemon import AgentDaemon  # noqa: PLC0415
+
     return AgentDaemon(**defaults)
 
 
@@ -127,28 +123,39 @@ class TestSslVerify:
 
 class TestCollectorModules:
     def test_collector_modules_count(self):
-        from internalcmdb.collectors.agent.daemon import COLLECTOR_MODULES
+        from internalcmdb.collectors.agent.daemon import COLLECTOR_MODULES  # noqa: PLC0415
+
         assert len(COLLECTOR_MODULES) >= 19
 
     def test_collector_modules_required_keys(self):
-        from internalcmdb.collectors.agent.daemon import COLLECTOR_MODULES
+        from internalcmdb.collectors.agent.daemon import COLLECTOR_MODULES  # noqa: PLC0415
+
         required = {
-            "heartbeat", "system_vitals", "docker_state", "gpu_state",
-            "disk_state", "network_state", "service_health", "container_resources",
+            "heartbeat",
+            "system_vitals",
+            "docker_state",
+            "gpu_state",
+            "disk_state",
+            "network_state",
+            "service_health",
+            "container_resources",
         }
         for key in required:
             assert key in COLLECTOR_MODULES, f"Missing collector: {key}"
 
     def test_collector_to_tier_populated(self):
-        from internalcmdb.collectors.agent.daemon import COLLECTOR_TO_TIER
+        from internalcmdb.collectors.agent.daemon import COLLECTOR_TO_TIER  # noqa: PLC0415
+
         assert len(COLLECTOR_TO_TIER) > 0
 
     def test_collector_to_tier_has_heartbeat(self):
-        from internalcmdb.collectors.agent.daemon import COLLECTOR_TO_TIER
+        from internalcmdb.collectors.agent.daemon import COLLECTOR_TO_TIER  # noqa: PLC0415
+
         assert "heartbeat" in COLLECTOR_TO_TIER
 
     def test_collector_to_tier_values_are_strings(self):
-        from internalcmdb.collectors.agent.daemon import COLLECTOR_TO_TIER
+        from internalcmdb.collectors.agent.daemon import COLLECTOR_TO_TIER  # noqa: PLC0415
+
         for key, val in COLLECTOR_TO_TIER.items():
             assert isinstance(val, str), f"Tier for {key} is not a string"
 
@@ -160,7 +167,8 @@ class TestCollectorModules:
 
 class TestPendingSnapshot:
     def test_pending_snapshot_creation(self):
-        from internalcmdb.collectors.agent.daemon import PendingSnapshot
+        from internalcmdb.collectors.agent.daemon import PendingSnapshot  # noqa: PLC0415
+
         snap = PendingSnapshot(
             snapshot_kind="heartbeat",
             tier_code="T1",
@@ -176,12 +184,15 @@ class TestPendingSnapshot:
         assert snap.collected_at == "2024-01-01T00:00:00+00:00"
 
     def test_pending_snapshot_is_dataclass(self):
-        import dataclasses
-        from internalcmdb.collectors.agent.daemon import PendingSnapshot
+        import dataclasses  # noqa: PLC0415
+
+        from internalcmdb.collectors.agent.daemon import PendingSnapshot  # noqa: PLC0415
+
         assert dataclasses.is_dataclass(PendingSnapshot)
 
     def test_pending_snapshot_payload_is_dict(self):
-        from internalcmdb.collectors.agent.daemon import PendingSnapshot
+        from internalcmdb.collectors.agent.daemon import PendingSnapshot  # noqa: PLC0415
+
         snap = PendingSnapshot(
             snapshot_kind="disk_state",
             tier_code="T3",

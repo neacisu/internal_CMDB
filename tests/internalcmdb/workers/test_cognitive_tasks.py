@@ -16,34 +16,24 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any, ClassVar
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from internalcmdb.workers.cognitive_tasks import (
     COGNITIVE_TASKS,
-    CognitiveTaskError,
     _check_database,
     _check_redis,
     _task_wrapper,
-    accuracy_eval,
-    cognitive_drift_check,
-    cognitive_fact_analysis,
-    cognitive_health_score,
-    cognitive_report_daily,
-    cognitive_report_weekly,
-    embedding_sync,
-    guard_audit,
-    hitl_escalation,
     self_heal_check,
 )
 
 
 class TestTaskRegistry:
-    """All 10 cognitive tasks must be registered."""
+    """All 11 cognitive tasks must be registered."""
 
-    EXPECTED_TASKS = [
+    EXPECTED_TASKS: ClassVar[list[str]] = [
         "cognitive_fact_analysis",
         "cognitive_drift_check",
         "cognitive_health_score",
@@ -52,6 +42,7 @@ class TestTaskRegistry:
         "embedding_sync",
         "guard_audit",
         "self_heal_check",
+        "container_log_audit",
         "hitl_escalation",
         "accuracy_eval",
     ]
@@ -61,7 +52,7 @@ class TestTaskRegistry:
             assert name in COGNITIVE_TASKS, f"Task '{name}' not in COGNITIVE_TASKS"
 
     def test_registry_count(self) -> None:
-        assert len(COGNITIVE_TASKS) == 10
+        assert len(COGNITIVE_TASKS) == 11
 
     def test_all_tasks_are_callable(self) -> None:
         for name, fn in COGNITIVE_TASKS.items():
@@ -127,12 +118,14 @@ class TestCheckDatabase:
         """_check_database wraps sync SQLAlchemy in asyncio.to_thread."""
         to_thread_called = False
 
-        async def mock_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        async def mock_to_thread(fn: Any, *args: Any, **kwargs: Any) -> None:
             nonlocal to_thread_called
             to_thread_called = True
             await asyncio.sleep(0)
 
-        with patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=mock_to_thread):
+        with patch(
+            "internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=mock_to_thread
+        ):
             await _check_database({})
 
         assert to_thread_called, "_check_database must call asyncio.to_thread"
@@ -141,13 +134,17 @@ class TestCheckDatabase:
     async def test_probe_failure_propagates(self) -> None:
         """Database connectivity failure must propagate as an exception."""
 
-        async def mock_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        async def mock_to_thread(fn: Any, *args: Any, **kwargs: Any) -> None:
             await asyncio.sleep(0)
             raise ConnectionError("DB unreachable")
 
-        with patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=mock_to_thread):
-            with pytest.raises(ConnectionError, match="DB unreachable"):
-                await _check_database({})
+        with (
+            patch(
+                "internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=mock_to_thread
+            ),
+            pytest.raises(ConnectionError, match="DB unreachable"),
+        ):
+            await _check_database({})
 
 
 class TestCheckRedis:
@@ -173,23 +170,28 @@ class TestCognitiveTaskExecution:
         return {"job_try": 1, "job_id": "unit-test"}
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("task_name", [
-        "cognitive_fact_analysis",
-        "cognitive_drift_check",
-        "cognitive_health_score",
-        "cognitive_report_daily",
-        "cognitive_report_weekly",
-        "embedding_sync",
-        "guard_audit",
-        "hitl_escalation",
-        "accuracy_eval",
-    ])
+    @pytest.mark.parametrize(
+        "task_name",
+        [
+            "cognitive_fact_analysis",
+            "cognitive_drift_check",
+            "cognitive_health_score",
+            "cognitive_report_daily",
+            "cognitive_report_weekly",
+            "embedding_sync",
+            "guard_audit",
+            "hitl_escalation",
+            "accuracy_eval",
+        ],
+    )
     async def test_task_returns_completed(self, ctx: dict[str, Any], task_name: str) -> None:
         task_fn = COGNITIVE_TASKS[task_name]
 
-        with patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", new_callable=AsyncMock):
-            with patch("internalcmdb.workers.cognitive_tasks._check_redis", new_callable=AsyncMock):
-                result = await task_fn(ctx)
+        with (
+            patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", new_callable=AsyncMock),
+            patch("internalcmdb.workers.cognitive_tasks._check_redis", new_callable=AsyncMock),
+        ):
+            result = await task_fn(ctx)
 
         assert result["status"] == "completed"
         assert result["task"] == task_name
@@ -218,12 +220,14 @@ class TestSelfHealCheck:
         # for ``asyncio.to_thread`` (which is async), and ``AsyncMock`` wraps
         # any regular callable's return value in a coroutine automatically.
         # Using ``async def`` would add no value and violates S7503.
-        def _fake_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        def _fake_to_thread(fn: Any, *args: Any, **kwargs: Any) -> Any:
             if fn.__name__ == "_query_disk_health":
-                return host_data, set()
+                return host_data, set[str]()
             return None
 
-        with patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch(
+            "internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread
+        ):
             result = await self_heal_check(ctx)
 
         assert result["candidates_evaluated"] == 1
@@ -240,18 +244,20 @@ class TestSelfHealCheck:
                 "disk_payload": {"disks": [{"mountpoint": "/", "used_pct": "92%"}]},
             },
         ]
-        insight_created = []
+        insight_created: list[bool] = []
 
         # Plain ``def``: AsyncMock wraps return values; no ``await`` needed.
-        def _fake_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        def _fake_to_thread(fn: Any, *args: Any, **kwargs: Any) -> Any:
             name = getattr(fn, "__name__", "")
             if name == "_query_disk_health":
-                return host_data, set()
+                return host_data, set[str]()
             if name == "_insert":
                 insight_created.append(True)
             return None
 
-        with patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch(
+            "internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread
+        ):
             result = await self_heal_check(ctx)
 
         assert result["plans_proposed"] == 1
@@ -270,12 +276,14 @@ class TestSelfHealCheck:
         ]
 
         # Plain ``def``: AsyncMock wraps return values; no ``await`` needed.
-        def _fake_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        def _fake_to_thread(fn: Any, *args: Any, **kwargs: Any) -> Any:
             if fn.__name__ == "_query_disk_health":
                 return host_data, {"eeee-ffff"}
             return None
 
-        with patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread):
+        with patch(
+            "internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread
+        ):
             result = await self_heal_check(ctx)
 
         assert result["plans_proposed"] == 0
@@ -290,19 +298,22 @@ class TestSelfHealCheck:
                 "disk_payload": {"disks": [{"mountpoint": "/", "used_pct": "90%"}]},
             },
         ]
-        insights = []
+        insights: list[bool] = []
 
         # Plain ``def``: AsyncMock wraps return values; no ``await`` needed.
-        def _fake_to_thread(fn, *args, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        def _fake_to_thread(fn: Any, *args: Any, **kwargs: Any) -> Any:
             name = getattr(fn, "__name__", "")
             if name == "_query_disk_health":
-                return host_data, set()
+                return host_data, set[str]()
             if name == "_insert":
                 insights.append(True)
             return None
 
         with (
-            patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", side_effect=_fake_to_thread),
+            patch(
+                "internalcmdb.workers.cognitive_tasks.asyncio.to_thread",
+                side_effect=_fake_to_thread,
+            ),
             patch("internalcmdb.cognitive.self_heal_disk.os.path.exists", return_value=False),
         ):
             result = await self_heal_check(ctx)
@@ -315,25 +326,25 @@ class TestExtractRootDiskPct:
     """Tests for _extract_root_disk_pct utility."""
 
     def test_parses_percentage_string(self) -> None:
-        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct
+        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct  # noqa: PLC0415
 
         payload = {"disks": [{"mountpoint": "/", "used_pct": "87.5%"}]}
-        assert _extract_root_disk_pct(payload) == pytest.approx(87.5)
+        assert _extract_root_disk_pct(payload) == pytest.approx(87.5)  # pyright: ignore[reportUnknownMemberType]
 
     def test_parses_numeric_value(self) -> None:
-        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct
+        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct  # noqa: PLC0415
 
         payload = {"disks": [{"mountpoint": "/", "used_pct": 92}]}
-        assert _extract_root_disk_pct(payload) == pytest.approx(92.0)
+        assert _extract_root_disk_pct(payload) == pytest.approx(92.0)  # pyright: ignore[reportUnknownMemberType]
 
     def test_no_root_disk_returns_zero(self) -> None:
-        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct
+        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct  # noqa: PLC0415
 
         payload = {"disks": [{"mountpoint": "/data", "used_pct": "99%"}]}
-        assert _extract_root_disk_pct(payload) == pytest.approx(0.0)
+        assert _extract_root_disk_pct(payload) == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]
 
     def test_empty_payload_returns_zero(self) -> None:
-        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct
+        from internalcmdb.workers.cognitive_tasks import _extract_root_disk_pct  # noqa: PLC0415
 
-        assert _extract_root_disk_pct({}) == pytest.approx(0.0)
-        assert _extract_root_disk_pct({"disks": None}) == pytest.approx(0.0)
+        assert _extract_root_disk_pct({}) == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]
+        assert _extract_root_disk_pct({"disks": None}) == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]

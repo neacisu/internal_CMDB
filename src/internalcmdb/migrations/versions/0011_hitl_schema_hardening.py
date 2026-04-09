@@ -102,44 +102,23 @@ def upgrade() -> None:
     ).scalar()
     if table_exists:
         op.execute(
-            sa.text(
-                f"ALTER TABLE {_GOV}.policy_record "
-                f"ADD COLUMN IF NOT EXISTS rules_jsonb JSONB"
-            )
+            sa.text(f"ALTER TABLE {_GOV}.policy_record ADD COLUMN IF NOT EXISTS rules_jsonb JSONB")
         )
 
 
 def downgrade() -> None:
+    op.execute(sa.text(f"DROP TRIGGER IF EXISTS trg_hitl_item_updated_at ON {_GOV}.hitl_item"))
+    op.execute(sa.text(f"DROP FUNCTION IF EXISTS {_GOV}.fn_hitl_item_updated_at()"))
     op.execute(
-        sa.text(
-            f"DROP TRIGGER IF EXISTS trg_hitl_item_updated_at ON {_GOV}.hitl_item"
-        )
+        sa.text(f"ALTER TABLE {_GOV}.hitl_item DROP CONSTRAINT IF EXISTS ck_hitl_item_status")
     )
     op.execute(
-        sa.text(
-            f"DROP FUNCTION IF EXISTS {_GOV}.fn_hitl_item_updated_at()"
-        )
+        sa.text(f"ALTER TABLE {_GOV}.hitl_item DROP CONSTRAINT IF EXISTS ck_hitl_item_risk_class")
     )
     op.execute(
-        sa.text(
-            f"ALTER TABLE {_GOV}.hitl_item DROP CONSTRAINT IF EXISTS ck_hitl_item_status"
-        )
+        sa.text(f"ALTER TABLE {_GOV}.hitl_item DROP CONSTRAINT IF EXISTS ck_hitl_item_priority")
     )
-    op.execute(
-        sa.text(
-            f"ALTER TABLE {_GOV}.hitl_item DROP CONSTRAINT IF EXISTS ck_hitl_item_risk_class"
-        )
-    )
-    op.execute(
-        sa.text(
-            f"ALTER TABLE {_GOV}.hitl_item DROP CONSTRAINT IF EXISTS ck_hitl_item_priority"
-        )
-    )
-    op.execute(
-        sa.text(
-            f"ALTER TABLE {_GOV}.hitl_item DROP COLUMN IF EXISTS updated_at"
-        )
-    )
+    op.execute(sa.text(f"ALTER TABLE {_GOV}.hitl_item DROP COLUMN IF EXISTS updated_at"))
     bind = op.get_bind()
     table_exists = bind.execute(
         sa.text(
@@ -151,8 +130,4 @@ def downgrade() -> None:
         {"schema": _GOV, "table": "policy_record"},
     ).scalar()
     if table_exists:
-        op.execute(
-            sa.text(
-                f"ALTER TABLE {_GOV}.policy_record DROP COLUMN IF EXISTS rules_jsonb"
-            )
-        )
+        op.execute(sa.text(f"ALTER TABLE {_GOV}.policy_record DROP COLUMN IF EXISTS rules_jsonb"))

@@ -1,162 +1,162 @@
-"""Tests for api.middleware.rbac."""
+"""Tests for api.middleware.rbac — local JWT (no Zitadel)."""
+
 from __future__ import annotations
-import base64
-import json
+
+from collections.abc import Iterator
+from typing import Any
 from unittest.mock import patch
+
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
+from starlette.requests import Request
+
+from internalcmdb.auth.security import TokenClaims, create_access_token, invalidate_jwt_secret_cache
+
+_SECRET = "t" * 32
 
 
-def _make_request(headers=None):
-    scope = {
+def _make_request(
+    headers: dict[str, str] | None = None,
+    cookies: dict[str, str] | None = None,
+) -> Request:
+    scope: dict[str, Any] = {
         "type": "http",
         "method": "GET",
         "path": "/api/v1/test",
         "query_string": b"",
         "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
     }
-    return Request(scope)
+    req = Request(scope)  # type: ignore[arg-type]
+    req._cookies = cookies or {}  # type: ignore[attr-defined]
+    return req
 
 
-def _make_jwt_token(claims):
-    header = base64.urlsafe_b64encode(b'{"alg":"RS256","typ":"JWT"}').rstrip(b"=").decode()
-    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
-    return f"{header}.{payload}.fakesig"
+@pytest.fixture(autouse=True)
+def jwt_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("JWT_SECRET_KEY", _SECRET)
+    monkeypatch.setenv("AUTH_DEV_MODE", "false")
+    invalidate_jwt_secret_cache()
+    import importlib  # noqa: PLC0415
+
+    import internalcmdb.api.middleware.rbac as _rbac  # noqa: PLC0415
+
+    importlib.reload(_rbac)
+    yield
+    invalidate_jwt_secret_cache()
 
 
-def test_extract_roles_zitadel_dict():
-    from internalcmdb.api.middleware.rbac import _extract_roles
-    claims = {"urn:zitadel:iam:org:project:roles": {"admin": {}, "viewer": {}}}
-    roles = _extract_roles(claims)
-    assert "admin" in roles and "viewer" in roles
+# ---------------------------------------------------------------------------
+# _get_auth_token
+# ---------------------------------------------------------------------------
 
 
-def test_extract_roles_list_claim():
-    from internalcmdb.api.middleware.rbac import _extract_roles
-    claims = {"urn:zitadel:iam:org:project:roles": ["Admin", "hitl_reviewer"]}
-    roles = _extract_roles(claims)
-    assert "admin" in roles and "hitl_reviewer" in roles
+def test_get_auth_token_prefers_cookie():
+    from internalcmdb.api.middleware.rbac import _get_auth_token  # noqa: PLC0415
+
+    req = _make_request(
+        headers={"authorization": "Bearer header-token"},
+        cookies={"cmdb_session": "cookie-token"},
+    )
+    assert _get_auth_token(req) == "cookie-token"
 
 
-def test_extract_roles_realm_access():
-    from internalcmdb.api.middleware.rbac import _extract_roles
-    claims = {"realm_access": {"roles": ["operator", "admin"]}}
-    roles = _extract_roles(claims)
-    assert "operator" in roles and "admin" in roles
+def test_get_auth_token_falls_back_to_bearer():
+    from internalcmdb.api.middleware.rbac import _get_auth_token  # noqa: PLC0415
+
+    req = _make_request(headers={"authorization": "Bearer bearer-token"})
+    assert _get_auth_token(req) == "bearer-token"
 
 
-def test_extract_roles_groups():
-    from internalcmdb.api.middleware.rbac import _extract_roles
-    claims = {"groups": ["/admins", "/users"]}
-    roles = _extract_roles(claims)
-    assert "/admins" in roles
+def test_get_auth_token_returns_none_when_absent():
+    from internalcmdb.api.middleware.rbac import _get_auth_token  # noqa: PLC0415
+
+    assert _get_auth_token(_make_request()) is None
 
 
-def test_extract_roles_empty():
-    from internalcmdb.api.middleware.rbac import _extract_roles
-    assert _extract_roles({}) == set()
+# ---------------------------------------------------------------------------
+# require_role
+# ---------------------------------------------------------------------------
 
 
-def test_decode_jwt_claims_valid_token():
-    from internalcmdb.api.middleware.rbac import _decode_jwt_claims
-    claims = {"sub": "user-123", "email": "test@example.com"}
-    token = _make_jwt_token(claims)
-    decoded = _decode_jwt_claims(token)
-    assert decoded.get("sub") == "user-123"
+def test_require_role_dev_mode_bypasses():
+    import internalcmdb.api.middleware.rbac as rbac_mod  # noqa: PLC0415
 
-
-def test_decode_jwt_claims_invalid_token():
-    from internalcmdb.api.middleware.rbac import _decode_jwt_claims
-    assert _decode_jwt_claims("not.a.jwt") == {}
-
-
-def test_decode_jwt_claims_malformed():
-    from internalcmdb.api.middleware.rbac import _decode_jwt_claims
-    assert _decode_jwt_claims("onlyonepart") == {}
-
-
-def test_get_bearer_token_present():
-    from internalcmdb.api.middleware.rbac import _get_bearer_token
-    req = _make_request({"authorization": "Bearer my-token"})
-    assert _get_bearer_token(req) == "my-token"
-
-
-def test_get_bearer_token_absent():
-    from internalcmdb.api.middleware.rbac import _get_bearer_token
-    assert _get_bearer_token(_make_request()) is None
-
-
-def test_get_bearer_token_non_bearer():
-    from internalcmdb.api.middleware.rbac import _get_bearer_token
-    assert _get_bearer_token(_make_request({"authorization": "Basic dXNlcjpwYXNz"})) is None
-
-
-def test_require_role_dev_mode_passes():
-    import internalcmdb.api.middleware.rbac as rbac_module
-    with patch.object(rbac_module, "_DEV_MODE", True):
-        from internalcmdb.api.middleware.rbac import require_role
-        dep = require_role("admin")
-        dep(request=_make_request(), token=None)
+    rbac_mod.AUTH_DEV_MODE = True
+    dep = rbac_mod.require_role("admin")
+    dep(request=_make_request(), token=None)
+    rbac_mod.AUTH_DEV_MODE = False
 
 
 def test_require_role_no_token_raises_401():
-    import internalcmdb.api.middleware.rbac as rbac_module
-    with patch.object(rbac_module, "_DEV_MODE", False):
-        from internalcmdb.api.middleware.rbac import require_role
-        dep = require_role("admin")
-        with pytest.raises(HTTPException) as exc:
-            dep(request=_make_request(), token=None)
-        assert exc.value.status_code == 401
+    from internalcmdb.api.middleware.rbac import require_role  # noqa: PLC0415
+
+    dep = require_role("admin")
+    with pytest.raises(HTTPException) as exc:
+        dep(request=_make_request(), token=None)
+    assert exc.value.status_code == 401
 
 
 def test_require_role_invalid_token_raises_401():
-    import internalcmdb.api.middleware.rbac as rbac_module
-    with patch.object(rbac_module, "_DEV_MODE", False):
-        from internalcmdb.api.middleware.rbac import require_role
-        dep = require_role("admin")
-        with pytest.raises(HTTPException) as exc:
-            dep(request=_make_request(), token="not.a.jwt")
-        assert exc.value.status_code == 401
+    from internalcmdb.api.middleware.rbac import require_role  # noqa: PLC0415
 
-
-def test_require_role_wrong_role_raises_403():
-    import internalcmdb.api.middleware.rbac as rbac_module
-    with patch.object(rbac_module, "_DEV_MODE", False):
-        from internalcmdb.api.middleware.rbac import require_role
-        dep = require_role("admin")
-        claims = {"sub": "u1", "urn:zitadel:iam:org:project:roles": {"viewer": {}}}
-        with pytest.raises(HTTPException) as exc:
-            dep(request=_make_request(), token=_make_jwt_token(claims))
-        assert exc.value.status_code == 403
+    dep = require_role("admin")
+    with pytest.raises(HTTPException) as exc:
+        dep(request=_make_request(), token="not.a.jwt.token")
+    assert exc.value.status_code == 401
 
 
 def test_require_role_correct_role_passes():
-    import internalcmdb.api.middleware.rbac as rbac_module
-    with patch.object(rbac_module, "_DEV_MODE", False):
-        from internalcmdb.api.middleware.rbac import require_role
+    from internalcmdb.api.middleware.rbac import require_role  # noqa: PLC0415
+
+    _claims = TokenClaims(user_id="u1", email="a@b.com", username="alice", role="admin")
+    token, _, _ = create_access_token(_claims)
+    with patch("internalcmdb.api.middleware.rbac.is_revoked", return_value=False):
         dep = require_role("admin")
-        req = _make_request()
-        claims = {"sub": "u1", "urn:zitadel:iam:org:project:roles": {"admin": {}}}
-        dep(request=req, token=_make_jwt_token(claims))
-        assert req.state.rbac_sub == "u1"
-        assert "admin" in req.state.rbac_roles
+        dep(request=_make_request(), token=token)  # must not raise
 
 
-def test_fetch_jwks_sync_returns_cached():
-    import internalcmdb.api.middleware.rbac as rbac_module
-    rbac_module._jwks_cache = {"keys": [{"kid": "test-key"}]}
-    rbac_module._jwks_fetched_at = float("inf")
-    result = rbac_module._fetch_jwks_sync()
-    assert result == {"keys": [{"kid": "test-key"}]}
-    rbac_module._jwks_cache = {}
-    rbac_module._jwks_fetched_at = 0
+def test_require_role_wrong_role_raises_403():
+    from internalcmdb.api.middleware.rbac import require_role  # noqa: PLC0415
+
+    _claims = TokenClaims(user_id="u1", email="a@b.com", username="alice", role="viewer")
+    token, _, _ = create_access_token(_claims)
+    with patch("internalcmdb.api.middleware.rbac.is_revoked", return_value=False):
+        dep = require_role("admin")
+        with pytest.raises(HTTPException) as exc:
+            dep(request=_make_request(), token=token)
+        assert exc.value.status_code == 403
 
 
-def test_fetch_jwks_sync_network_error():
-    import internalcmdb.api.middleware.rbac as rbac_module
-    rbac_module._jwks_cache = {}
-    rbac_module._jwks_fetched_at = 0
-    with patch("internalcmdb.api.middleware.rbac._ZITADEL_ISSUER", "https://issuer.example.com"):
-        with patch("httpx.get", side_effect=ConnectionError("unreachable")):
-            result = rbac_module._fetch_jwks_sync()
-    assert result == {}
+def test_require_role_revoked_token_raises_401():
+    from internalcmdb.api.middleware.rbac import require_role  # noqa: PLC0415
+
+    _claims = TokenClaims(user_id="u1", email="a@b.com", username="alice", role="admin")
+    token, _, _ = create_access_token(_claims)
+    with patch("internalcmdb.api.middleware.rbac.is_revoked", return_value=True):
+        dep = require_role("admin")
+        with pytest.raises(HTTPException) as exc:
+            dep(request=_make_request(), token=token)
+        assert exc.value.status_code == 401
+
+
+def test_require_role_multiple_roles_allowed():
+    from internalcmdb.api.middleware.rbac import require_role  # noqa: PLC0415
+
+    _claims = TokenClaims(user_id="u1", email="a@b.com", username="alice", role="operator")
+    token, _, _ = create_access_token(_claims)
+    with patch("internalcmdb.api.middleware.rbac.is_revoked", return_value=False):
+        dep = require_role("admin", "operator")
+        dep(request=_make_request(), token=token)  # must not raise
+
+
+def test_require_role_sets_request_state():
+    from internalcmdb.api.middleware.rbac import require_role  # noqa: PLC0415
+
+    _claims = TokenClaims(user_id="u1", email="a@b.com", username="alice", role="admin")
+    token, _, _ = create_access_token(_claims)
+    req = _make_request()
+    with patch("internalcmdb.api.middleware.rbac.is_revoked", return_value=False):
+        dep = require_role("admin")
+        dep(request=req, token=token)
+    assert req.state.rbac_role == "admin"
+    assert req.state.rbac_sub == "u1"

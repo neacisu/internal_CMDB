@@ -55,11 +55,13 @@ _ACTION_RISK_MAP: dict[str, str] = {
     "destroy_cluster_node": RC_4,
 }
 
-_DESTRUCTIVE_ACTIONS: frozenset[str] = frozenset({
-    "modify_firewall",
-    "delete_volume",
-    "destroy_cluster_node",
-})
+_DESTRUCTIVE_ACTIONS: frozenset[str] = frozenset(
+    {
+        "modify_firewall",
+        "delete_volume",
+        "destroy_cluster_node",
+    }
+)
 
 _MIN_AUTO_EXECUTE_CONFIDENCE = 0.7
 
@@ -144,9 +146,7 @@ class RemediationEngine:
         actions = self._derive_actions(insight)
 
         if not actions:
-            return self._rejected_plan(
-                insight, "No actionable remediation could be derived"
-            )
+            return self._rejected_plan(insight, "No actionable remediation could be derived")
 
         risk_class = self._classify_risk(actions)
         confidence = self._calculate_confidence(insight, actions)
@@ -209,9 +209,7 @@ class RemediationEngine:
     # Safety checks
     # ------------------------------------------------------------------
 
-    def _safety_check(
-        self, actions: list[RemediationAction], risk_class: str
-    ) -> str | None:
+    def _safety_check(self, actions: list[RemediationAction], risk_class: str) -> str | None:
         """Block destructive actions and enforce safety invariants."""
         for action in actions:
             if action.action_type in _DESTRUCTIVE_ACTIONS:
@@ -222,10 +220,7 @@ class RemediationEngine:
 
         if risk_class == RC_4:
             action_names = ", ".join(a.action_type for a in actions)
-            return (
-                f"RC-4 actions [{action_names}] are blocked — "
-                f"manual intervention required."
-            )
+            return f"RC-4 actions [{action_names}] are blocked — manual intervention required."
 
         return None
 
@@ -266,7 +261,9 @@ class RemediationEngine:
                 return
 
             plan.status = "auto_approved"
-            logger.info("Plan %s auto-approved (RC-1, confidence=%.2f).", plan.plan_id, plan.confidence)
+            logger.info(
+                "Plan %s auto-approved (RC-1, confidence=%.2f).", plan.plan_id, plan.confidence
+            )
 
         elif plan.risk_class in {RC_2, RC_3}:
             plan.status = "pending_approval"
@@ -346,7 +343,7 @@ class RemediationEngine:
         insight: dict[str, Any],
         actions: list[RemediationAction],
     ) -> float:
-        """Heuristic confidence score (0.0–1.0).
+        """Heuristic confidence score (0.0-1.0).
 
         Higher when the insight carries rich context and maps to known actions.
         """

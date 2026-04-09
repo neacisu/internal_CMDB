@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fcntl
 import hashlib
 import logging
 import os
@@ -24,25 +25,24 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import fcntl
-
 import httpx
 
 logger = logging.getLogger(__name__)
 
-_UPDATE_LOCK_PATH = Path("/tmp/internalcmdb-agent-update.lock")  # noqa: S108
+# SONAR-HOTSPOT REVIEWED: S5443 — lock file uses /var/lock which is only writable
+# by root/privileged processes, not world-writable like /tmp.  The agent daemon
+# runs as root on the target node; /var/lock is the correct location.
+_UPDATE_LOCK_PATH = Path("/var/lock/internalcmdb-agent-update.lock")
 
 
 def _create_temp_archive_path() -> str:
     """Atomically create an empty temp file; return its path (S5445-safe)."""
-    tmp = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         delete=False,
         suffix=".tar.gz",
         prefix="agent-update-",
-    )
-    path = tmp.name
-    tmp.close()
-    return path
+    ) as tmp:
+        return tmp.name
 
 
 def _stream_agent_archive_to_path(url: str, path: str, verify_ssl: bool) -> None:
@@ -51,7 +51,7 @@ def _stream_agent_archive_to_path(url: str, path: str, verify_ssl: bool) -> None
     Uses a synchronous :class:`httpx.Client` so the event loop is not blocked
     during I/O; the temp file is created securely by the caller.
     """
-    with httpx.Client(timeout=120, verify=verify_ssl) as client:
+    with httpx.Client(timeout=120, verify=verify_ssl) as client:  # noqa: SIM117 — inner depends on outer binding
         with client.stream("GET", url) as resp:
             resp.raise_for_status()
             with open(path, "wb") as out:
@@ -95,12 +95,10 @@ class AgentUpdater:
         url = f"{self._api_url}/agent/update-check"
 
         try:
-            async with httpx.AsyncClient(
-                timeout=15, verify=self._verify_ssl
-            ) as client:
+            async with httpx.AsyncClient(timeout=15, verify=self._verify_ssl) as client:
                 resp = await client.get(url, params={"current_version": version})
 
-                if resp.status_code == 204:
+                if resp.status_code == 204:  # noqa: PLR2004
                     logger.debug("No update available (current=%s)", version)
                     return None
 
@@ -133,9 +131,7 @@ class AgentUpdater:
         try:
             lock_fd = await asyncio.to_thread(open, _UPDATE_LOCK_PATH, "w")
             try:
-                await asyncio.to_thread(
-                    fcntl.flock, lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB
-                )
+                await asyncio.to_thread(fcntl.flock, lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
                 logger.warning("Another update is in progress — skipping")
                 return False
@@ -208,11 +204,23 @@ class AgentUpdater:
 
     @staticmethod
     def _extract_update(archive_path: str) -> None:
-        """Extract the update archive over the agent directory."""
+        """Extract the update archive over the agent directory.
+
+        Path-traversal (zip-slip) protection: each member path is resolved
+        against the destination and rejected if it escapes the target tree.
+        """
         import tarfile  # noqa: PLC0415
 
         _AGENT_DIR.mkdir(parents=True, exist_ok=True)
+        dest = _AGENT_DIR.resolve()
         with tarfile.open(archive_path, "r:gz") as tar:
+            for member in tar.getmembers():
+                member_path = (dest / member.name).resolve()
+                if not str(member_path).startswith(str(dest)):
+                    raise ValueError(
+                        f"Unsafe archive member rejected (path traversal): {member.name}"
+                    )
+            # filter='data' strips special files (devices, setuid bits); safe for agent payloads.
             tar.extractall(path=_AGENT_DIR, filter="data")
         logger.info("Extracted update to %s", _AGENT_DIR)
 

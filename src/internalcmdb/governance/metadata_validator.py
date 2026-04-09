@@ -23,7 +23,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -159,8 +159,8 @@ _ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9]$|^[A-Za-z0-9]$"
 @dataclass
 class ValidationResult:
     path: Path
-    errors: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list[str])
+    warnings: list[str] = field(default_factory=list[str])
 
     @property
     def is_valid(self) -> bool:
@@ -194,8 +194,8 @@ def _extract_frontmatter(text: str) -> tuple[dict[str, Any], str]:
 # ---------------------------------------------------------------------------
 
 
-def _check_date(value: Any, field_name: str) -> date | None:
-    """Validate a date field and return a date object, or append an error and return None."""
+def _check_date(value: Any) -> date | None:
+    """Parse and validate a date value; return a date object or None if invalid."""
     if isinstance(value, date):
         return value
     if isinstance(value, str):
@@ -209,7 +209,185 @@ def _check_date(value: Any, field_name: str) -> date | None:
 _MIN_TITLE_LEN: int = 10
 
 
-def _validate(  # noqa: PLR0912, PLR0915
+@dataclass
+class _CoreValidated:
+    """Result of _validate_core_fields — carries doc_class, status and bindings for reuse."""
+
+    doc_class: str
+    status: str
+    bindings: list[Any] = field(default_factory=list[Any])
+
+
+def _validate_core_fields(
+    fm: dict[str, Any],
+    result: ValidationResult,
+) -> _CoreValidated:
+    """Validate id/title/doc_class/domain/version/status/owner/superseded_by.
+
+    Returns _CoreValidated with doc_class and status for downstream validators.
+    """
+    err = result.errors.append
+    warn = result.warnings.append
+
+    doc_id: str = str(fm["id"])
+    if not _ID_PATTERN.match(doc_id):
+        err(f"'id' contains invalid characters or format: '{doc_id}'")
+
+    title: str = str(fm["title"])
+    if len(title) < _MIN_TITLE_LEN:
+        err(f"'title' is too short (< 10 chars): '{title}'")
+
+    doc_class: str = str(fm["doc_class"])
+    if doc_class not in KNOWN_DOC_CLASSES:
+        err(f"'doc_class' is not a known class token: '{doc_class}'")
+
+    domain: str = str(fm["domain"])
+    if domain not in KNOWN_DOMAINS:
+        err(f"'domain' is not a permitted taxonomy domain: '{domain}'")
+
+    version_raw = fm.get("version")
+    version_str = str(version_raw) if version_raw is not None else ""
+    if not _VERSION_PATTERN.match(version_str):
+        err(f"'version' must be quoted and match 'N.M' format: '{version_raw}'")
+
+    status: str = str(fm["status"])
+    if status not in PERMITTED_STATUSES:
+        err(
+            f"'status' is not a permitted value: '{status}'. "
+            f"Permitted: {sorted(PERMITTED_STATUSES)}"
+        )
+
+    created = _check_date(fm.get("created"))
+    if created is None:
+        err(f"'created' must be a YYYY-MM-DD date: '{fm.get('created')}'")
+    updated = _check_date(fm.get("updated"))
+    if updated is None:
+        err(f"'updated' must be a YYYY-MM-DD date: '{fm.get('updated')}'")
+    if created and updated and updated < created:
+        err(f"'updated' ({updated}) must be \u2265 'created' ({created})")
+
+    owner: str = str(fm.get("owner", ""))
+    if owner not in PERMITTED_ROLE_TOKENS and not re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+", owner):
+        warn(
+            f"'owner' is not a canonical role token: '{owner}'. "
+            f"Permitted tokens: {sorted(PERMITTED_ROLE_TOKENS)}"
+        )
+
+    if fm.get("superseded_by") and status != "superseded":
+        err("'superseded_by' is set but 'status' is not 'superseded'")
+
+    return _CoreValidated(doc_class=doc_class, status=status)
+
+
+def _validate_single_binding(
+    i: int,
+    b: Any,
+    result: ValidationResult,
+) -> None:
+    """Validate one binding entry at list index i."""
+    err = result.errors.append
+    if not isinstance(b, dict):
+        err(f"'binding[{i}]' must be a mapping")
+        return
+    b = cast(dict[str, Any], b)
+    if "entity_type" not in b:
+        err(f"'binding[{i}].entity_type' is required")
+    else:
+        et: str = str(b["entity_type"])
+        if not re.match(r"^[a-z_]+\.[a-z_]+$", et):
+            err(f"'binding[{i}].entity_type' must match 'schema.table': '{et}'")
+    if "entity_id" not in b or not b["entity_id"]:
+        err(f"'binding[{i}].entity_id' is required and must be non-empty")
+    if "relation" not in b:
+        err(f"'binding[{i}].relation' is required")
+    elif str(b["relation"]) not in PERMITTED_RELATIONS:
+        err(
+            f"'binding[{i}].relation' is not permitted: '{b['relation']}'. "
+            f"Permitted: {sorted(PERMITTED_RELATIONS)}"
+        )
+
+
+def _validate_bindings(
+    fm: dict[str, Any],
+    result: ValidationResult,
+) -> list[Any]:
+    """Validate the 'binding' list entries. Returns the (possibly empty) list."""
+    err = result.errors.append
+    _bindings_raw: Any = fm.get("binding") or []
+    if not isinstance(_bindings_raw, list):
+        err("'binding' must be a list")
+        return []
+    bindings = cast(list[Any], _bindings_raw)
+    for i, b in enumerate(bindings):
+        _validate_single_binding(i, b, result)
+    return bindings
+
+
+def _validate_approval_fields(
+    fm: dict[str, Any],
+    result: ValidationResult,
+) -> None:
+    """Check that approved_by and approved_at are present when status is 'approved'."""
+    err = result.errors.append
+    if not fm.get("approved_by"):
+        err("'approved_by' is required when status is 'approved'")
+    if not fm.get("approved_at"):
+        err("'approved_at' is required when status is 'approved'")
+
+
+def _validate_doc_refs(
+    body: str,
+    docs_root: Path,
+    result: ValidationResult,
+) -> None:
+    """Check that all [[doc:ref]] cross-references in the body resolve to real files."""
+    warn = result.warnings.append
+    for ref_id in _DOC_REF_PATTERN.findall(body):
+        if not _resolve_doc_ref(ref_id.strip(), docs_root):
+            warn(f"Cross-reference [[doc:{ref_id}]] does not resolve to any file under {docs_root}")
+
+
+def _validate_related_adrs(
+    fm: dict[str, Any],
+    docs_root: Path,
+    result: ValidationResult,
+) -> None:
+    """Check that all related_adrs entries resolve to real files under docs_root."""
+    warn = result.warnings.append
+    _related_raw: Any = fm.get("related_adrs") or []
+    if isinstance(_related_raw, list):
+        for adr_id in cast(list[Any], _related_raw):
+            if not _resolve_doc_ref(str(adr_id).strip(), docs_root):
+                warn(f"'related_adrs' entry '{adr_id}' does not resolve to any file")
+
+
+def _validate_strict(
+    fm: dict[str, Any],
+    body: str,
+    result: ValidationResult,
+    core: _CoreValidated,
+    docs_root: Path | None,
+) -> None:
+    """Apply strict-mode validation rules (approved fields, tags, cross-refs)."""
+    err = result.errors.append
+    warn = result.warnings.append
+
+    if core.status == "approved":
+        _validate_approval_fields(fm, result)
+
+    _tags_raw: Any = fm.get("tags") or []
+    if not isinstance(_tags_raw, list) or len(cast(list[Any], _tags_raw)) == 0:
+        warn("'tags' is empty or missing \u2014 recommended for retrieval quality")
+
+    if core.doc_class in BINDING_REQUIRED_CLASSES and not core.bindings:
+        err(f"'binding' is required for doc_class '{core.doc_class}' but is empty")
+
+    if docs_root is not None:
+        _validate_doc_refs(body, docs_root, result)
+        _validate_related_adrs(fm, docs_root, result)
+
+
+def _validate(
     path: Path,
     fm: dict[str, Any],
     body: str,
@@ -219,137 +397,20 @@ def _validate(  # noqa: PLR0912, PLR0915
 ) -> ValidationResult:
     result = ValidationResult(path=path)
     err = result.errors.append
-    warn = result.warnings.append
 
-    # ------------------------------------------------------------------
     # Level 1 — Mandatory fields
-    # ------------------------------------------------------------------
     for f in MANDATORY_FIELDS:
         if f not in fm or fm[f] is None or fm[f] == "":
             err(f"Missing mandatory field: '{f}'")
 
     if result.errors:
-        # No point continuing without mandatory fields
         return result
 
-    # id
-    doc_id: str = str(fm["id"])
-    if not _ID_PATTERN.match(doc_id):
-        err(f"'id' contains invalid characters or format: '{doc_id}'")
+    core = _validate_core_fields(fm, result)
+    core.bindings = _validate_bindings(fm, result)
 
-    # title
-    title: str = str(fm["title"])
-    if len(title) < _MIN_TITLE_LEN:
-        err(f"'title' is too short (< 10 chars): '{title}'")
-
-    # doc_class
-    doc_class: str = str(fm["doc_class"])
-    if doc_class not in KNOWN_DOC_CLASSES:
-        err(f"'doc_class' is not a known class token: '{doc_class}'")
-
-    # domain
-    domain: str = str(fm["domain"])
-    if domain not in KNOWN_DOMAINS:
-        err(f"'domain' is not a permitted taxonomy domain: '{domain}'")
-
-    # version
-    version_raw = fm.get("version")
-    version_str = str(version_raw) if version_raw is not None else ""
-    if not _VERSION_PATTERN.match(version_str):
-        err(f"'version' must be quoted and match 'N.M' format: '{version_raw}'")
-
-    # status
-    status: str = str(fm["status"])
-    if status not in PERMITTED_STATUSES:
-        err(
-            f"'status' is not a permitted value: '{status}'. "
-            f"Permitted: {sorted(PERMITTED_STATUSES)}"
-        )
-
-    # created / updated
-    created = _check_date(fm.get("created"), "created")
-    if created is None:
-        err(f"'created' must be a YYYY-MM-DD date: '{fm.get('created')}'")
-
-    updated = _check_date(fm.get("updated"), "updated")
-    if updated is None:
-        err(f"'updated' must be a YYYY-MM-DD date: '{fm.get('updated')}'")
-
-    if created and updated and updated < created:
-        err(f"'updated' ({updated}) must be ≥ 'created' ({created})")
-
-    # owner
-    owner: str = str(fm.get("owner", ""))
-    if owner not in PERMITTED_ROLE_TOKENS and not re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+", owner):
-        warn(
-            f"'owner' is not a canonical role token: '{owner}'. "
-            f"Permitted tokens: {sorted(PERMITTED_ROLE_TOKENS)}"
-        )
-
-    # superseded_by ↔ status
-    if fm.get("superseded_by") and status != "superseded":
-        err("'superseded_by' is set but 'status' is not 'superseded'")
-
-    # binding validation
-    bindings = fm.get("binding") or []
-    if not isinstance(bindings, list):
-        err("'binding' must be a list")
-    else:
-        for i, b in enumerate(bindings):
-            if not isinstance(b, dict):
-                err(f"'binding[{i}]' must be a mapping")
-                continue
-            if "entity_type" not in b:
-                err(f"'binding[{i}].entity_type' is required")
-            else:
-                et: str = str(b["entity_type"])
-                if not re.match(r"^[a-z_]+\.[a-z_]+$", et):
-                    err(f"'binding[{i}].entity_type' must match 'schema.table': '{et}'")
-            if "entity_id" not in b or not b["entity_id"]:
-                err(f"'binding[{i}].entity_id' is required and must be non-empty")
-            if "relation" not in b:
-                err(f"'binding[{i}].relation' is required")
-            elif str(b["relation"]) not in PERMITTED_RELATIONS:
-                err(
-                    f"'binding[{i}].relation' is not permitted: '{b['relation']}'. "
-                    f"Permitted: {sorted(PERMITTED_RELATIONS)}"
-                )
-
-    # ------------------------------------------------------------------
-    # Level 2 — Strict rules
-    # ------------------------------------------------------------------
     if strict:
-        # approved_by and approved_at required when status == approved
-        if status == "approved":
-            if not fm.get("approved_by"):
-                err("'approved_by' is required when status is 'approved'")
-            if not fm.get("approved_at"):
-                err("'approved_at' is required when status is 'approved'")
-
-        # tags non-empty
-        tags = fm.get("tags") or []
-        if not isinstance(tags, list) or len(tags) == 0:
-            warn("'tags' is empty or missing — recommended for retrieval quality")
-
-        # binding required for binding-required classes
-        if doc_class in BINDING_REQUIRED_CLASSES and not bindings:
-            err(f"'binding' is required for doc_class '{doc_class}' but is empty")
-
-        # resolve [[doc:ID]] cross-references
-        if docs_root is not None:
-            for ref_id in _DOC_REF_PATTERN.findall(body):
-                if not _resolve_doc_ref(ref_id.strip(), docs_root):
-                    warn(
-                        f"Cross-reference [[doc:{ref_id}]] does not resolve to any file "
-                        f"under {docs_root}"
-                    )
-
-        # resolve related_adrs
-        related_adrs = fm.get("related_adrs") or []
-        if isinstance(related_adrs, list) and docs_root is not None:
-            for adr_id in related_adrs:
-                if not _resolve_doc_ref(str(adr_id).strip(), docs_root):
-                    warn(f"'related_adrs' entry '{adr_id}' does not resolve to any file")
+        _validate_strict(fm, body, result, core, docs_root)
 
     return result
 

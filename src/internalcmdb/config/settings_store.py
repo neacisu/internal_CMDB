@@ -32,7 +32,7 @@ _SECRET_MASK = "***"
 
 
 class _CacheEntry:
-    __slots__ = ("value", "expires_at")
+    __slots__ = ("expires_at", "value")
 
     def __init__(self, value: Any, ttl: float) -> None:
         self.value = value
@@ -64,8 +64,8 @@ def _build_sync_url(database_url: str) -> str:
     """
     parts = urlsplit(database_url)
 
-    sync_host = os.environ.get("POSTGRES_SYNC_HOST", "").strip()
-    sync_port = os.environ.get("POSTGRES_SYNC_PORT", "").strip()
+    sync_host = (os.environ.get("POSTGRES_SYNC_HOST") or "").strip()
+    sync_port = (os.environ.get("POSTGRES_SYNC_PORT") or "").strip()
 
     netloc = parts.netloc
     if sync_host or sync_port:
@@ -237,7 +237,7 @@ class SettingsStore:
     def _cache_invalidate(self, key: str) -> None:
         self._cache.pop(key, None)
         # Also invalidate group/all-groups caches keyed by prefix
-        group_prefix = f"__group__{key.split('.')[0]}"
+        group_prefix = f"__group__{key.split('.', maxsplit=1)[0]}"
         self._cache.pop(group_prefix, None)
         self._cache.pop("__all__", None)
 
@@ -361,7 +361,9 @@ class SettingsStore:
             logger.info("settings_store.set: %r updated by %r", key, updated_by)
             return self._mask_if_secret(row)
 
-    async def reset_to_default(self, key: str, *, updated_by: str = "system_reset") -> dict[str, Any]:
+    async def reset_to_default(
+        self, key: str, *, updated_by: str = "system_reset"
+    ) -> dict[str, Any]:
         """Reset ``key`` to its ``default_jsonb`` value."""
         async with self._lock:
             row = await asyncio.to_thread(self._reset_row, key, updated_by)
@@ -378,22 +380,21 @@ class SettingsStore:
 # Singleton factory
 # ---------------------------------------------------------------------------
 
-_store: SettingsStore | None = None
+_store_ref: list[SettingsStore | None] = [None]
 
 
 def get_settings_store() -> SettingsStore:
     """Return the process-wide SettingsStore singleton."""
-    global _store  # noqa: PLW0603
-    if _store is None:
+    if _store_ref[0] is None:
         from internalcmdb.api.config import get_settings  # noqa: PLC0415
+
         settings = get_settings()
-        _store = SettingsStore(str(settings.database_url))
-    return _store
+        _store_ref[0] = SettingsStore(str(settings.database_url))
+    return _store_ref[0]
 
 
 def close_settings_store() -> None:
     """Dispose the SettingsStore singleton engine.  Call during app shutdown."""
-    global _store  # noqa: PLW0603
-    if _store is not None:
-        _store.close()
-        _store = None
+    if _store_ref[0] is not None:
+        _store_ref[0].close()
+        _store_ref[0] = None

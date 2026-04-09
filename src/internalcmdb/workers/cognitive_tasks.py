@@ -11,16 +11,30 @@ discovery.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import time
-from typing import Any
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
 _Ctx = dict[str, Any]
 
 _MAX_TASK_RETRIES = 3
+
+
+@dataclass
+class _DiskInsightData:
+    """Bundles disk-insight parameters to keep _persist_disk_insight within arg-count limit."""
+
+    host_id: str
+    host_code: str
+    disk_pct: float
+    auto_healed: bool = False
+    freed_mb: float = 0.0
 
 
 class CognitiveTaskError(Exception):
@@ -35,11 +49,16 @@ class CognitiveTaskError(Exception):
 def _task_wrapper(name: str, *, max_retries: int = _MAX_TASK_RETRIES):
     """Decorator that adds timing, structured logging, and retry semantics."""
 
-    def decorator(fn):  # noqa: ANN001, ANN202
+    def decorator(
+        fn: Callable[[_Ctx], Awaitable[dict[str, Any]]],
+    ) -> Callable[[_Ctx], Awaitable[dict[str, Any]]]:
+        @functools.wraps(fn)
         async def wrapper(ctx: _Ctx) -> dict[str, Any]:
             job_try = ctx.get("job_try", 1)
             job_id = ctx.get("job_id", "unknown")
-            logger.info("[%s] started (job_id=%s, attempt=%d/%d).", name, job_id, job_try, max_retries)
+            logger.info(
+                "[%s] started (job_id=%s, attempt=%d/%d).", name, job_id, job_try, max_retries
+            )
             start = time.monotonic()
             try:
                 result = await fn(ctx)
@@ -54,7 +73,13 @@ def _task_wrapper(name: str, *, max_retries: int = _MAX_TASK_RETRIES):
                 }
             except Exception:
                 elapsed_ms = int((time.monotonic() - start) * 1000)
-                logger.exception("[%s] failed after %dms (attempt %d/%d).", name, elapsed_ms, job_try, max_retries)
+                logger.exception(
+                    "[%s] failed after %dms (attempt %d/%d).",
+                    name,
+                    elapsed_ms,
+                    job_try,
+                    max_retries,
+                )
 
                 if job_try < max_retries:
                     raise
@@ -72,9 +97,6 @@ def _task_wrapper(name: str, *, max_retries: int = _MAX_TASK_RETRIES):
                     "retries_exhausted": True,
                 }
 
-        wrapper.__qualname__ = fn.__qualname__
-        wrapper.__name__ = fn.__name__
-        wrapper.__doc__ = fn.__doc__
         return wrapper
 
     return decorator
@@ -98,9 +120,11 @@ async def _check_database(ctx: _Ctx) -> None:
     SQLAlchemy sync engine ops are offloaded to a thread so they
     never block the async event loop.
     """
+
     def _probe() -> None:
-        from internalcmdb.api.config import get_settings  # noqa: PLC0415
         from sqlalchemy import create_engine, text  # noqa: PLC0415
+
+        from internalcmdb.api.config import get_settings  # noqa: PLC0415
 
         settings = get_settings()
         database_url = str(ctx.get("database_url") or settings.database_url)
@@ -146,7 +170,7 @@ async def cognitive_health_score(ctx: _Ctx) -> dict[str, Any]:
     """Recalculate composite health scores for all monitored entities.
 
     Aggregates disk, CPU, memory, container health, cert expiry,
-    and network metrics into a single 0–100 score per entity.
+    and network metrics into a single 0-100 score per entity.
     """
     await _check_database(ctx)
     logger.debug("Recalculating health scores.")
@@ -218,9 +242,7 @@ async def self_heal_check(ctx: _Ctx) -> dict[str, Any]:
 
     disk_threshold, _log_auto, _log_hitl = await _get_self_heal_config()
 
-    host_data, recently_healed = await asyncio.to_thread(
-        _query_disk_health, ctx
-    )
+    host_data, recently_healed = await asyncio.to_thread(_query_disk_health, ctx)
 
     candidates_evaluated = 0
     plans_proposed = 0
@@ -257,7 +279,13 @@ async def self_heal_check(ctx: _Ctx) -> dict[str, Any]:
                 plans_executed += 1
         else:
             await _persist_disk_insight(
-                ctx, host_id, host_code, disk_pct, auto_healed=False
+                ctx,
+                _DiskInsightData(
+                    host_id=host_id,
+                    host_code=host_code,
+                    disk_pct=disk_pct,
+                    auto_healed=False,
+                ),
             )
 
     return {
@@ -282,19 +310,21 @@ async def _get_self_heal_config() -> tuple[int, int, int]:
     """
     try:
         from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+
         store = get_settings_store()
         disk = await store.get("self_heal.disk_threshold_pct") or _DISK_HEAL_THRESHOLD
         log_auto = await store.get("self_heal.log_auto_truncate_bytes") or _LOG_AUTO_TRUNCATE_BYTES
         log_hitl = await store.get("self_heal.log_hitl_bytes") or _LOG_HITL_THRESHOLD_BYTES
         return int(disk), int(log_auto), int(log_hitl)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return _DISK_HEAL_THRESHOLD, _LOG_AUTO_TRUNCATE_BYTES, _LOG_HITL_THRESHOLD_BYTES
 
 
-def _get_engine(ctx: _Ctx):  # noqa: ANN202
+def _get_engine(ctx: _Ctx):
     """Create a disposable SQLAlchemy engine from the task context."""
-    from internalcmdb.api.config import get_settings  # noqa: PLC0415
     from sqlalchemy import create_engine  # noqa: PLC0415
+
+    from internalcmdb.api.config import get_settings  # noqa: PLC0415
 
     settings = get_settings()
     url = str(ctx.get("database_url") or settings.database_url)
@@ -340,7 +370,7 @@ def _query_disk_health(ctx: _Ctx) -> tuple[list[dict[str, Any]], set[str]]:
 
 def _extract_root_disk_pct(disk_payload: dict[str, Any]) -> float:
     """Parse root filesystem usage percentage from a disk_state snapshot."""
-    for d in disk_payload.get("disks") or []:
+    for d in cast(list[dict[str, Any]], disk_payload.get("disks") or []):
         if d.get("mountpoint") == "/":
             raw = str(d.get("used_pct", "0")).replace("%", "")
             try:
@@ -362,7 +392,15 @@ async def _auto_heal_disk(
 
     if not docker_socket_available():
         logger.info("Docker socket unavailable — creating manual insight for %s.", host_code)
-        await _persist_disk_insight(ctx, host_id, host_code, disk_pct, auto_healed=False)
+        await _persist_disk_insight(
+            ctx,
+            _DiskInsightData(
+                host_id=host_id,
+                host_code=host_code,
+                disk_pct=disk_pct,
+                auto_healed=False,
+            ),
+        )
         return False
 
     from internalcmdb.motor.playbooks import PlaybookExecutor  # noqa: PLC0415
@@ -370,25 +408,31 @@ async def _auto_heal_disk(
     executor = PlaybookExecutor()
     pb_result = await executor.execute(
         "clear_disk_space",
-        {"host": host_code, "host_id": host_id, "disk_pct": disk_pct, "threshold_pct": _DISK_HEAL_THRESHOLD},
+        {
+            "host": host_code,
+            "host_id": host_id,
+            "disk_pct": disk_pct,
+            "threshold_pct": _DISK_HEAL_THRESHOLD,
+        },
     )
 
-    pre_check = pb_result.output.get("pre_check") or {}
+    pre_check = cast(dict[str, Any], pb_result.output.get("pre_check") or {})
     if pre_check.get("pre_check") == "skipped":
         logger.info("Cleanup skipped on %s: %s", host_code, pre_check.get("reason", ""))
         return False
 
-    freed_mb = 0.0
-    exec_out = pb_result.output.get("execute") or {}
-    freed_mb = exec_out.get("freed_mb", 0.0)
+    exec_out = cast(dict[str, Any], pb_result.output.get("execute") or {})
+    freed_mb = float(exec_out.get("freed_mb", 0.0))
 
     await _persist_disk_insight(
         ctx,
-        host_id,
-        host_code,
-        disk_pct,
-        auto_healed=pb_result.success,
-        freed_mb=freed_mb,
+        _DiskInsightData(
+            host_id=host_id,
+            host_code=host_code,
+            disk_pct=disk_pct,
+            auto_healed=pb_result.success,
+            freed_mb=freed_mb,
+        ),
     )
     await _persist_self_heal_action(ctx, host_id, host_code, pb_result, freed_mb)
     return pb_result.success
@@ -396,12 +440,7 @@ async def _auto_heal_disk(
 
 async def _persist_disk_insight(
     ctx: _Ctx,
-    host_id: str,
-    host_code: str,
-    disk_pct: float,
-    *,
-    auto_healed: bool = False,
-    freed_mb: float = 0.0,
+    ins: _DiskInsightData,
 ) -> None:
     """Insert a cognitive insight for a high-disk-usage event."""
 
@@ -409,20 +448,25 @@ async def _persist_disk_insight(
         from sqlalchemy import text  # noqa: PLC0415
 
         engine = _get_engine(ctx)
-        severity = "critical" if disk_pct >= 90 else "warning"
-        status = "acknowledged" if auto_healed else "active"
-        title = f"High disk usage on {host_code}: {disk_pct:.1f}%"
-        explanation = f"Root filesystem on {host_code} is at {disk_pct:.1f}% capacity."
-        if auto_healed:
-            explanation += f" Auto-heal freed {freed_mb:.1f} MB via Docker cleanup."
+        disk_pct = ins.disk_pct
+        severity = "critical" if disk_pct >= 90 else "warning"  # noqa: PLR2004
+        status = "acknowledged" if ins.auto_healed else "active"
+        title = f"High disk usage on {ins.host_code}: {disk_pct:.1f}%"
+        explanation = f"Root filesystem on {ins.host_code} is at {disk_pct:.1f}% capacity."
+        if ins.auto_healed:
+            explanation += f" Auto-heal freed {ins.freed_mb:.1f} MB via Docker cleanup."
 
-        evidence = json.dumps([{
-            "metric": "disk_usage_pct",
-            "value": round(disk_pct, 1),
-            "threshold": _DISK_HEAL_THRESHOLD,
-            "auto_healed": auto_healed,
-            "freed_mb": round(freed_mb, 1),
-        }])
+        evidence = json.dumps(
+            [
+                {
+                    "metric": "disk_usage_pct",
+                    "value": round(disk_pct, 1),
+                    "threshold": _DISK_HEAL_THRESHOLD,
+                    "auto_healed": ins.auto_healed,
+                    "freed_mb": round(ins.freed_mb, 1),
+                }
+            ]
+        )
 
         try:
             with engine.connect() as conn:
@@ -436,7 +480,7 @@ async def _persist_disk_insight(
                              :expl, :status, 0.95, :evidence::jsonb)
                     """),
                     {
-                        "eid": host_id,
+                        "eid": ins.host_id,
                         "sev": severity,
                         "title": title,
                         "expl": explanation,
@@ -493,8 +537,8 @@ async def _persist_self_heal_action(
 # Container log audit — constants and helpers
 # ---------------------------------------------------------------------------
 
-_LOG_AUTO_TRUNCATE_BYTES: int = 2 * 1024 * 1024 * 1024   # 2 GB — auto-truncate, no HITL
-_LOG_HITL_THRESHOLD_BYTES: int = 500 * 1024 * 1024         # 500 MB — create HITL review item
+_LOG_AUTO_TRUNCATE_BYTES: int = 2 * 1024 * 1024 * 1024  # 2 GB — auto-truncate, no HITL
+_LOG_HITL_THRESHOLD_BYTES: int = 500 * 1024 * 1024  # 500 MB — create HITL review item
 _DOCKER_DAEMON_JSON: str = "/etc/docker/daemon.json"
 _DOCKER_DATA_ROOT_DEFAULT: str = "/mnt/HC_Volume_105014654/docker"
 
@@ -505,8 +549,32 @@ def _get_docker_data_root() -> str:
         with open(_DOCKER_DAEMON_JSON) as fh:
             cfg = json.load(fh)
         return str(cfg.get("data-root", _DOCKER_DATA_ROOT_DEFAULT))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return _DOCKER_DATA_ROOT_DEFAULT
+
+
+def _check_log_file(
+    log_file: Any,
+    container_id: str,
+    data_root: str,
+) -> dict[str, Any] | None:
+    """Return a result dict if *log_file* is at or above the HITL size threshold.
+
+    Returns ``None`` when the file cannot be stat'd (OSError) or is below threshold.
+    """
+    try:
+        size = log_file.stat().st_size
+    except OSError:
+        return None
+    if size < _LOG_HITL_THRESHOLD_BYTES:
+        return None
+    return {
+        "container_id": container_id,
+        "container_name": container_id[:12],  # enriched below by _enrich_container_names
+        "log_path": str(log_file),
+        "size_bytes": size,
+        "data_root": data_root,
+    }
 
 
 def _scan_container_logs(data_root: str) -> list[dict[str, Any]]:
@@ -526,18 +594,9 @@ def _scan_container_logs(data_root: str) -> list[dict[str, Any]]:
             continue
         container_id = container_dir.name
         for log_file in container_dir.glob("*-json.log"):
-            try:
-                size = log_file.stat().st_size
-            except OSError:
-                continue
-            if size >= _LOG_HITL_THRESHOLD_BYTES:
-                results.append({
-                    "container_id": container_id,
-                    "container_name": container_id[:12],  # enriched below
-                    "log_path": str(log_file),
-                    "size_bytes": size,
-                    "data_root": data_root,
-                })
+            entry = _check_log_file(log_file, container_id, data_root)
+            if entry is not None:
+                results.append(entry)
     return results
 
 
@@ -558,7 +617,7 @@ def _enrich_container_names(entries: list[dict[str, Any]]) -> list[dict[str, Any
         conn = _DockConn("localhost")
         conn.request("GET", "/containers/json?all=1")
         resp = conn.getresponse()
-        if resp.status == 200:
+        if resp.status == 200:  # noqa: PLR2004
             containers: list[dict[str, Any]] = json.loads(resp.read())
             id_to_name: dict[str, str] = {
                 c["Id"]: (c.get("Names") or [c["Id"][:12]])[0].lstrip("/")
@@ -571,7 +630,7 @@ def _enrich_container_names(entries: list[dict[str, Any]]) -> list[dict[str, Any
                     entry["container_name"] = id_to_name[full_id]
         conn.close()
     except Exception:
-        pass  # Names are informational — never fail the audit on resolution errors
+        logger.debug("Container name resolution failed (informational, not fatal)", exc_info=True)
     return entries
 
 
@@ -587,26 +646,31 @@ async def _persist_log_insight(
         from sqlalchemy import text  # noqa: PLC0415
 
         engine = _get_engine(ctx)
-        size_gb = entry["size_bytes"] / (1024 ** 3)
+        size_gb = entry["size_bytes"] / (1024**3)
         name = entry["container_name"]
         severity = "critical" if entry["size_bytes"] >= _LOG_AUTO_TRUNCATE_BYTES else "warning"
         status = "acknowledged" if auto_truncated else "active"
         title = f"Runaway container log on {name}: {size_gb:.2f} GB"
-        explanation = (
-            f"Container '{name}' log file is {size_gb:.2f} GB"
-            f" ({entry['log_path']})."
-        )
+        explanation = f"Container '{name}' log file is {size_gb:.2f} GB ({entry['log_path']})."
         if auto_truncated:
-            explanation += " Log was automatically truncated (no HITL required — size exceeded 2 GB)."
+            explanation += (
+                " Log was automatically truncated (no HITL required — size exceeded 2 GB)."
+            )
         else:
-            explanation += " HITL review item created — operator approval required before truncation."
+            explanation += (
+                " HITL review item created — operator approval required before truncation."
+            )
 
-        evidence = json.dumps([{
-            "metric": "container_log_size_bytes",
-            "value": entry["size_bytes"],
-            "log_path": entry["log_path"],
-            "auto_truncated": auto_truncated,
-        }])
+        evidence = json.dumps(
+            [
+                {
+                    "metric": "container_log_size_bytes",
+                    "value": entry["size_bytes"],
+                    "log_path": entry["log_path"],
+                    "auto_truncated": auto_truncated,
+                }
+            ]
+        )
 
         try:
             with engine.connect() as conn:
@@ -644,27 +708,31 @@ async def _submit_log_hitl(ctx: _Ctx, entry: dict[str, Any]) -> None:
 
         engine = _get_engine(ctx)
         item_id = str(_uuid.uuid4())
-        size_mb = entry["size_bytes"] / (1024 ** 2)
+        size_mb = entry["size_bytes"] / (1024**2)
         name = entry["container_name"]
-        context = json.dumps({
-            "container_id": entry["container_id"],
-            "container_name": name,
-            "log_path": entry["log_path"],
-            "size_bytes": entry["size_bytes"],
-            "size_mb": round(size_mb, 1),
-            "recommended_action": "truncate_log",
-            "playbook": "truncate_container_log",
-        })
-        suggestion = json.dumps({
-            "action": "truncate_container_log",
-            "params": {
-                "log_path": entry["log_path"],
-                "container_name": name,
+        context = json.dumps(
+            {
                 "container_id": entry["container_id"],
-                "data_root": entry["data_root"],
+                "container_name": name,
+                "log_path": entry["log_path"],
                 "size_bytes": entry["size_bytes"],
-            },
-        })
+                "size_mb": round(size_mb, 1),
+                "recommended_action": "truncate_log",
+                "playbook": "truncate_container_log",
+            }
+        )
+        suggestion = json.dumps(
+            {
+                "action": "truncate_container_log",
+                "params": {
+                    "log_path": entry["log_path"],
+                    "container_name": name,
+                    "container_id": entry["container_id"],
+                    "data_root": entry["data_root"],
+                    "size_bytes": entry["size_bytes"],
+                },
+            }
+        )
 
         try:
             with engine.connect() as conn:
@@ -729,7 +797,7 @@ async def container_log_audit(ctx: _Ctx) -> dict[str, Any]:
                 "Container log auto-truncate: %s (%s) at %.2f GB.",
                 entry["container_name"],
                 entry["log_path"],
-                entry["size_bytes"] / (1024 ** 3),
+                entry["size_bytes"] / (1024**3),
             )
             pb_result = await executor.execute("truncate_container_log", entry)
             if pb_result.success:
@@ -741,7 +809,7 @@ async def container_log_audit(ctx: _Ctx) -> dict[str, Any]:
                 "Container log HITL review: %s (%s) at %.0f MB.",
                 entry["container_name"],
                 entry["log_path"],
-                entry["size_bytes"] / (1024 ** 2),
+                entry["size_bytes"] / (1024**2),
             )
             await _submit_log_hitl(ctx, entry)
             await _persist_log_insight(ctx, entry, auto_truncated=False)

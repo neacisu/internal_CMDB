@@ -10,8 +10,8 @@ import pytest
 
 from internalcmdb.loaders.trust_surface_loader import (
     _audit_host_and_endpoint_lists,
-    _ensure_discovery_source,
     _endpoint_health_code,
+    _ensure_discovery_source,
     _get_host_id_by_code,
     _load_endpoints,
     _load_host,
@@ -113,15 +113,18 @@ class TestAuditHostAndEndpointLists:
         h, e = _audit_host_and_endpoint_lists(
             {"results": {"hosts": [1], "endpoints": [2]}},
         )
-        assert h == [1] and e == [2]
+        assert h == [1]
+        assert e == [2]
 
     def test_list_results_is_hosts_only(self) -> None:
         h, e = _audit_host_and_endpoint_lists({"results": [{"alias": "a"}]})
-        assert h == [{"alias": "a"}] and e == []
+        assert h == [{"alias": "a"}]
+        assert e == []
 
     def test_non_dict_non_list_results(self) -> None:
         h, e = _audit_host_and_endpoint_lists({"results": 42})
-        assert h == [] and e == []
+        assert h == []
+        assert e == []
 
 
 # ---------------------------------------------------------------------------

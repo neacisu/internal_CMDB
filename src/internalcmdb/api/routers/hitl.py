@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from internalcmdb.governance.hitl_workflow import HITLWorkflow
 
 from ..deps import get_async_session
-from ..middleware.rate_limit import limiter
+from ..middleware.rate_limit import rate_limit
 from ..middleware.rbac import require_role
 
 router = APIRouter(prefix="/hitl", tags=["hitl"])
@@ -306,15 +306,21 @@ async def hitl_accuracy(
     )
     row = result.fetchone()
     if row is None:
-        return {"total_feedback": 0, "agreed": 0, "disagreed": 0, "unknown": 0, "accuracy_rate": None}
-    return {k: (float(v) if isinstance(v, (int, float)) and v is not None else v) for k, v in row._mapping.items()}
+        return {
+            "total_feedback": 0,
+            "agreed": 0,
+            "disagreed": 0,
+            "unknown": 0,
+            "accuracy_rate": None,
+        }
+    return {k: (float(v) if isinstance(v, (int, float)) else v) for k, v in row._mapping.items()}
 
 
 @router.post(
     "/bulk-decide",
     dependencies=[Depends(require_role("platform_admin"))],
 )
-@limiter.limit("5/minute")
+@rate_limit("5/minute")
 async def bulk_decide(
     request: Request,
     body: BulkDecideBody,

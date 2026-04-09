@@ -1,6 +1,9 @@
 """Tests for collectors.staleness — check_staleness."""
+
 from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
+
 from internalcmdb.collectors.staleness import check_staleness
 
 

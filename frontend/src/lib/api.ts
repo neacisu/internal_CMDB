@@ -7,8 +7,16 @@ const BASE = "/api/v1";
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
+    credentials: "include",
     ...init,
   });
+  if (res.status === 401) {
+    // Session expired or revoked — redirect to login (SSR guard: only in browser)
+    if (globalThis.window !== undefined) {
+      globalThis.window.location.href = "/login";
+    }
+    throw new Error("API 401: Authentication required");
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`API ${res.status}: ${text}`);

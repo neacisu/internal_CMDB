@@ -100,9 +100,7 @@ class PromptEvolutionEngine:
                     accuracy=accuracy,
                     total_samples=total,
                     correction_types=corrections,
-                    needs_improvement=(
-                        total >= _MIN_SAMPLES and accuracy < self._threshold
-                    ),
+                    needs_improvement=(total >= _MIN_SAMPLES and accuracy < self._threshold),
                 )
             )
 
@@ -195,7 +193,10 @@ class PromptEvolutionEngine:
             {
                 "role": "user",
                 "content": _build_improvement_context(
-                    template_code, version, current_text, disagreements,
+                    template_code,
+                    version,
+                    current_text,
+                    disagreements,
                 ),
             },
         ]
@@ -207,7 +208,8 @@ class PromptEvolutionEngine:
         if guard_result.get("is_valid") is False:
             logger.warning(
                 "Evolved prompt for '%s' REJECTED by LLM Guard: %s",
-                template_code, guard_result.get("results"),
+                template_code,
+                guard_result.get("results"),
             )
             return {
                 "improved_text": None,
@@ -222,12 +224,17 @@ class PromptEvolutionEngine:
         hitl_item_id: str | None = None
         if submit_hitl:
             hitl_item_id = await self._submit_hitl_review(
-                template_code, version, current_text, improved_text,
+                template_code,
+                version,
+                current_text,
+                improved_text,
             )
 
         logger.info(
             "Proposed improvement for template '%s' v%s (hitl_item=%s)",
-            template_code, version, hitl_item_id,
+            template_code,
+            version,
+            hitl_item_id,
         )
         return {
             "improved_text": improved_text,
@@ -257,24 +264,26 @@ class PromptEvolutionEngine:
         from internalcmdb.governance.hitl_workflow import HITLWorkflow  # noqa: PLC0415
 
         wf = HITLWorkflow(self._session)
-        item_id = await wf.submit({
-            "item_type": "prompt_evolution",
-            "risk_class": "RC-3",
-            "source_event_id": None,
-            "correlation_id": template_code,
-            "context": {
-                "template_code": template_code,
-                "current_version": current_version,
-                "original_text": original_text[:500],
-                "improved_text": improved_text[:500],
-            },
-            "llm_suggestion": {
-                "decision": "approved",
-                "improved_text": improved_text,
-            },
-            "llm_confidence": 0.7,
-            "llm_model_used": "prompt_evolution_engine",
-        })
+        item_id = await wf.submit(
+            {
+                "item_type": "prompt_evolution",
+                "risk_class": "RC-3",
+                "source_event_id": None,
+                "correlation_id": template_code,
+                "context": {
+                    "template_code": template_code,
+                    "current_version": current_version,
+                    "original_text": original_text[:500],
+                    "improved_text": improved_text[:500],
+                },
+                "llm_suggestion": {
+                    "decision": "approved",
+                    "improved_text": improved_text,
+                },
+                "llm_confidence": 0.7,
+                "llm_model_used": "prompt_evolution_engine",
+            }
+        )
         return item_id
 
     async def _get_template_stats(self, template_code: str) -> dict[str, Any]:

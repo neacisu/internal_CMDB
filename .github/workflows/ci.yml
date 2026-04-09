@@ -95,6 +95,7 @@ jobs:
         working-directory: frontend
         run: |
           pnpm install --frozen-lockfile
+          pnpm run lint
           pnpm exec vitest run --coverage
       - name: Upload frontend coverage
         if: always()
@@ -102,4 +103,58 @@ jobs:
         with:
           name: frontend-coverage
           path: frontend/coverage
+          if-no-files-found: ignore
+
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.157.0
+    # Required: add SEMGREP_APP_TOKEN to GitHub repo secrets:
+    #   Settings → Secrets and variables → Actions → New repository secret
+    #   Name: SEMGREP_APP_TOKEN
+    #   Value: token from https://semgrep.dev/orgs/-/settings/tokens
+    #          (same token saved in ~/.semgrep/settings.yml after `semgrep login`)
+    env:
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run custom rules (no auth required)
+        run: |
+          semgrep scan --config .semgrep/ \
+                  --severity WARNING \
+                  --error \
+                  --metrics=off \
+                  --json \
+                  src frontend/src > semgrep-custom.json 2>&1 || true
+
+      - name: Run community rulesets (requires SEMGREP_APP_TOKEN secret)
+        run: |
+          semgrep scan \
+                  --config p/python \
+                  --config p/owasp-top-ten \
+                  --config p/fastapi \
+                  --config p/typescript \
+                  --config p/javascript \
+                  --config p/react \
+                  --config p/nodejs \
+                  --config p/sql-injection \
+                  --config p/xss \
+                  --config p/secrets \
+                  --severity WARNING \
+                  --error \
+                  --metrics=off \
+                  --json \
+                  src frontend/src > semgrep-community.json 2>&1
+
+      - name: Upload Semgrep results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: |
+            semgrep-custom.json
+            semgrep-community.json
           if-no-files-found: ignore

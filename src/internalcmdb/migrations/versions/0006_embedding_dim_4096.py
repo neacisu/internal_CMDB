@@ -58,11 +58,7 @@ def upgrade() -> None:
 
     op.execute(sa.text(f"DROP INDEX IF EXISTS {_SCHEMA}.{_INDEX_NAME}"))
 
-    op.execute(
-        sa.text(
-            f"UPDATE {_SCHEMA}.{_TABLE} SET {_COLUMN} = NULL"
-        )
-    )
+    op.execute(sa.text(f"UPDATE {_SCHEMA}.{_TABLE} SET {_COLUMN} = NULL"))
 
     op.execute(
         sa.text(
@@ -86,11 +82,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute(sa.text(f"DROP INDEX IF EXISTS {_SCHEMA}.{_INDEX_NAME}"))
 
-    op.execute(
-        sa.text(
-            f"UPDATE {_SCHEMA}.{_TABLE} SET {_COLUMN} = NULL"
-        )
-    )
+    op.execute(sa.text(f"UPDATE {_SCHEMA}.{_TABLE} SET {_COLUMN} = NULL"))
 
     op.execute(
         sa.text(

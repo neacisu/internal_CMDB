@@ -9,9 +9,8 @@ Covers:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Any
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -49,7 +48,7 @@ def _make_audit_event(
     e.status = status
     e.ip_address = ip_address
     e.risk_level = risk_level
-    e.created_at = created_at or datetime.now(timezone.utc).isoformat()
+    e.created_at = created_at or datetime.now(UTC).isoformat()
     return e
 
 
@@ -61,7 +60,9 @@ class TestListEvents:
         mock_db = MagicMock()
         mock_query = MagicMock()
         mock_query.count.return_value = 3
-        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = events
+        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = (
+            events
+        )
         mock_db.query.return_value = mock_query
 
         app = _build_app()
@@ -81,7 +82,9 @@ class TestListEvents:
         mock_db = MagicMock()
         mock_query = MagicMock()
         mock_query.count.return_value = 1
-        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [event]
+        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
+            event
+        ]
         mock_db.query.return_value = mock_query
 
         app = _build_app()
@@ -91,9 +94,17 @@ class TestListEvents:
         resp = client.get("/audit/events")
         item = resp.json()["items"][0]
         required_fields = [
-            "event_id", "event_type", "actor", "action",
-            "target_entity", "correlation_id", "duration_ms",
-            "status", "ip_address", "risk_level", "created_at",
+            "event_id",
+            "event_type",
+            "actor",
+            "action",
+            "target_entity",
+            "correlation_id",
+            "duration_ms",
+            "status",
+            "ip_address",
+            "risk_level",
+            "created_at",
         ]
         for field in required_fields:
             assert field in item, f"Missing field: {field}"
@@ -103,7 +114,7 @@ class TestListEvents:
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
         mock_query.count.return_value = 0
-        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []  # noqa: E501
         mock_db.query.return_value = mock_query
 
         app = _build_app()
@@ -119,7 +130,7 @@ class TestListEvents:
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
         mock_query.count.return_value = 0
-        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []  # noqa: E501
         mock_db.query.return_value = mock_query
 
         app = _build_app()
@@ -135,7 +146,7 @@ class TestListEvents:
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
         mock_query.count.return_value = 0
-        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []  # noqa: E501
         mock_db.query.return_value = mock_query
 
         app = _build_app()
@@ -151,7 +162,7 @@ class TestListEvents:
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
         mock_query.count.return_value = 0
-        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []  # noqa: E501
         mock_db.query.return_value = mock_query
 
         app = _build_app()
@@ -178,7 +189,7 @@ class TestListEvents:
         mock_db = MagicMock()
         mock_query = MagicMock()
         mock_query.count.return_value = 0
-        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []  # noqa: E501
         mock_db.query.return_value = mock_query
 
         app = _build_app()
@@ -196,7 +207,9 @@ class TestListEvents:
         mock_db = MagicMock()
         mock_query = MagicMock()
         mock_query.count.return_value = 1
-        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [event]
+        mock_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
+            event
+        ]
         mock_db.query.return_value = mock_query
 
         app = _build_app()
@@ -215,13 +228,13 @@ class TestAuditStats:
     def test_returns_all_aggregate_fields(self) -> None:
         mock_db = MagicMock()
         mock_db.scalar.side_effect = [
-            100,   # total_events
-            20,    # total_changelogs
-            5,     # total_policies
-            3,     # total_approvals
+            100,  # total_events
+            20,  # total_changelogs
+            5,  # total_policies
+            3,  # total_approvals
             15.5,  # avg_duration
-            12,    # error_count
-            datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc),
+            12,  # error_count
+            datetime(2026, 3, 23, 12, 0, 0, tzinfo=UTC),
         ]
         mock_db.execute.side_effect = [
             MagicMock(all=lambda: [("200", 80), ("404", 15), ("500", 5)]),
@@ -298,5 +311,6 @@ class TestAuditStats:
 
 
 def _get_db_dep():
-    from internalcmdb.api.deps import get_db
+    from internalcmdb.api.deps import get_db  # noqa: PLC0415
+
     return get_db

@@ -31,9 +31,14 @@ from .routers import (
     registry,
     results,
     retrieval,
-    settings as settings_router,
     slo,
     workers,
+)
+from .routers import (
+    auth as auth_router,
+)
+from .routers import (
+    settings as settings_router,
 )
 
 logger = logging.getLogger("internalcmdb.staleness")
@@ -106,6 +111,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         sample_rate=settings.otel_sample_rate,
     )
 
+    # Inject JWT_SECRET_KEY from SecretProvider into the process environment
+    # so that auth/security.py can read it synchronously via os.environ.
+    import os  # noqa: PLC0415
+
+    from internalcmdb.config.secrets import SecretProvider  # noqa: PLC0415
+
+    _provider = SecretProvider()
+    _jwt_secret = await _provider.get("JWT_SECRET_KEY")
+    if not _jwt_secret or len(_jwt_secret) < 32:  # noqa: PLR2004
+        raise RuntimeError(
+            "JWT_SECRET_KEY must be set and at least 32 characters long. "
+            "Configure it in the secrets backend."
+        )
+    os.environ["JWT_SECRET_KEY"] = _jwt_secret
+
     staleness_task = asyncio.create_task(_staleness_loop())
     escalation_task = asyncio.create_task(_escalation_loop())
     try:
@@ -113,9 +133,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     finally:
         staleness_task.cancel()
         escalation_task.cancel()
-        await asyncio.gather(
-            staleness_task, escalation_task, return_exceptions=True
-        )
+        await asyncio.gather(staleness_task, escalation_task, return_exceptions=True)
 
         from internalcmdb.api.deps import dispose_engines  # noqa: PLC0415
 
@@ -141,8 +159,19 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
         openapi_tags=[
-            {"name": "settings", "description": "Runtime configuration management — LLM backends, budgets, guard, HITL, retention, observability, notifications, user preferences"},
-            {"name": "cognitive", "description": "Cognitive brain — NL queries, insights, health scores, drift, reports"},
+            {
+                "name": "settings",
+                "description": (
+                    "Runtime configuration management — LLM backends, budgets, guard, "
+                    "HITL, retention, observability, notifications, user preferences"
+                ),
+            },
+            {
+                "name": "cognitive",
+                "description": (
+                    "Cognitive brain \u2014 NL queries, insights, health scores, drift, reports"
+                ),
+            },
             {"name": "hitl", "description": "Human-In-The-Loop review queue, decisions, accuracy"},
             {"name": "metrics", "description": "Live fleet metrics and Prometheus exposition"},
             {"name": "realtime", "description": "WebSocket and SSE real-time data streams"},
@@ -163,10 +192,10 @@ def create_app() -> FastAPI:
         ],
     )
 
+    from slowapi.errors import RateLimitExceeded  # noqa: PLC0415
+
     from .middleware.audit import AuditMiddleware  # noqa: PLC0415
     from .middleware.rate_limit import limiter, rate_limit_exceeded_handler  # noqa: PLC0415
-    from slowapi import _rate_limit_exceeded_handler  # noqa: PLC0415, F811
-    from slowapi.errors import RateLimitExceeded  # noqa: PLC0415
 
     fapp.state.limiter = limiter
     fapp.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
@@ -181,7 +210,20 @@ def create_app() -> FastAPI:
     )
     fapp.add_middleware(AuditMiddleware)
 
+    from starlette.middleware.base import BaseHTTPMiddleware  # noqa: PLC0415
+
+    class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):  # type: ignore[override]
+            response = await call_next(request)
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            return response
+
+    fapp.add_middleware(_SecurityHeadersMiddleware)
+
     prefix = "/api/v1"
+    fapp.include_router(auth_router.router, prefix=prefix)
     fapp.include_router(registry.router, prefix=prefix)
     fapp.include_router(discovery.router, prefix=prefix)
     fapp.include_router(governance.router, prefix=prefix)
@@ -215,7 +257,7 @@ def create_app() -> FastAPI:
 
     @fapp.get("/metrics", tags=["meta"], include_in_schema=False)
     def metrics() -> Response:  # pyright: ignore[reportUnusedFunction]
-        import internalcmdb.observability.metrics as _  # noqa: F811, PLC0415, F401
+        import internalcmdb.observability.metrics as _  # noqa: F401,PLC0415
 
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 

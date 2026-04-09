@@ -8,7 +8,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -100,6 +100,10 @@ def _str_list() -> list[str]:
     return []
 
 
+def _str_obj_dict() -> dict[str, object]:
+    return {}
+
+
 @dataclass
 class AgentDaemon:
     """Main agent daemon — collects and pushes telemetry."""
@@ -114,15 +118,15 @@ class AgentDaemon:
     verify_ssl: bool = True
     ca_bundle: str | None = None
 
-    # Runtime state
-    _buffer: list[PendingSnapshot] = field(default_factory=_snapshot_buffer)
-    _last_hashes: dict[str, str] = field(default_factory=_str_str_dict)
-    _last_run: dict[str, float] = field(default_factory=_str_float_dict)
-    _schedule: dict[str, int] = field(default_factory=_str_int_dict)
-    _enabled_collectors: list[str] = field(default_factory=_str_list)
-    _running: bool = False
+    # Runtime state — excluded from __init__ (internal, not part of the public API)
+    _buffer: list[PendingSnapshot] = field(init=False, default_factory=_snapshot_buffer)
+    _last_hashes: dict[str, str] = field(init=False, default_factory=_str_str_dict)
+    _last_run: dict[str, float] = field(init=False, default_factory=_str_float_dict)
+    _schedule: dict[str, int] = field(init=False, default_factory=_str_int_dict)
+    _enabled_collectors: list[str] = field(init=False, default_factory=_str_list)
+    _running: bool = field(init=False, default=False)
     # Latest heartbeat vitals — kept fresh by the collection loop
-    _latest_heartbeat: dict[str, object] = field(default_factory=dict)
+    _latest_heartbeat: dict[str, object] = field(init=False, default_factory=_str_obj_dict)
 
     max_buffer_size: int = 1000
     flush_interval: float = 5.0
@@ -230,7 +234,7 @@ class AgentDaemon:
             tier_code=tier_code,
             payload=payload,
             payload_hash=payload_hash,
-            collected_at=datetime.now(timezone.utc).isoformat(),
+            collected_at=datetime.now(UTC).isoformat(),
         )
 
         # Cache latest heartbeat vitals for the dedicated ping loop

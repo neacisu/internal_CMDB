@@ -60,7 +60,7 @@ class AnalysisResult:
                      from the historical baseline.
         severity:    ``"critical"`` | ``"warning"`` | ``"info"``.
         category:    ``"performance"`` | ``"security"`` | ``"capacity"`` | ``"reliability"``.
-        confidence:  0.0–1.0 confidence in the classification.
+        confidence:  0.0-1.0 confidence in the classification.
         explanation: Human-readable description of the finding.
     """
 
@@ -114,8 +114,7 @@ class FactAnalyzer:
                 category=self._classify_category(namespace),
                 confidence=0.0,
                 explanation=(
-                    f"Missing entity_id for '{namespace}.{fact_key}' — "
-                    f"cannot compute baseline."
+                    f"Missing entity_id for '{namespace}.{fact_key}' — cannot compute baseline."
                 ),
             )
 
@@ -167,10 +166,12 @@ class FactAnalyzer:
         """Z-score anomaly detection against the historical baseline for
         this entity + namespace + key combination."""
         mean, stddev, sample_count = await self._fetch_baseline(
-            entity_id, namespace, fact_key,
+            entity_id,
+            namespace,
+            fact_key,
         )
 
-        if sample_count < 3 or math.isclose(
+        if sample_count < 3 or math.isclose(  # noqa: PLR2004
             stddev, 0.0, abs_tol=_STDDEV_NEAR_ZERO_ABS_TOL, rel_tol=0.0
         ):
             return AnalysisResult(

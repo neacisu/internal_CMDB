@@ -8,8 +8,8 @@ import pytest
 
 from internalcmdb.cognitive.accuracy_tracker import (
     AccuracyTracker,
-    _ConfusionAggregate,
     _confusion_from_row,
+    _ConfusionAggregate,
     _detect_bias,
     _hitl_feedback_where_clause,
     _precision_recall_f1,
@@ -130,9 +130,14 @@ class TestDetectBias:
     def _agg(self, pos: int, neg: int) -> _ConfusionAggregate:
         total = pos + neg
         return _ConfusionAggregate(
-            tp=pos, fp=0, fn=0, total=total,
-            positive_count=pos, negative_count=neg,
-            period_start="", period_end="",
+            tp=pos,
+            fp=0,
+            fn=0,
+            total=total,
+            positive_count=pos,
+            negative_count=neg,
+            period_start="",
+            period_end="",
         )
 
     def test_too_few_samples_returns_none(self) -> None:

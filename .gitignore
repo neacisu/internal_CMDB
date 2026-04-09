@@ -66,3 +66,11 @@ frontend/dist/
 
 # Research / design assets (not source code)
 Research/
+
+# Semgrep downloaded registry — regenerate with: make semgrep-update
+# These are large auto-generated YAML files, not source code.
+.semgrep/registry/
+.semgrep/registry-merged.yml
+
+# Semgrep IDE auto-generated rules
+.semgrep/registry-ide/

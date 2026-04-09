@@ -14,10 +14,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
+from internalcmdb.api.config import Settings, get_settings
 
-
-_CONFIG_PATH = Path("src/internalcmdb/api/config.py")
+_CONFIG_PATH = (
+    Path(__file__).parent.parent.parent.parent / "src" / "internalcmdb" / "api" / "config.py"
+)
 
 
 class TestSourceCodeSecurity:
@@ -63,8 +64,6 @@ class TestSettingsStructure:
     """Verify Settings class structure and database_url construction."""
 
     def test_settings_class_fields(self) -> None:
-        from internalcmdb.api.config import Settings
-
         fields = Settings.model_fields
         assert "redis_url" in fields
         assert "postgres_password" in fields
@@ -72,8 +71,6 @@ class TestSettingsStructure:
         assert "embedding_vector_dim" in fields
 
     def test_database_url_property(self) -> None:
-        from internalcmdb.api.config import Settings
-
         settings = Settings()
         url = settings.database_url
         assert url.startswith("postgresql+psycopg://")
@@ -81,8 +78,6 @@ class TestSettingsStructure:
         assert f"?sslmode={settings.postgres_sslmode}" in url
 
     def test_database_url_contains_components(self) -> None:
-        from internalcmdb.api.config import Settings
-
         settings = Settings()
         url = settings.database_url
         assert settings.postgres_user in url
@@ -90,8 +85,6 @@ class TestSettingsStructure:
         assert settings.postgres_db in url
 
     def test_settings_has_otel_fields(self) -> None:
-        from internalcmdb.api.config import Settings
-
         fields = Settings.model_fields
         assert "otlp_endpoint" in fields
         assert "otlp_protocol" in fields
@@ -99,13 +92,9 @@ class TestSettingsStructure:
         assert "otel_sample_rate" in fields
 
     def test_settings_has_debug_field(self) -> None:
-        from internalcmdb.api.config import Settings
-
         assert "debug_enabled" in Settings.model_fields
 
     def test_get_settings_cached(self) -> None:
-        from internalcmdb.api.config import get_settings
-
         s1 = get_settings()
         s2 = get_settings()
         assert s1 is s2

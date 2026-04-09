@@ -21,44 +21,48 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # Fields whose changes are always classified as security-critical drift.
-_CRITICAL_FIELDS: frozenset[str] = frozenset({
-    "sshd_config",
-    "firewall_rules",
-    "iptables",
-    "nftables",
-    "tls_version",
-    "tls_cipher",
-    "certificate_fingerprint",
-    "certificate_expiry",
-    "authorized_keys",
-    "root_login",
-    "password_auth",
-    "port",
-    "listen_address",
-    "permit_root_login",
-    "allowed_users",
-    "security_group",
-    "selinux_mode",
-    "apparmor_profile",
-})
+_CRITICAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "sshd_config",
+        "firewall_rules",
+        "iptables",
+        "nftables",
+        "tls_version",
+        "tls_cipher",
+        "certificate_fingerprint",
+        "certificate_expiry",
+        "authorized_keys",
+        "root_login",
+        "password_auth",
+        "port",
+        "listen_address",
+        "permit_root_login",
+        "allowed_users",
+        "security_group",
+        "selinux_mode",
+        "apparmor_profile",
+    }
+)
 
 # Fields whose changes are typically intentional (planned maintenance).
-_INTENTIONAL_FIELDS: frozenset[str] = frozenset({
-    "version",
-    "image",
-    "image_tag",
-    "container_image",
-    "replicas",
-    "resource_limits",
-    "resource_requests",
-    "environment",
-    "labels",
-    "annotations",
-    "description",
-    "metadata",
-    "tags",
-    "scaling_policy",
-})
+_INTENTIONAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "version",
+        "image",
+        "image_tag",
+        "container_image",
+        "replicas",
+        "resource_limits",
+        "resource_requests",
+        "environment",
+        "labels",
+        "annotations",
+        "description",
+        "metadata",
+        "tags",
+        "scaling_policy",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -71,7 +75,7 @@ class DriftResult:
                          | ``"missing_canonical"`` | ``"error"``
                          — the highest-severity type among all changed fields.
         fields_changed:  List of field names that differ.
-        confidence:      0.0–1.0 confidence in the classification.
+        confidence:      0.0-1.0 confidence in the classification.
         explanation:     Human-readable summary of the drift.
     """
 
@@ -148,7 +152,7 @@ class DriftDetector:
                 fields_changed=[],
                 confidence=1.0,
                 explanation=f"Entity '{entity_id}': no drift detected — "
-                            f"observed state matches canonical.",
+                f"observed state matches canonical.",
             )
 
         drift_type = self._classify_drift(changed)
@@ -188,9 +192,7 @@ class DriftDetector:
         if has_critical:
             return "critical"
 
-        if has_intentional and all(
-            f in _INTENTIONAL_FIELDS for f in changed_fields
-        ):
+        if has_intentional and all(f in _INTENTIONAL_FIELDS for f in changed_fields):
             return "intentional"
 
         return "accidental"
@@ -232,7 +234,7 @@ class DriftDetector:
             can_str = _truncate(str(can), 80)
             lines.append(f"  {f}: observed={obs_str}  canonical={can_str}")
 
-        if len(changed) > 10:
+        if len(changed) > 10:  # noqa: PLR2004
             lines.append(f"  … and {len(changed) - 10} more field(s).")
 
         return "\n".join(lines)

@@ -86,3 +86,30 @@ SELF_HEAL_ACTIONS_TOTAL = Counter(
     "Self-healing playbook executions",
     labelnames=["playbook", "result"],
 )
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+LOGIN_SUCCESS = Counter(
+    "cmdb_auth_login_success_total",
+    "Successful login events",
+    labelnames=["role"],
+)
+
+LOGIN_FAILURE = Counter(
+    "cmdb_auth_login_failure_total",
+    "Failed login attempts",
+    labelnames=["reason"],  # wrong_pwd | account_locked | inactive
+)
+
+LOCKOUT_TRIGGERED = Counter(
+    "cmdb_auth_lockout_triggered_total",
+    "IP+email pairs locked out after threshold",
+)
+
+TOKEN_REVOCATIONS = Counter(
+    "cmdb_auth_token_revocations_total",
+    "JWT tokens revoked",
+    labelnames=["reason"],  # logout | password_change
+)

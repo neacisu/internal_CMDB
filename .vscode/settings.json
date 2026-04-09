@@ -43,6 +43,14 @@
         "**/__pycache__/**": true,
         "**/.venv/**": true
     },
+    // Exclude the real /mnt/... path from VS Code file indexing.
+    // /opt/stacks/internalcmdb is a symlink → /mnt/HC_Volume_105014654/stacks/internalcmdb.
+    // Without this exclusion VS Code tracks BOTH paths and language servers
+    // (mypy, SonarLint) report diagnostics against the /mnt/ real path,
+    // appearing as duplicates in the Problems panel from an "unknown" location.
+    "files.exclude": {
+        "/mnt/HC_Volume_105014654/stacks/internalcmdb/**": true
+    },
     // TypeScript server — use filesystem events for fast refresh
     "js/ts.tsserver.watchOptions": {
         "watchFile": "useFsEvents",
@@ -50,10 +58,25 @@
         "fallbackPolling": "dynamicPriorityPolling"
     },
     // ESLint — run on every type (instant feedback)
+    // workingDirectories: tells the extension where to find eslint + config.
+    // Needed because ESLint is installed in frontend/ not the workspace root.
+    "eslint.workingDirectories": [
+        {
+            "directory": "./frontend",
+            "changeProcessCWD": true
+        }
+    ],
+    // Run on every keystroke for the open file.
     "eslint.run": "onType",
+    // Enable the ESLint lint task (runs `eslint` as a VS Code task).
+    // Used by tasks.json to report ALL findings in Problems, not just open files.
+    "eslint.lintTask.enable": true,
+    "eslint.lintTask.options": "src --ext .ts,.tsx --max-warnings 0",
     "eslint.validate": [
         "typescript",
-        "typescriptreact"
+        "typescriptreact",
+        "javascript",
+        "javascriptreact"
     ],
     // Trust markdownlint remote schema (suppresses untrusted-location warning)
     // json.schemaDownload.enable works only in User Settings — override with local schema mapping
@@ -72,10 +95,92 @@
         "connectionId": "neacisu",
         "projectKey": "neacisu_internal_CMDB"
     },
+    // Exclude Python stdlib, venv, and Pylance bundled typeshed from SonarLint.
+    // SonarLint opens files navigated to via go-to-definition and analyses them —
+    // producing false positives on read-only system code (S2876, S3776, S1134
+    // on builtins.pyi, uuid.py, json/__init__.py etc.).
+    // The /mnt/HC_Volume_105014654/stacks/internalcmdb/** pattern suppresses
+    // duplicate diagnostics that appear because /opt/stacks/internalcmdb is a
+    // symlink resolved to its real /mnt/... path by language servers.
+    "sonarlint.analysisExcludesStandaloneFiles": [
+        "**/python3.*/**",
+        "**/lib/python/**",
+        "/usr/local/lib/python3.14/**",
+        "/usr/local/lib/python3.*/**",
+        "**/.venv/**",
+        "**/site-packages/**",
+        "**/dist-packages/**",
+        "**/typeshed-fallback/**",
+        "/root/.vscode-server-insiders/**",
+        "/root/.vscode-server/**"
+    ],
     // Limită heap JVM pentru SonarLint Language Server.
     // Implicit: nebounded (auto-sizing pe 15GB RAM → poate lua ~1GB+).
     // 512m este suficient pentru analiza Python + TypeScript în acest proiect.
     "sonarlint.ls.vmargs": "-Xmx512m -Xms64m",
     "codeQL.createQuery.qlPackLocation": "/opt/stacks/internalcmdb",
-    "semgrep.scan.onlyGitDirty": false
+    // ── Semgrep SAST — 3-tier architecture ───────────────────────────────────
+    //
+    // TIER 1 — IDE on-save (this block)
+    //   Config: 3 custom files, 31 rules
+    //   Speed:  ~2–5 s/file (instant feedback)
+    //   Rules:  project-specific security + business logic
+    //   Why:    Registry packs (7,928 rules / 130 MB YAML) take 2+ min/file
+    //           when loaded by the LSP on every save → IDE becomes unusable.
+    //           IDE on-save must be fast; coverage comes from Tier 2 + Tier 3.
+    //
+    // TIER 2 — `make semgrep` (terminal, no time constraint)
+    //   Config: 3 custom files + .semgrep/registry/ (ALL 51 packs, ~7,928 rules)
+    //   Speed:  minutes (acceptable — offline, deterministic, no network)
+    //   Rules:  OWASP Top-10, CWE Top-25, python, fastapi, typescript, react,
+    //           nextjs, nodejs, jwt, secrets, gitleaks, sql-injection, xss,
+    //           command-injection, trailofbits, bandit, dockerfile, k8s + more
+    //   Usage:  Run before every PR merge or release branch
+    //
+    // TIER 3 — CI (github/workflows/ci.yml job: semgrep)
+    //   Config: semgrep/semgrep:1.157.0 container + SEMGREP_APP_TOKEN
+    //   Speed:  CI pipeline (network guaranteed, latency acceptable)
+    //   Rules:  semgrep.dev cloud rules — server-selected for this project's
+    //           languages, continuously updated
+    //
+    // RULE OF THUMB: Never add p/... or registry paths to Tier 1.
+    //   They force YAML parsing on every save → timeouts → blocked formatters.
+    //
+    // WHY NO api_token IN ~/.semgrep/settings.yml:
+    //   osemgrep-pro (the bundled LSP binary) reads api_token on startup and
+    //   spawns an internal goroutine that polls semgrep.dev for deployment
+    //   policy updates on a hardcoded interval (~every file open). There is
+    //   NO VS Code setting to control this interval. The only way to stop the
+    //   "Semgrep: Refreshing Rules" / 10 s timeout storm is to remove the token
+    //   so osemgrep-pro runs in anonymous/local mode.
+    //   CI uses SEMGREP_APP_TOKEN env secret directly → unaffected.
+    //   Rule updates: `make semgrep-update` (cron: 0 6 * * 1 Mon 06:00).
+    //
+    // Path: use wrapper so pysemgrep is on PATH for the bundled osemgrep-pro.
+    "semgrep.path": "/opt/stacks/internalcmdb/.semgrep/semgrep-lsp-wrapper.sh",
+    // Scan entire file on every save — not just git-diff lines.
+    "semgrep.scan.onlyGitDirty": false,
+    // No product telemetry.
+    "semgrep.metrics": false,
+    // 2 workers — editor stays responsive.
+    "semgrep.scan.jobs": 2,
+    // 30 s per-file scan timeout.
+    "semgrep.scan.timeout": 30,
+    // Skip big generated files.
+    "semgrep.scan.maxTargetBytes": 524288,
+    // ── Rule configuration ────────────────────────────────────────────────────
+    // IDE on-save: LOCAL rules ONLY — instant, zero network dependency.
+    // "auto" is intentionally EXCLUDED from IDE config: it triggers a network
+    // fetch to semgrep.dev on every file save, causing 10 s timeouts that
+    // block "Running Code Actions and Formatters" indefinitely.
+    //
+    // "auto" / p/... packs belong in CI (see .github/workflows/ci.yml) where
+    // network access is guaranteed and latency is acceptable.
+    //
+    // Local rules (31 rules): python security + TypeScript + business logic.
+    "semgrep.scan.configuration": [
+        ".semgrep/rules.yml",
+        ".semgrep/typescript.yml",
+        ".semgrep/business-logic.yml"
+    ]
 }

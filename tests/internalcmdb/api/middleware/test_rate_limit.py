@@ -1,9 +1,9 @@
 """Tests for api.middleware.rate_limit."""
-from __future__ import annotations
-import os
-from unittest.mock import MagicMock, patch
 
-import pytest
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
 from fastapi import Request
 from slowapi.errors import RateLimitExceeded
 
@@ -16,7 +16,9 @@ from internalcmdb.api.middleware.rate_limit import (
 )
 
 
-def _make_request(path: str = "/api/v1/test", headers: dict | None = None, client_host: str | None = None):
+def _make_request(
+    path: str = "/api/v1/test", headers: dict | None = None, client_host: str | None = None
+):
     scope = {
         "type": "http",
         "method": "GET",
@@ -32,6 +34,7 @@ def _make_request(path: str = "/api/v1/test", headers: dict | None = None, clien
 # ---------------------------------------------------------------------------
 # _key_func
 # ---------------------------------------------------------------------------
+
 
 def test_key_func_exempt_path():
     req = _make_request(path="/health")
@@ -72,6 +75,7 @@ def test_key_func_anonymous_no_client():
 # _build_storage_uri
 # ---------------------------------------------------------------------------
 
+
 def test_build_storage_uri_from_rate_limit_env(monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_REDIS_URL", "redis://ratelimit:6379")
     monkeypatch.delenv("REDIS_URL", raising=False)
@@ -100,9 +104,18 @@ def test_build_storage_uri_none_for_unsupported_scheme(monkeypatch):
 # rate_limit_exceeded_handler
 # ---------------------------------------------------------------------------
 
+
+def _make_exc(detail: str) -> RateLimitExceeded:
+    """Construct a RateLimitExceeded with a MagicMock Limit that has the given detail."""
+    limit_mock = MagicMock()
+    limit_mock.error_message = None  # falsy → uses str(limit.limit)
+    limit_mock.limit = detail  # str(limit_mock.limit) == detail
+    return RateLimitExceeded(limit_mock)
+
+
 def test_rate_limit_exceeded_handler_with_pattern():
     req = _make_request()
-    exc = RateLimitExceeded("10 per 1 minute")
+    exc = _make_exc("10 per 1 minute")
     response = rate_limit_exceeded_handler(req, exc)
     assert response.status_code == 429
     assert response.headers["retry-after"] == "60"
@@ -110,7 +123,7 @@ def test_rate_limit_exceeded_handler_with_pattern():
 
 def test_rate_limit_exceeded_handler_no_pattern():
     req = _make_request()
-    exc = RateLimitExceeded("custom limit message")
+    exc = _make_exc("custom limit message")
     response = rate_limit_exceeded_handler(req, exc)
     assert response.status_code == 429
     assert response.headers["retry-after"] == "60"
@@ -118,7 +131,7 @@ def test_rate_limit_exceeded_handler_no_pattern():
 
 def test_rate_limit_exceeded_handler_hour_window():
     req = _make_request()
-    exc = RateLimitExceeded("5 per 1 hour")
+    exc = _make_exc("5 per 1 hour")
     response = rate_limit_exceeded_handler(req, exc)
     assert response.status_code == 429
     assert response.headers["retry-after"] == "3600"
@@ -126,7 +139,7 @@ def test_rate_limit_exceeded_handler_hour_window():
 
 def test_rate_limit_exceeded_handler_day_window():
     req = _make_request()
-    exc = RateLimitExceeded("100 per 1 day")
+    exc = _make_exc("100 per 1 day")
     response = rate_limit_exceeded_handler(req, exc)
     assert response.status_code == 429
     assert response.headers["retry-after"] == "86400"
@@ -135,6 +148,7 @@ def test_rate_limit_exceeded_handler_day_window():
 # ---------------------------------------------------------------------------
 # RATE_LIMITS and get_rate_limit_decorators
 # ---------------------------------------------------------------------------
+
 
 def test_rate_limits_dict_has_expected_keys():
     assert "/api/v1/collectors/ingest" in RATE_LIMITS

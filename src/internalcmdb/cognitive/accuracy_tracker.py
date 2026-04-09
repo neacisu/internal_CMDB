@@ -59,7 +59,7 @@ class AccuracyMetrics:
     total_samples: int
     period_start: str
     period_end: str
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=lambda: [])
 
 
 @dataclass(frozen=True)
@@ -250,7 +250,9 @@ class AccuracyTracker:
                               ``telemetry.metric_point`` for historical tracking.
         """
         where_clause, params = _hitl_feedback_where_clause(
-            model, template_id, staleness_days,
+            model,
+            template_id,
+            staleness_days,
         )
         sql = _HITL_FEEDBACK_METRICS_SQL.format(where_clause=where_clause)
 
@@ -288,32 +290,40 @@ class AccuracyTracker:
         try:
             from internalcmdb.governance.notifications import notify_hitl_event  # noqa: PLC0415
 
-            await notify_hitl_event("accuracy_degradation", {
-                "model": model or "all",
-                "f1": round(f1, 4),
-                "precision": round(precision, 4),
-                "recall": round(recall, 4),
-                "total_samples": total,
-                "threshold": self._threshold,
-                "detected_at": datetime.now(tz=UTC).isoformat(),
-            })
+            await notify_hitl_event(
+                "accuracy_degradation",
+                {
+                    "model": model or "all",
+                    "f1": round(f1, 4),
+                    "precision": round(precision, 4),
+                    "recall": round(recall, 4),
+                    "total_samples": total,
+                    "threshold": self._threshold,
+                    "detected_at": datetime.now(tz=UTC).isoformat(),
+                },
+            )
         except Exception:
             logger.debug("Accuracy alert notification failed", exc_info=True)
 
     async def _persist_snapshot(
-        self, model: str | None, metrics: AccuracyMetrics,
+        self,
+        model: str | None,
+        metrics: AccuracyMetrics,
     ) -> None:
         """Persist a metric snapshot to telemetry.metric_point."""
         try:
             import json as _json  # noqa: PLC0415
 
-            labels = _json.dumps({
-                "model": model or "all",
-                "precision": metrics.precision,
-                "recall": metrics.recall,
-                "total_samples": metrics.total_samples,
-                "warnings": metrics.warnings,
-            }, default=str)
+            labels = _json.dumps(
+                {
+                    "model": model or "all",
+                    "precision": metrics.precision,
+                    "recall": metrics.recall,
+                    "total_samples": metrics.total_samples,
+                    "warnings": metrics.warnings,
+                },
+                default=str,
+            )
             await self._session.execute(
                 text("""
                     INSERT INTO telemetry.metric_point
@@ -354,40 +364,31 @@ class AccuracyTracker:
             params["model"] = model
 
         result = await self._session.execute(
-            text(f"""
-                WITH bounds AS (
-                    SELECT
-                        now() - interval '1 day' * :days AS range_start,
-                        now() AS range_end
-                ),
-                buckets AS (
-                    SELECT generate_series(
-                        (SELECT range_start FROM bounds),
-                        (SELECT range_end   FROM bounds),
-                        ((SELECT range_end - range_start FROM bounds) / :buckets)
-                    ) AS bucket_start
-                )
-                SELECT
-                    b.bucket_start::text,
-                    (b.bucket_start + ((SELECT range_end - range_start FROM bounds) / :buckets))::text
-                        AS bucket_end,
-                    COUNT(*) FILTER (WHERE hf.agreement IS NOT NULL) AS sample_count,
-                    CASE WHEN COUNT(*) FILTER (WHERE hf.agreement IS NOT NULL) > 0
-                         THEN ROUND(
-                             COUNT(*) FILTER (WHERE hf.agreement = true)::numeric
-                             / COUNT(*) FILTER (WHERE hf.agreement IS NOT NULL)::numeric, 4
-                         )
-                         ELSE NULL
-                    END AS accuracy
-                FROM buckets b
-                LEFT JOIN governance.hitl_feedback hf
-                  ON hf.created_at >= b.bucket_start
-                 AND hf.created_at < b.bucket_start
-                     + ((SELECT range_end - range_start FROM bounds) / :buckets)
-                     {model_filter}
-                GROUP BY b.bucket_start
-                ORDER BY b.bucket_start
-            """),
+            text(
+                "WITH bounds AS ("
+                "  SELECT now() - interval '1 day' * :days AS range_start, now() AS range_end"
+                "), buckets AS ("
+                "  SELECT generate_series("
+                "    (SELECT range_start FROM bounds),"
+                "    (SELECT range_end   FROM bounds),"
+                "    ((SELECT range_end - range_start FROM bounds) / :buckets)"
+                "  ) AS bucket_start"
+                ") SELECT b.bucket_start::text,"
+                "  (b.bucket_start + ((SELECT range_end - range_start FROM bounds) / :buckets))::text"  # noqa: E501
+                "      AS bucket_end,"
+                "  COUNT(*) FILTER (WHERE hf.agreement IS NOT NULL) AS sample_count,"
+                "  CASE WHEN COUNT(*) FILTER (WHERE hf.agreement IS NOT NULL) > 0"
+                "       THEN ROUND("
+                "           COUNT(*) FILTER (WHERE hf.agreement = true)::numeric"
+                "           / COUNT(*) FILTER (WHERE hf.agreement IS NOT NULL)::numeric, 4)"
+                "       ELSE NULL END AS accuracy"
+                "  FROM buckets b"
+                "  LEFT JOIN governance.hitl_feedback hf"
+                "    ON hf.created_at >= b.bucket_start"
+                "   AND hf.created_at < b.bucket_start"
+                "       + ((SELECT range_end - range_start FROM bounds) / :buckets)"
+                "  " + model_filter + "  GROUP BY b.bucket_start ORDER BY b.bucket_start"
+            ),
             params,
         )
         return [

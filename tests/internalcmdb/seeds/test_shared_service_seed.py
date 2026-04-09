@@ -12,15 +12,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 from internalcmdb.seeds.shared_service_seed import (
     _HOST_HZ_113,
     _HOST_ORCHESTRATOR,
     _SERVICES,
     seed,
 )
-
 
 _SEED_PATH = Path("src/internalcmdb/seeds/shared_service_seed.py")
 
@@ -37,9 +34,7 @@ class TestHostConstants:
     def test_no_raw_orchestrator_ip_in_host_hint(self) -> None:
         """No raw '77.42.76.185 (orchestrator)' strings in host_hint assignments."""
         content = _SEED_PATH.read_text()
-        raw_matches = re.findall(
-            r'"host_hint":\s*"77\.42\.76\.185 \(orchestrator\)"', content
-        )
+        raw_matches = re.findall(r'"host_hint":\s*"77\.42\.76\.185 \(orchestrator\)"', content)
         assert len(raw_matches) == 0, (
             f"Found {len(raw_matches)} raw orchestrator IP literals — "
             "use _HOST_ORCHESTRATOR constant"
@@ -47,20 +42,15 @@ class TestHostConstants:
 
     def test_no_raw_hz113_ip_in_host_hint(self) -> None:
         content = _SEED_PATH.read_text()
-        raw_matches = re.findall(
-            r'"host_hint":\s*"49\.13\.97\.113 \(hz\.113\)"', content
-        )
+        raw_matches = re.findall(r'"host_hint":\s*"49\.13\.97\.113 \(hz\.113\)"', content)
         assert len(raw_matches) == 0, (
-            f"Found {len(raw_matches)} raw hz.113 IP literals — "
-            "use _HOST_HZ_113 constant"
+            f"Found {len(raw_matches)} raw hz.113 IP literals — use _HOST_HZ_113 constant"
         )
 
     def test_constant_used_in_orchestrator_services(self) -> None:
         content = _SEED_PATH.read_text()
         uses = content.count("_HOST_ORCHESTRATOR")
-        assert uses >= 15, (
-            f"Expected _HOST_ORCHESTRATOR used at least 15 times, found {uses}"
-        )
+        assert uses >= 15, f"Expected _HOST_ORCHESTRATOR used at least 15 times, found {uses}"
 
 
 class TestServiceCatalogue:
@@ -69,8 +59,10 @@ class TestServiceCatalogue:
     def test_all_services_have_required_fields(self) -> None:
         for svc in _SERVICES:
             code, name, kind, env, lifecycle, _desc, meta = svc
-            assert isinstance(code, str) and len(code) > 0
-            assert isinstance(name, str) and len(name) > 0
+            assert isinstance(code, str)
+            assert len(code) > 0
+            assert isinstance(name, str)
+            assert len(name) > 0
             assert isinstance(kind, str)
             assert isinstance(env, str)
             assert isinstance(lifecycle, str)
@@ -85,9 +77,7 @@ class TestServiceCatalogue:
     def test_all_metadata_have_category(self) -> None:
         for svc in _SERVICES:
             meta = svc[6]
-            assert "category" in meta, (
-                f"Service '{svc[0]}' missing 'category' in metadata"
-            )
+            assert "category" in meta, f"Service '{svc[0]}' missing 'category' in metadata"
 
     def test_orchestrator_services_use_constant(self) -> None:
         orchestrator_ip = _HOST_ORCHESTRATOR.split(" ")[0]
@@ -100,9 +90,7 @@ class TestServiceCatalogue:
                 )
 
     def test_service_count(self) -> None:
-        assert len(_SERVICES) >= 20, (
-            f"Expected at least 20 services, got {len(_SERVICES)}"
-        )
+        assert len(_SERVICES) >= 20, f"Expected at least 20 services, got {len(_SERVICES)}"
 
     def test_seed_function_callable(self) -> None:
         assert callable(seed)

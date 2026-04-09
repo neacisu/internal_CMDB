@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import ClassVar
 
 from sqlalchemy import Integer, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -15,7 +16,7 @@ class JobHistory(Base):
     """Persisted record of every worker task execution."""
 
     __tablename__ = "job_history"
-    __table_args__ = {"schema": "worker"}  # noqa: RUF012
+    __table_args__: ClassVar[dict[str, str]] = {"schema": "worker"}
 
     job_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     task_name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -39,7 +40,7 @@ class WorkerSchedule(Base):
     """Cron-based schedule for recurring worker tasks."""
 
     __tablename__ = "worker_schedule"
-    __table_args__ = {"schema": "worker"}  # noqa: RUF012
+    __table_args__: ClassVar[dict[str, str]] = {"schema": "worker"}
 
     schedule_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     task_name: Mapped[str] = mapped_column(Text, nullable=False)

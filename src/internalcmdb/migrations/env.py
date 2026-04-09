@@ -31,7 +31,7 @@ def _build_url() -> str:
     port = os.environ.get("POSTGRES_PORT", "5433")
     db = os.environ.get("POSTGRES_DB", "internalCMDB")
     user = os.environ.get("POSTGRES_USER", "internalcmdb")
-    pw = os.environ.get("POSTGRES_PASSWORD", "")
+    pw = os.environ.get("POSTGRES_PASSWORD") or ""
     sslmode = os.environ.get("POSTGRES_SSLMODE", "prefer")
     if not pw:
         raise RuntimeError(

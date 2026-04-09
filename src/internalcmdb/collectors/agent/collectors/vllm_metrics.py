@@ -21,9 +21,7 @@ _HISTOGRAM_SUM_PATTERNS: dict[str, str] = {
     "tokens_total": r"^vllm:generation_tokens_total\s+(\S+)",
 }
 
-_QUANTILE_RE = re.compile(
-    r'^vllm:e2e_request_latency_seconds_bucket\{le="([^"]+)"\}\s+(\S+)'
-)
+_QUANTILE_RE = re.compile(r'^vllm:e2e_request_latency_seconds_bucket\{le="([^"]+)"\}\s+(\S+)')
 
 
 def _parse_prometheus(text: str) -> dict[str, Any]:
@@ -31,12 +29,12 @@ def _parse_prometheus(text: str) -> dict[str, Any]:
     metrics: dict[str, Any] = {}
 
     for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
 
         for key, pattern in {**_GAUGE_PATTERNS, **_HISTOGRAM_SUM_PATTERNS}.items():
-            m = re.match(pattern, line)
+            m = re.match(pattern, stripped)
             if m:
                 metrics[key] = float(m.group(1))
                 break
@@ -65,8 +63,7 @@ def collect(url: str | None = None) -> dict[str, Any]:
         if resp.status_code != 200:  # noqa: PLR2004
             return {"error": f"HTTP {resp.status_code}", "url": target}
         if len(resp.content) > _MAX_RESPONSE_BYTES:
-            return {"error": "response_too_large", "url": target,
-                    "bytes": len(resp.content)}
+            return {"error": "response_too_large", "url": target, "bytes": len(resp.content)}
         return _parse_prometheus(resp.text)
     except httpx.ConnectError:
         return {"error": "connection_refused", "url": target}

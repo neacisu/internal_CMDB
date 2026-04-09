@@ -1,18 +1,34 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import Topbar from "@/components/layout/topbar";
+
+const mockPush = vi.fn();
 
 vi.mock("next/navigation", () => ({
   usePathname: vi.fn(() => "/"),
-  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push: mockPush }),
   useParams: () => ({}),
   useSearchParams: () => new URLSearchParams(),
 }));
 
+vi.mock("@tanstack/react-query", () => ({
+  useQuery: vi.fn(() => ({ data: undefined })),
+}));
+
+const mockLogout = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/lib/auth", () => ({
+  getMe: vi.fn(),
+  logout: () => mockLogout(),
+}));
+
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 
 beforeEach(() => {
   vi.mocked(usePathname).mockReturnValue("/");
+  vi.mocked(useQuery).mockReturnValue({ data: undefined } as ReturnType<typeof useQuery>);
+  mockPush.mockClear();
+  mockLogout.mockClear();
 });
 
 afterEach(() => {
@@ -111,5 +127,43 @@ describe("Topbar", () => {
     vi.mocked(usePathname).mockReturnValue("/metrics");
     render(<Topbar />);
     expect(screen.getByText("Live Metrics")).toBeInTheDocument();
+  });
+
+  it("renders Sign out button always", () => {
+    render(<Topbar />);
+    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+  });
+
+  it("shows user info when getMe returns data", () => {
+    vi.mocked(useQuery).mockReturnValue({
+      data: { username: "alex", email: "alex@example.com", role: "admin" },
+    } as ReturnType<typeof useQuery>);
+    render(<Topbar />);
+    expect(screen.getByText("alex")).toBeInTheDocument();
+    expect(screen.getByText("admin")).toBeInTheDocument();
+  });
+
+  it("falls back to email when username is null", () => {
+    vi.mocked(useQuery).mockReturnValue({
+      data: { username: null, email: "user@example.com", role: "viewer" },
+    } as ReturnType<typeof useQuery>);
+    render(<Topbar />);
+    expect(screen.getByText("user@example.com")).toBeInTheDocument();
+  });
+
+  it("hides user info block when getMe returns undefined", () => {
+    vi.mocked(useQuery).mockReturnValue({ data: undefined } as ReturnType<typeof useQuery>);
+    render(<Topbar />);
+    expect(screen.queryByText("admin")).not.toBeInTheDocument();
+  });
+
+  it("calls logout and navigates to /login on sign-out click", async () => {
+    render(<Topbar />);
+    const btn = screen.getByRole("button", { name: /sign out/i });
+    fireEvent.click(btn);
+    await vi.waitFor(() => {
+      expect(mockLogout).toHaveBeenCalledOnce();
+      expect(mockPush).toHaveBeenCalledWith("/login");
+    });
   });
 });

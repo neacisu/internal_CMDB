@@ -27,7 +27,7 @@ class Event:
     correlation_id: str = ""
     timestamp: str = ""
     source: str = ""
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)  # pyright: ignore[reportUnknownVariableType]
     risk_class: str = "RC-1"
     redis_message_id: str = field(default="", init=False, repr=False)
 
@@ -48,9 +48,7 @@ class Event:
         try:
             payload_json = json.dumps(self.payload, default=str)
         except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"Event {self.event_id}: payload serialisation failed: {exc}"
-            ) from exc
+            raise ValueError(f"Event {self.event_id}: payload serialisation failed: {exc}") from exc
 
         if len(payload_json.encode()) > _MAX_PAYLOAD_BYTES:
             raise ValueError(
@@ -76,10 +74,10 @@ class Event:
         if isinstance(payload_raw, str):
             try:
                 payload = json.loads(payload_raw)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 payload = {}
         elif isinstance(payload_raw, dict):
-            payload = payload_raw
+            payload: dict[str, Any] = payload_raw  # pyright: ignore[reportUnknownVariableType]
         else:
             payload = {}
 
@@ -111,7 +109,7 @@ class EventBus:
     }
 
     def __init__(self, redis_url: str) -> None:
-        self._redis: aioredis.Redis = aioredis.from_url(  # type: ignore[assignment]
+        self._redis: aioredis.Redis = aioredis.from_url(  # type: ignore[no-untyped-call,assignment]
             redis_url,
             decode_responses=True,
         )
@@ -138,9 +136,10 @@ class EventBus:
         prevent unbounded memory growth.
         """
         try:
-            message_id: str = await self._redis.xadd(  # type: ignore[assignment]
+            fields: Any = event.to_dict()
+            message_id: str = await self._redis.xadd(  # type: ignore[no-untyped-call,assignment]
                 stream,
-                event.to_dict(),
+                fields,
                 maxlen=maxlen,
                 approximate=True,
             )
@@ -270,7 +269,7 @@ class EventBus:
     async def ping(self) -> bool:
         """Return ``True`` if the Redis backend responds to PING."""
         try:
-            return bool(await self._redis.ping())
+            return bool(await self._redis.ping())  # pyright: ignore[reportUnknownMemberType]
         except RedisError:
             return False
 
@@ -297,7 +296,9 @@ class EventBus:
             )
         except RedisError:
             logger.exception(
-                "Failed to XAUTOCLAIM on %s (group=%s)", stream, group,
+                "Failed to XAUTOCLAIM on %s (group=%s)",
+                stream,
+                group,
             )
             return []
 

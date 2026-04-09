@@ -18,7 +18,6 @@ from internalcmdb.motor.notifications import (
     _default_config_for,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -66,7 +65,7 @@ class TestWebhookNotifier:
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:
+        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:  # noqa: N806
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(return_value=mock_resp)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -84,7 +83,7 @@ class TestWebhookNotifier:
     async def test_webhook_retry_on_failure_returns_false(self) -> None:
         notifier = WebhookNotifier()
 
-        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:
+        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:  # noqa: N806
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(side_effect=Exception("connection refused"))
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -106,7 +105,7 @@ class TestWebhookNotifier:
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:
+        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:  # noqa: N806
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(return_value=mock_resp)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -127,7 +126,7 @@ class TestWebhookNotifier:
     @pytest.mark.asyncio
     async def test_webhook_http_error_triggers_retry(self) -> None:
         notifier = WebhookNotifier()
-        import httpx as httpx_module
+        import httpx as httpx_module  # noqa: PLC0415
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = httpx_module.HTTPStatusError(
@@ -136,7 +135,7 @@ class TestWebhookNotifier:
             response=MagicMock(),
         )
 
-        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:
+        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:  # noqa: N806
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(return_value=mock_resp)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -324,7 +323,7 @@ class TestNotificationDispatcher:
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:
+        with patch("internalcmdb.motor.notifications.httpx.AsyncClient") as MockClient:  # noqa: N806
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(return_value=mock_resp)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -368,7 +367,8 @@ class TestEscalateNotify:
         dispatcher = NotificationDispatcher()
         item = _make_hitl_item()
 
-        from internalcmdb.motor.notifications import _CHANNELS
+        from internalcmdb.motor.notifications import _CHANNELS  # noqa: PLC0415
+
         original_webhook = _CHANNELS["webhook"]
         original_email = _CHANNELS["email"]
         original_slack = _CHANNELS["slack"]
@@ -397,7 +397,8 @@ class TestEscalateNotify:
         dispatcher = NotificationDispatcher()
         item = _make_hitl_item()
 
-        from internalcmdb.motor.notifications import _CHANNELS
+        from internalcmdb.motor.notifications import _CHANNELS  # noqa: PLC0415
+
         orig_webhook = _CHANNELS["webhook"]
         orig_email = _CHANNELS["email"]
         orig_slack = _CHANNELS["slack"]
@@ -409,7 +410,13 @@ class TestEscalateNotify:
         _CHANNELS["slack"].send = AsyncMock(return_value=True)
 
         try:
-            with patch.dict(os.environ, {"HITL_WEBHOOK_URL": "http://hook.example.com/", "HITL_EMAIL_TO": "ops@example.com"}):
+            with patch.dict(
+                os.environ,
+                {
+                    "HITL_WEBHOOK_URL": "http://hook.example.com/",
+                    "HITL_EMAIL_TO": "ops@example.com",
+                },
+            ):
                 result = await dispatcher.escalate_notify(item, escalation_level=2)
 
             assert result is True
@@ -426,7 +433,8 @@ class TestEscalateNotify:
         dispatcher = NotificationDispatcher()
         item = _make_hitl_item()
 
-        from internalcmdb.motor.notifications import _CHANNELS
+        from internalcmdb.motor.notifications import _CHANNELS  # noqa: PLC0415
+
         orig_webhook = _CHANNELS["webhook"]
         orig_email = _CHANNELS["email"]
         orig_slack = _CHANNELS["slack"]
@@ -438,11 +446,14 @@ class TestEscalateNotify:
         _CHANNELS["slack"].send = AsyncMock(return_value=True)
 
         try:
-            with patch.dict(os.environ, {
-                "HITL_WEBHOOK_URL": "http://hook.example.com/",
-                "HITL_EMAIL_TO": "ops@example.com",
-                "HITL_SLACK_CHANNEL": "#hitl-alerts",
-            }):
+            with patch.dict(
+                os.environ,
+                {
+                    "HITL_WEBHOOK_URL": "http://hook.example.com/",
+                    "HITL_EMAIL_TO": "ops@example.com",
+                    "HITL_SLACK_CHANNEL": "#hitl-alerts",
+                },
+            ):
                 result = await dispatcher.escalate_notify(item, escalation_level=3)
 
             assert result is True
@@ -459,7 +470,8 @@ class TestEscalateNotify:
         dispatcher = NotificationDispatcher()
         item = _make_hitl_item()
 
-        from internalcmdb.motor.notifications import _CHANNELS
+        from internalcmdb.motor.notifications import _CHANNELS  # noqa: PLC0415
+
         orig_webhook = _CHANNELS["webhook"]
         _CHANNELS["webhook"] = MagicMock()
         captured_payload: list[dict] = []
@@ -486,7 +498,8 @@ class TestEscalateNotify:
         dispatcher = NotificationDispatcher()
         item = _make_hitl_item()
 
-        from internalcmdb.motor.notifications import _CHANNELS
+        from internalcmdb.motor.notifications import _CHANNELS  # noqa: PLC0415
+
         orig_webhook = _CHANNELS["webhook"]
         _CHANNELS["webhook"] = MagicMock()
         _CHANNELS["webhook"].send = AsyncMock(return_value=False)

@@ -14,7 +14,6 @@ from internalcmdb.cognitive.feedback_loop import (
     _redact_pii,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -150,9 +149,7 @@ class TestValidateFeedbackInput:
             FeedbackLoop._validate_feedback_input({}, {"note": "ok"})
 
     def test_valid_input_no_exception(self) -> None:
-        FeedbackLoop._validate_feedback_input(
-            {"decision": "approved"}, {"decision": "rejected"}
-        )
+        FeedbackLoop._validate_feedback_input({"decision": "approved"}, {"decision": "rejected"})
 
 
 # ---------------------------------------------------------------------------
@@ -238,8 +235,11 @@ class TestGetAccuracyStats:
             if call_n == 1:
                 row = MagicMock()
                 row._mapping = {
-                    "total": 10, "agreed": 8,
-                    "disagreed": 2, "unknown": 0, "agreement_rate": 0.8,
+                    "total": 10,
+                    "agreed": 8,
+                    "disagreed": 2,
+                    "unknown": 0,
+                    "agreement_rate": 0.8,
                 }
                 result.fetchone.return_value = row
             else:

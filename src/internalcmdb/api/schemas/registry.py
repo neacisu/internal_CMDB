@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
+
+from pydantic import Field
 
 from .common import DatetimeStr, OptDatetimeStr, OptIpStr, OrmBase
 
@@ -93,8 +95,10 @@ class HostOut(OrmBase):
 
 class HostDetailOut(HostOut):
     latest_snapshot: HardwareSnapshotOut | None = None
-    gpu_devices: list[GpuDeviceOut] = []  # noqa: RUF012
-    network_interfaces: list[NetworkInterfaceOut] = []  # noqa: RUF012
+    gpu_devices: list[GpuDeviceOut] = Field(default_factory=lambda: cast(list[GpuDeviceOut], []))
+    network_interfaces: list[NetworkInterfaceOut] = Field(
+        default_factory=lambda: cast(list[NetworkInterfaceOut], [])
+    )
 
 
 class SharedServiceOut(OrmBase):

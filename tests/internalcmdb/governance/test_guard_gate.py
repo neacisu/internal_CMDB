@@ -8,17 +8,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from internalcmdb.governance.guard_gate import (
-    GateDecision,
-    GuardGate,
-    LevelTrace,
     RC_1,
     RC_2,
     RC_3,
     RC_4,
+    GateDecision,
+    GuardGate,
+    LevelTrace,
     _llm_guard_scan,
     classify_risk,
 )
-
 
 # ---------------------------------------------------------------------------
 # Tests: classify_risk
@@ -67,7 +66,9 @@ class TestClassifyRisk:
         assert result == RC_4
 
     def test_unknown_action_in_production_env_is_rc3(self) -> None:
-        result = classify_risk({"type": "unknown_op", "target": "host-01"}, {"environment": "production"})
+        result = classify_risk(
+            {"type": "unknown_op", "target": "host-01"}, {"environment": "production"}
+        )
         assert result == RC_3
 
     def test_unknown_action_no_context_is_rc2(self) -> None:
@@ -87,7 +88,9 @@ class TestClassifyRisk:
         assert result == RC_2
 
     def test_prod_env_context_rc3(self) -> None:
-        result = classify_risk({"type": "something_else", "target": "host"}, {"environment": "prod"})
+        result = classify_risk(
+            {"type": "something_else", "target": "host"}, {"environment": "prod"}
+        )
         assert result == RC_3
 
 
@@ -136,14 +139,16 @@ class TestLLMGuardScan:
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {"safe": True, "detail": "ok"}
 
-        with patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient:
+        with patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient:  # noqa: N806
             mock_client_instance = AsyncMock()
             mock_client_instance.post = AsyncMock(return_value=mock_resp)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            with patch("internalcmdb.governance.guard_gate._LLM_GUARD_URL", "http://llm-guard:8000"):
-                safe, detail = await _llm_guard_scan({"action": "test"})
+            with patch(
+                "internalcmdb.governance.guard_gate._LLM_GUARD_URL", "http://llm-guard:8000"
+            ):
+                safe, _detail = await _llm_guard_scan({"action": "test"})
 
         assert safe is True
 
@@ -153,13 +158,15 @@ class TestLLMGuardScan:
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {"safe": False, "detail": "prompt injection"}
 
-        with patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient:
+        with patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient:  # noqa: N806
             mock_client_instance = AsyncMock()
             mock_client_instance.post = AsyncMock(return_value=mock_resp)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            with patch("internalcmdb.governance.guard_gate._LLM_GUARD_URL", "http://llm-guard:8000"):
+            with patch(
+                "internalcmdb.governance.guard_gate._LLM_GUARD_URL", "http://llm-guard:8000"
+            ):
                 safe, detail = await _llm_guard_scan({"action": "inject"})
 
         assert safe is False
@@ -167,8 +174,10 @@ class TestLLMGuardScan:
 
     @pytest.mark.asyncio
     async def test_llm_guard_connection_error_fail_closed(self) -> None:
-        with patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient:
-            MockClient.return_value.__aenter__ = AsyncMock(side_effect=Exception("connection refused"))
+        with patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient:  # noqa: N806
+            MockClient.return_value.__aenter__ = AsyncMock(
+                side_effect=Exception("connection refused")
+            )
             MockClient.return_value.__aexit__ = AsyncMock(return_value=None)
 
             with (
@@ -189,8 +198,8 @@ class TestLLMGuardScan:
 def _make_gate() -> tuple[GuardGate, MagicMock, MagicMock]:
     session = MagicMock()
     with (
-        patch("internalcmdb.governance.guard_gate.RedactionScanner") as MockScanner,
-        patch("internalcmdb.governance.guard_gate.PolicyEnforcer") as MockEnforcer,
+        patch("internalcmdb.governance.guard_gate.RedactionScanner") as MockScanner,  # noqa: N806
+        patch("internalcmdb.governance.guard_gate.PolicyEnforcer") as MockEnforcer,  # noqa: N806
     ):
         gate = GuardGate(session)
         return gate, MockScanner.return_value, MockEnforcer.return_value
@@ -199,7 +208,7 @@ def _make_gate() -> tuple[GuardGate, MagicMock, MagicMock]:
 class TestGuardGateEvaluate:
     @pytest.mark.asyncio
     async def test_l1_blocks_on_pii_detected(self) -> None:
-        gate, mock_scanner, mock_enforcer = _make_gate()
+        gate, mock_scanner, _mock_enforcer = _make_gate()
 
         scan_result = MagicMock()
         scan_result.safe = False
@@ -209,7 +218,10 @@ class TestGuardGateEvaluate:
         action = {"type": "read", "target": "host-01"}
         context: dict[str, Any] = {}
 
-        with patch("internalcmdb.governance.guard_gate._llm_guard_scan", new=AsyncMock(return_value=(True, "ok"))):
+        with patch(
+            "internalcmdb.governance.guard_gate._llm_guard_scan",
+            new=AsyncMock(return_value=(True, "ok")),
+        ):
             decision = await gate.evaluate(action, context)
 
         assert decision.allowed is False
@@ -218,7 +230,7 @@ class TestGuardGateEvaluate:
 
     @pytest.mark.asyncio
     async def test_l2_blocks_on_llm_guard_unsafe(self) -> None:
-        gate, mock_scanner, mock_enforcer = _make_gate()
+        gate, mock_scanner, _mock_enforcer = _make_gate()
 
         scan_result = MagicMock()
         scan_result.safe = True
@@ -228,7 +240,10 @@ class TestGuardGateEvaluate:
         action = {"type": "read", "target": "host-01"}
         context: dict[str, Any] = {}
 
-        with patch("internalcmdb.governance.guard_gate._llm_guard_scan", new=AsyncMock(return_value=(False, "jailbreak"))):
+        with patch(
+            "internalcmdb.governance.guard_gate._llm_guard_scan",
+            new=AsyncMock(return_value=(False, "jailbreak")),
+        ):
             decision = await gate.evaluate(action, context)
 
         assert decision.allowed is False
@@ -254,7 +269,10 @@ class TestGuardGateEvaluate:
         action = {"type": "read", "target": "host-01"}
         context: dict[str, Any] = {}
 
-        with patch("internalcmdb.governance.guard_gate._llm_guard_scan", new=AsyncMock(return_value=(True, "ok"))):
+        with patch(
+            "internalcmdb.governance.guard_gate._llm_guard_scan",
+            new=AsyncMock(return_value=(True, "ok")),
+        ):
             decision = await gate.evaluate(action, context)
 
         assert decision.allowed is False
@@ -277,7 +295,10 @@ class TestGuardGateEvaluate:
         action = {"type": "read", "target": "dev-host-01"}
         context: dict[str, Any] = {}
 
-        with patch("internalcmdb.governance.guard_gate._llm_guard_scan", new=AsyncMock(return_value=(True, "ok"))):
+        with patch(
+            "internalcmdb.governance.guard_gate._llm_guard_scan",
+            new=AsyncMock(return_value=(True, "ok")),
+        ):
             decision = await gate.evaluate(action, context)
 
         assert decision.allowed is True
@@ -302,7 +323,10 @@ class TestGuardGateEvaluate:
         action = {"type": "update", "target": "dev-host-01"}
         context: dict[str, Any] = {}
 
-        with patch("internalcmdb.governance.guard_gate._llm_guard_scan", new=AsyncMock(return_value=(True, "ok"))):
+        with patch(
+            "internalcmdb.governance.guard_gate._llm_guard_scan",
+            new=AsyncMock(return_value=(True, "ok")),
+        ):
             decision = await gate.evaluate(action, context)
 
         assert decision.allowed is False
@@ -326,7 +350,10 @@ class TestGuardGateEvaluate:
         action = {"type": "delete", "target": "host-01"}
         context: dict[str, Any] = {}
 
-        with patch("internalcmdb.governance.guard_gate._llm_guard_scan", new=AsyncMock(return_value=(True, "ok"))):
+        with patch(
+            "internalcmdb.governance.guard_gate._llm_guard_scan",
+            new=AsyncMock(return_value=(True, "ok")),
+        ):
             decision = await gate.evaluate(action, context)
 
         assert decision.allowed is False
@@ -350,7 +377,10 @@ class TestGuardGateEvaluate:
         action = {"type": "read", "target": "host-01"}
         context: dict[str, Any] = {}
 
-        with patch("internalcmdb.governance.guard_gate._llm_guard_scan", new=AsyncMock(return_value=(True, "ok"))):
+        with patch(
+            "internalcmdb.governance.guard_gate._llm_guard_scan",
+            new=AsyncMock(return_value=(True, "ok")),
+        ):
             decision = await gate.evaluate(action, context)
 
         assert len(decision.gate_trace) == 5
@@ -374,7 +404,10 @@ class TestGuardGateEvaluate:
         action = {"type": "list", "target": "secrets"}
         context: dict[str, Any] = {}
 
-        with patch("internalcmdb.governance.guard_gate._llm_guard_scan", new=AsyncMock(return_value=(True, "ok"))):
+        with patch(
+            "internalcmdb.governance.guard_gate._llm_guard_scan",
+            new=AsyncMock(return_value=(True, "ok")),
+        ):
             decision = await gate.evaluate(action, context)
 
         assert decision.allowed is True

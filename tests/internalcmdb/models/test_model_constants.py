@@ -11,9 +11,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
-
 _GOVERNANCE_PATH = Path("src/internalcmdb/models/governance.py")
 _RETRIEVAL_PATH = Path("src/internalcmdb/models/retrieval.py")
 
@@ -22,7 +19,7 @@ class TestGovernanceServerNow:
     """S1192: governance.py must use _SERVER_NOW constant."""
 
     def test_constant_defined(self) -> None:
-        from internalcmdb.models.governance import _SERVER_NOW
+        from internalcmdb.models.governance import _SERVER_NOW  # noqa: PLC0415
 
         assert _SERVER_NOW == "now()"
 
@@ -40,8 +37,7 @@ class TestGovernanceServerNow:
         content = _GOVERNANCE_PATH.read_text()
         constant_uses = re.findall(r"server_default\s*=\s*_SERVER_NOW", content)
         assert len(constant_uses) >= 3, (
-            f"Expected at least 3 uses of _SERVER_NOW in governance.py, "
-            f"found {len(constant_uses)}"
+            f"Expected at least 3 uses of _SERVER_NOW in governance.py, found {len(constant_uses)}"
         )
 
 
@@ -49,23 +45,20 @@ class TestRetrievalServerNow:
     """S1192: retrieval.py must use _SERVER_NOW constant."""
 
     def test_constant_defined(self) -> None:
-        from internalcmdb.models.retrieval import _SERVER_NOW
+        from internalcmdb.models.retrieval import _SERVER_NOW  # noqa: PLC0415
 
         assert _SERVER_NOW == "now()"
 
     def test_no_raw_now_in_server_default(self) -> None:
         content = _RETRIEVAL_PATH.read_text()
         matches = re.findall(r'server_default\s*=\s*"now\(\)"', content)
-        assert len(matches) == 0, (
-            f"Found {len(matches)} raw 'now()' literals in server_default"
-        )
+        assert len(matches) == 0, f"Found {len(matches)} raw 'now()' literals in server_default"
 
     def test_server_default_uses_constant(self) -> None:
         content = _RETRIEVAL_PATH.read_text()
         constant_uses = re.findall(r"server_default\s*=\s*_SERVER_NOW", content)
         assert len(constant_uses) >= 4, (
-            f"Expected at least 4 uses of _SERVER_NOW in retrieval.py, "
-            f"found {len(constant_uses)}"
+            f"Expected at least 4 uses of _SERVER_NOW in retrieval.py, found {len(constant_uses)}"
         )
 
 
@@ -73,11 +66,11 @@ class TestEmbeddingDim:
     """Embedding dimension must be configurable and have a valid default."""
 
     def test_embedding_dim_default(self) -> None:
-        from internalcmdb.models.retrieval import _EMBEDDING_DIM
+        from internalcmdb.models.retrieval import _EMBEDDING_DIM  # noqa: PLC0415
 
         assert _EMBEDDING_DIM == 4096
 
     def test_embedding_dim_is_int(self) -> None:
-        from internalcmdb.models.retrieval import _EMBEDDING_DIM
+        from internalcmdb.models.retrieval import _EMBEDDING_DIM  # noqa: PLC0415
 
         assert isinstance(_EMBEDDING_DIM, int)

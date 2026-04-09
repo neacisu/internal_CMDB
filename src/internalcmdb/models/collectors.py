@@ -11,6 +11,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
 
+_SERVER_NOW: str = "now()"
+
 
 class CollectorAgent(Base):
     """Lightweight agent deployed on each infrastructure host."""
@@ -29,7 +31,7 @@ class CollectorAgent(Base):
     host_code: Mapped[str] = mapped_column(Text, nullable=False)
     agent_version: Mapped[str] = mapped_column(Text, nullable=False)
     enrolled_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
     last_heartbeat_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     agent_config_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
@@ -66,7 +68,7 @@ class CollectorSnapshot(Base):
     payload_hash: Mapped[str] = mapped_column(Text, nullable=False)
     collected_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     received_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
     tier_code: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -90,5 +92,5 @@ class SnapshotDiff(Base):
     diff_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     change_summary: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )

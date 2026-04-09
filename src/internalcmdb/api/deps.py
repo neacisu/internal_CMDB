@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import AsyncGenerator, Generator
 from functools import lru_cache
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
+from fastapi import Depends, HTTPException, status
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.requests import Request
+
+if TYPE_CHECKING:
+    from internalcmdb.auth.models import User
 
 from .config import Settings, get_settings
-
 
 # ---------------------------------------------------------------------------
 # URL normalisation
@@ -36,8 +42,8 @@ def _normalize_pg_url(url: str, *, driver: str | None = None) -> str:
     params.pop("sslmode", None)
     params["sslmode"] = ["disable"]
 
-    sync_host = os.environ.get("POSTGRES_SYNC_HOST", "").strip()
-    sync_port = os.environ.get("POSTGRES_SYNC_PORT", "").strip()
+    sync_host = (os.environ.get("POSTGRES_SYNC_HOST") or "").strip()
+    sync_port = (os.environ.get("POSTGRES_SYNC_PORT") or "").strip()
     netloc = parts.netloc
     if sync_host or sync_port:
         at = netloc.rfind("@")
@@ -57,19 +63,17 @@ def _normalize_pg_url(url: str, *, driver: str | None = None) -> str:
 # ---------------------------------------------------------------------------
 
 
-_sync_engine = None
-_async_engine = None
+_engine_cache: dict[str, Any] = {}
 
 
 def _make_sessionmaker(settings: Settings) -> sessionmaker[Session]:
-    global _sync_engine  # noqa: PLW0603
-    _sync_engine = create_engine(
+    _engine_cache["sync"] = create_engine(
         _normalize_pg_url(settings.database_url),
         pool_pre_ping=True,
         pool_size=5,
         max_overflow=10,
     )
-    return sessionmaker(bind=_sync_engine, autoflush=False, autocommit=False)
+    return sessionmaker(bind=_engine_cache["sync"], autoflush=False, autocommit=False)
 
 
 @lru_cache(maxsize=1)
@@ -94,14 +98,13 @@ def get_db() -> Generator[Session]:
 
 
 def _make_async_sessionmaker(settings: Settings) -> async_sessionmaker[AsyncSession]:
-    global _async_engine  # noqa: PLW0603
-    _async_engine = create_async_engine(
+    _engine_cache["async"] = create_async_engine(
         _normalize_pg_url(settings.database_url, driver="asyncpg"),
         pool_pre_ping=True,
         pool_size=20,
         max_overflow=30,
     )
-    return async_sessionmaker(bind=_async_engine, autoflush=False, expire_on_commit=False)
+    return async_sessionmaker(bind=_engine_cache["async"], autoflush=False, expire_on_commit=False)
 
 
 @lru_cache(maxsize=1)
@@ -119,7 +122,54 @@ async def get_async_session() -> AsyncGenerator[AsyncSession]:
 
 async def dispose_engines() -> None:
     """Dispose both sync and async engines — call during shutdown."""
-    if _sync_engine is not None:
-        _sync_engine.dispose()
-    if _async_engine is not None:
-        await _async_engine.dispose()
+    sync_engine = _engine_cache.get("sync")
+    async_engine = _engine_cache.get("async")
+    if sync_engine is not None:
+        sync_engine.dispose()
+    if async_engine is not None:
+        await async_engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Auth — current user dependency
+# ---------------------------------------------------------------------------
+
+
+def get_current_user(
+    request: Request,
+    db: Session = Depends(get_db),  # noqa: B008
+) -> User:
+    """Extract and validate the JWT cookie; return the authenticated User.
+
+    Raises HTTP 401 if the token is missing, invalid, or revoked.
+    Raises HTTP 401 if the user no longer exists or is inactive.
+    """
+    from internalcmdb.auth.revocation import is_revoked  # noqa: PLC0415
+    from internalcmdb.auth.security import decode_access_token  # noqa: PLC0415
+    from internalcmdb.auth.service import AuthService  # noqa: PLC0415
+
+    settings = get_settings()
+    cookie_val: str | None = request.cookies.get(settings.jwt_cookie_name)
+    if not cookie_val:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated.",
+        )
+
+    payload = decode_access_token(cookie_val)  # raises 401 on errors
+
+    if is_revoked(payload.jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked.",
+        )
+
+    svc = AuthService(db)
+    user = svc.get_user_by_id(uuid.UUID(payload.sub))
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive.",
+        )
+
+    return user

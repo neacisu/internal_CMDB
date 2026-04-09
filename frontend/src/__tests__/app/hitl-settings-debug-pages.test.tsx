@@ -5,6 +5,12 @@ import HitlPage from "@/app/hitl/page";
 import SettingsPage from "@/app/settings/page";
 import DebugPage from "@/app/debug/page";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  usePathname: vi.fn(() => "/settings"),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 function createWrapper() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0 } },

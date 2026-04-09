@@ -1,9 +1,10 @@
 """Tests for collectors.fleet_health."""
+
 from __future__ import annotations
+
 import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
-import pytest
 
 from internalcmdb.collectors.fleet_health import (
     FleetState,
@@ -56,6 +57,7 @@ def _make_agent(
 # _normalize_host_token
 # ---------------------------------------------------------------------------
 
+
 def test_normalize_host_token_none():
     assert _normalize_host_token(None) is None
 
@@ -71,6 +73,7 @@ def test_normalize_host_token_strips_lowercases():
 # ---------------------------------------------------------------------------
 # _parse_timestamp
 # ---------------------------------------------------------------------------
+
 
 def test_parse_timestamp_none():
     result = _parse_timestamp(None)
@@ -97,6 +100,7 @@ def test_parse_timestamp_invalid():
 # _host_aliases
 # ---------------------------------------------------------------------------
 
+
 def test_host_aliases_basic():
     host = _make_host(host_code="h-001", hostname="h-001.local", ssh_alias="h-001-ssh")
     aliases = _host_aliases(host)
@@ -115,6 +119,7 @@ def test_host_aliases_excludes_none():
 # ---------------------------------------------------------------------------
 # derive_agent_status
 # ---------------------------------------------------------------------------
+
 
 def test_derive_agent_status_retired_by_flag():
     assert derive_agent_status(_make_agent(is_active=False)) == "retired"
@@ -140,14 +145,22 @@ def test_derive_agent_status_offline_no_heartbeat():
 
 
 def test_derive_agent_status_degraded():
-    from internalcmdb.collectors.fleet_health import BASE_INTERVAL, DEGRADED_MULTIPLIER
+    from internalcmdb.collectors.fleet_health import (  # noqa: PLC0415
+        BASE_INTERVAL,
+        DEGRADED_MULTIPLIER,
+    )
+
     cutoff = datetime.now(UTC) - timedelta(seconds=BASE_INTERVAL * DEGRADED_MULTIPLIER + 30)
     agent = _make_agent(is_active=True, status="online", last_heartbeat_at=cutoff.isoformat())
     assert derive_agent_status(agent) == "degraded"
 
 
 def test_derive_agent_status_offline_too_old():
-    from internalcmdb.collectors.fleet_health import BASE_INTERVAL, OFFLINE_MULTIPLIER
+    from internalcmdb.collectors.fleet_health import (  # noqa: PLC0415
+        BASE_INTERVAL,
+        OFFLINE_MULTIPLIER,
+    )
+
     cutoff = datetime.now(UTC) - timedelta(seconds=BASE_INTERVAL * OFFLINE_MULTIPLIER + 60)
     agent = _make_agent(is_active=True, status="online", last_heartbeat_at=cutoff.isoformat())
     assert derive_agent_status(agent) == "offline"
@@ -156,6 +169,7 @@ def test_derive_agent_status_offline_too_old():
 # ---------------------------------------------------------------------------
 # resolve_host
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_host_by_code():
     db = MagicMock()
@@ -174,6 +188,7 @@ def test_resolve_host_not_found():
 # ---------------------------------------------------------------------------
 # build_fleet_state
 # ---------------------------------------------------------------------------
+
 
 def test_build_fleet_state_empty():
     db = MagicMock()

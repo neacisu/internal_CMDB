@@ -14,6 +14,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -75,12 +76,8 @@ class CronScheduler:
                 except Exception:
                     logger.exception("Scheduler tick failed — will retry next cycle.")
 
-                try:
-                    await asyncio.wait_for(
-                        self._shutdown_event.wait(), timeout=self._tick_seconds
-                    )
-                except TimeoutError:
-                    pass
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(self._shutdown_event.wait(), timeout=self._tick_seconds)
         finally:
             await redis.aclose()
             self._running = False
@@ -121,9 +118,7 @@ class CronScheduler:
                 )
                 if attempt < _REDIS_CONNECT_RETRIES:
                     await asyncio.sleep(_REDIS_RETRY_DELAY_S * attempt)
-        raise ConnectionError(
-            f"Failed to connect to Redis after {_REDIS_CONNECT_RETRIES} attempts"
-        )
+        raise ConnectionError(f"Failed to connect to Redis after {_REDIS_CONNECT_RETRIES} attempts")
 
     # ------------------------------------------------------------------
     # Tick logic (runs in thread pool to avoid blocking event loop)

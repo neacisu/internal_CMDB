@@ -46,27 +46,43 @@ def _parse_pct(val: str) -> float:
         return 0.0
 
 
+# Byte-unit multipliers sorted longest-suffix-first for unambiguous matching.
+_BYTE_MULTIPLIERS: dict[str, float] = {
+    "TiB": float(1024**4),
+    "GiB": float(1024**3),
+    "MiB": float(1024**2),
+    "KiB": float(1024),
+    "TB": 1e12,
+    "GB": 1e9,
+    "MB": 1e6,
+    "kB": 1e3,
+    "B": 1.0,
+}
+
+
+def _parse_size_str(part: str) -> float:
+    """Convert a single size token (e.g. '1.23kB', '4.56GiB') to bytes.
+
+    Tries each suffix in longest-first order to avoid false prefix matches
+    (e.g. 'MiB' must be tried before 'MB').
+    Returns 0.0 on any parse failure.
+    """
+    stripped = part.strip()
+    for suffix, mult in _BYTE_MULTIPLIERS.items():
+        if stripped.endswith(suffix):
+            try:
+                return float(stripped[: -len(suffix)].strip()) * mult
+            except ValueError:
+                return 0.0
+    return 0.0
+
+
 def _parse_bytes_pair(val: str) -> tuple[float, float]:
     """Parse '1.23kB / 4.56MB' → (in_bytes, out_bytes) — best effort."""
-    multipliers = {"B": 1, "kB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12,
-                   "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3}
     parts = val.split("/")
     if len(parts) != 2:  # noqa: PLR2004
         return 0.0, 0.0
-
-    results: list[float] = []
-    for p in parts:
-        p = p.strip()
-        num = 0.0
-        for suffix, mult in sorted(multipliers.items(), key=lambda x: -len(x[0])):
-            if p.endswith(suffix):
-                try:
-                    num = float(p[: -len(suffix)].strip()) * mult
-                except ValueError:
-                    num = 0.0
-                break
-        results.append(num)
-    return results[0], results[1]
+    return _parse_size_str(parts[0]), _parse_size_str(parts[1])
 
 
 def _inspect_restarts() -> dict[str, dict[str, Any]]:
@@ -84,8 +100,10 @@ def _inspect_restarts() -> dict[str, dict[str, Any]]:
 
     result = subprocess.run(
         [
-            "docker", "inspect",
-            "--format", '{{json .Name}} {{json .RestartCount}} {{json .State.StartedAt}}',
+            "docker",
+            "inspect",
+            "--format",
+            "{{json .Name}} {{json .RestartCount}} {{json .State.StartedAt}}",
             *container_ids,
         ],
         capture_output=True,
@@ -132,19 +150,24 @@ def collect() -> dict[str, Any]:
         net_in, net_out = _parse_bytes_pair(c.get("net_io", ""))
         disk_read, disk_write = _parse_bytes_pair(c.get("block_io", ""))
         extra = restarts.get(name, {})
-        containers.append({
-            "name": name,
-            "cpu_pct": _parse_pct(c.get("cpu_pct", "0%")),
-            "mem_pct": _parse_pct(c.get("mem_pct", "0%")),
-            "net_bytes_in": net_in,
-            "net_bytes_out": net_out,
-            "disk_read_bytes": disk_read,
-            "disk_write_bytes": disk_write,
-            "restart_count": extra.get("restart_count", 0),
-            "started_at": extra.get("started_at"),
-        })
+        containers.append(
+            {
+                "name": name,
+                "cpu_pct": _parse_pct(c.get("cpu_pct", "0%")),
+                "mem_pct": _parse_pct(c.get("mem_pct", "0%")),
+                "net_bytes_in": net_in,
+                "net_bytes_out": net_out,
+                "disk_read_bytes": disk_read,
+                "disk_write_bytes": disk_write,
+                "restart_count": extra.get("restart_count", 0),
+                "started_at": extra.get("started_at"),
+            }
+        )
 
     if len(containers) > _MAX_CONTAINERS:
         containers = containers[:_MAX_CONTAINERS]
-    return {"containers": containers, "total": len(containers),
-            "truncated": len(raw_stats) > _MAX_CONTAINERS}
+    return {
+        "containers": containers,
+        "total": len(containers),
+        "truncated": len(raw_stats) > _MAX_CONTAINERS,
+    }

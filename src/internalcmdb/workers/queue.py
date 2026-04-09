@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, ClassVar, cast
 
 from arq.connections import RedisSettings
 from arq.cron import cron
 
 from internalcmdb.api.config import get_settings
-from internalcmdb.workers.cognitive_tasks import COGNITIVE_TASKS, container_log_audit, self_heal_check
+from internalcmdb.workers.cognitive_tasks import (
+    COGNITIVE_TASKS,
+    container_log_audit,
+    self_heal_check,
+)
 from internalcmdb.workers.retention import data_retention_job
 
 logger = logging.getLogger(__name__)
 
+_Ctx = dict[str, Any]
 _MAX_JOBS = 10
 _JOB_TIMEOUT_S = 600
 _MAX_TRIES = 3
@@ -24,11 +30,11 @@ def _redis_settings() -> RedisSettings:
     return RedisSettings.from_dsn(settings.redis_url)
 
 
-async def _noop(_ctx: dict) -> None:  # type: ignore[type-arg]
+async def _noop(_ctx: _Ctx) -> None:
     """No-op placeholder — ARQ requires at least one registered function."""
 
 
-async def _health_check(ctx: dict) -> dict:  # type: ignore[type-arg]
+async def _health_check(ctx: _Ctx) -> dict[str, Any]:
     """Periodic worker health check. Returns connection status for Redis and basic metrics."""
     redis = ctx.get("redis")
     status = "healthy"
@@ -45,11 +51,16 @@ async def _health_check(ctx: dict) -> dict:  # type: ignore[type-arg]
 class WorkerSettings:
     """ARQ worker settings — picked up by ``arq internalcmdb.workers.queue.WorkerSettings``."""
 
-    redis_settings = _redis_settings()
-    functions = [_noop, _health_check, data_retention_job, *COGNITIVE_TASKS.values()]  # noqa: RUF012
-    cron_jobs = [  # noqa: RUF012
-        cron(self_heal_check, minute={0, 15, 30, 45}),
-        cron(container_log_audit, hour={0, 6, 12, 18}, minute={5}),
+    redis_settings: ClassVar[RedisSettings] = _redis_settings()  # type: ignore[misc]
+    functions: ClassVar[list[Any]] = [
+        _noop,
+        _health_check,
+        data_retention_job,
+        *COGNITIVE_TASKS.values(),
+    ]
+    cron_jobs: ClassVar[list[Any]] = [
+        cron(cast(Any, self_heal_check), minute={0, 15, 30, 45}),
+        cron(cast(Any, container_log_audit), hour={0, 6, 12, 18}, minute={5}),
     ]
     queue_name = "infraq:arq:queue"
     max_jobs = _MAX_JOBS

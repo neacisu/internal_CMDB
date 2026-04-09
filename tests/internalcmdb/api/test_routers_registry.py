@@ -1,4 +1,5 @@
 """Tests for /registry router — sync DB endpoints."""
+
 from __future__ import annotations
 
 import uuid
@@ -57,7 +58,9 @@ def test_list_hosts_with_filters():
     app, mock_db = _app()
     _page_setup(mock_db, [], 0)
     cid = str(uuid.uuid4())
-    r = TestClient(app).get(f"/api/v1/registry/hosts?cluster_id={cid}&gpu_capable=true&docker_host=false")
+    r = TestClient(app).get(
+        f"/api/v1/registry/hosts?cluster_id={cid}&gpu_capable=true&docker_host=false"
+    )
     assert r.status_code == 200
 
 

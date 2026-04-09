@@ -49,10 +49,7 @@ def upgrade() -> None:
     )
 
     op.execute(
-        sa.text(
-            f"CREATE INDEX idx_slo_def_service "
-            f"ON {_TELEMETRY}.slo_definition (service_id)"
-        )
+        sa.text(f"CREATE INDEX idx_slo_def_service ON {_TELEMETRY}.slo_definition (service_id)")
     )
     op.execute(
         sa.text(
@@ -86,14 +83,11 @@ def upgrade() -> None:
     for month_offset in (0, 1):
         m = now.month + month_offset
         y = now.year
-        if m > 12:
+        if m > 12:  # noqa: PLR2004
             m -= 12
             y += 1
         p_start = f"{y}-{m:02d}-01"
-        if m == 12:
-            p_end = f"{y + 1}-01-01"
-        else:
-            p_end = f"{y}-{m + 1:02d}-01"
+        p_end = f"{y + 1}-01-01" if m == 12 else f"{y}-{m + 1:02d}-01"  # noqa: PLR2004
         part_name = f"slo_measurement_{y}_{m:02d}"
         op.execute(
             sa.text(

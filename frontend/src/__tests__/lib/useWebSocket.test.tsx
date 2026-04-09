@@ -4,10 +4,10 @@ import { useWebSocket } from "@/lib/useWebSocket";
 
 describe("useWebSocket", () => {
   class MockWebSocket {
-    static CONNECTING = 0;
-    static OPEN = 1;
-    static CLOSING = 2;
-    static CLOSED = 3;
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSING = 2;
+    static readonly CLOSED = 3;
     readyState = MockWebSocket.CONNECTING;
     onopen: (() => void) | null = null;
     onclose: (() => void) | null = null;
@@ -27,7 +27,7 @@ describe("useWebSocket", () => {
 
   beforeEach(() => {
     vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
-    Object.defineProperty(window, "location", {
+    Object.defineProperty(globalThis.window, "location", {
       value: { protocol: "http:", host: "localhost:3333" },
       writable: true,
     });

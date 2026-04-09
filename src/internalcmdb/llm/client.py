@@ -21,7 +21,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -29,8 +29,26 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Default backend endpoints  (SONAR-HOTSPOT REVIEWED: S1075 / S5332)
+# ---------------------------------------------------------------------------
+# These IPs are the private LAN addresses of self-hosted LXC containers on
+# the internal Proxmox cluster (RFC-1918, not publicly routable).
+# They are compile-time FALLBACK ONLY.  All endpoints are overridable via:
+#   • DB SettingsStore keys (highest priority)
+#   • Environment variables LLM_REASONING_URL / LLM_FAST_URL / LLM_EMBED_URL
+#   • LLMClient constructor parameters
+# HTTP (not HTTPS) is used because traffic never leaves the internal LAN;
+# HAProxy terminates TLS at the public edge.  Reviewers: ACCEPTED.
+_DEFAULT_REASONING_URL = "http://10.0.1.10:49001"  # HAProxy VIP → vLLM QwQ-32B
+_DEFAULT_FAST_URL = "http://10.0.1.10:49002"  # HAProxy VIP → vLLM Qwen2.5-14B
+_DEFAULT_EMBED_URL = "http://10.0.1.10:49003"  # HAProxy VIP → Ollama Qwen3-Embed
+_DEFAULT_GUARD_URL = "http://10.0.1.115:8000"  # LXC-115 → LLM-Guard API
+
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ModelConfig:
@@ -97,6 +115,20 @@ class _CircuitState:
 # ---------------------------------------------------------------------------
 
 _REASONING_TIMEOUT = 120.0
+
+
+@dataclass
+class _HttpRequest:
+    """Groups parameters for a single HTTP round-trip in the LLM client."""
+
+    method: str
+    url: str
+    model_name: str
+    effective_timeout: float
+    json_body: dict[str, Any] | None = None
+    headers: dict[str, str] | None = None
+
+
 _FAST_TIMEOUT = 60.0
 _EMBED_TIMEOUT = 30.0
 _GUARD_TIMEOUT = 15.0
@@ -118,10 +150,10 @@ class LLMClient:
 
     def __init__(
         self,
-        reasoning_url: str = "http://10.0.1.10:49001",
-        fast_url: str = "http://10.0.1.10:49002",
-        embed_url: str = "http://10.0.1.10:49003",
-        guard_url: str = "http://10.0.1.115:8000",
+        reasoning_url: str = _DEFAULT_REASONING_URL,
+        fast_url: str = _DEFAULT_FAST_URL,
+        embed_url: str = _DEFAULT_EMBED_URL,
+        guard_url: str = _DEFAULT_GUARD_URL,
         *,
         guard_token: str = "",
     ) -> None:
@@ -153,9 +185,7 @@ class LLMClient:
         }
 
         self._guard_token = guard_token
-        self._circuits: dict[str, _CircuitState] = {
-            name: _CircuitState() for name in self.models
-        }
+        self._circuits: dict[str, _CircuitState] = {name: _CircuitState() for name in self.models}
 
         self._client = httpx.AsyncClient(
             limits=httpx.Limits(
@@ -178,15 +208,16 @@ class LLMClient:
         """
         try:
             from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+
             store = get_settings_store()
             return cls(
-                reasoning_url=await store.get("llm.reasoning.url") or "http://10.0.1.10:49001",
-                fast_url=await store.get("llm.fast.url") or "http://10.0.1.10:49002",
-                embed_url=await store.get("llm.embed.url") or "http://10.0.1.10:49003",
-                guard_url=await store.get("llm.guard.url") or "http://10.0.1.115:8000",
+                reasoning_url=await store.get("llm.reasoning.url") or _DEFAULT_REASONING_URL,
+                fast_url=await store.get("llm.fast.url") or _DEFAULT_FAST_URL,
+                embed_url=await store.get("llm.embed.url") or _DEFAULT_EMBED_URL,
+                guard_url=await store.get("llm.guard.url") or _DEFAULT_GUARD_URL,
                 guard_token=await store.get_raw_secret("llm.guard.token") or "",
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("from_settings: SettingsStore unavailable, using default URLs")
             return cls()
 
@@ -310,13 +341,43 @@ class LLMClient:
         if messages:
             last_msg = messages[-1].copy()
             last_msg["content"] = last_msg.get("content", "") + schema_instruction
-            body["messages"] = messages[:-1] + [last_msg]
+            body["messages"] = [*messages[:-1], last_msg]
 
         raw = await self._request_with_retry("POST", url, model_name, json_body=body)
         content = self._extract_response_content(raw)
         parsed = self._validate_json_response(content, json_schema)
         raw["_parsed"] = parsed
         return raw
+
+    def _resolve_model_config(self, model_name: str) -> tuple[ModelConfig, str]:
+        """Return (config, resolved_model_name), falling back to 'reasoning' if unknown."""
+        cfg = self.models.get(model_name)
+        if cfg is None:
+            return self.models["reasoning"], "reasoning"
+        return cfg, model_name
+
+    @staticmethod
+    def _parse_tool_call_arguments(raw: dict[str, Any]) -> None:
+        """Deserialise tool-call argument strings in *raw* choices in-place.
+
+        OpenAI-compatible backends may return ``function.arguments`` as a JSON
+        string rather than an already-parsed dict.  This method normalises the
+        response so callers always receive a dict.  Malformed argument strings
+        are left as-is after logging a warning.
+        """
+        choices = raw.get("choices", [])
+        if not choices:
+            return
+        tool_calls = choices[0].get("message", {}).get("tool_calls")
+        if not tool_calls:
+            return
+        for tc in tool_calls:
+            args = tc.get("function", {}).get("arguments")
+            if isinstance(args, str):
+                try:
+                    tc["function"]["arguments"] = json.loads(args)
+                except json.JSONDecodeError, TypeError:
+                    logger.warning("Could not parse tool call arguments as JSON")
 
     async def tool_call(
         self,
@@ -340,10 +401,7 @@ class LLMClient:
         Raises:
             ValueError: If no valid tool calls are returned.
         """
-        cfg = self.models.get(model_name)
-        if cfg is None:
-            cfg = self.models["reasoning"]
-            model_name = "reasoning"
+        cfg, model_name = self._resolve_model_config(model_name)
 
         body: dict[str, Any] = {
             "model": cfg.model_id,
@@ -356,22 +414,10 @@ class LLMClient:
 
         raw = await self._request_with_retry("POST", url, model_name, json_body=body)
 
-        choices = raw.get("choices", [])
-        if not choices:
+        if not raw.get("choices"):
             raise ValueError("Tool call returned empty choices")
 
-        first_choice = choices[0]
-        msg = first_choice.get("message", {})
-        tool_calls = msg.get("tool_calls")
-        if tool_calls:
-            for tc in tool_calls:
-                args = tc.get("function", {}).get("arguments")
-                if isinstance(args, str):
-                    try:
-                        tc["function"]["arguments"] = json.loads(args)
-                    except (json.JSONDecodeError, TypeError):
-                        logger.warning("Could not parse tool call arguments as JSON")
-
+        self._parse_tool_call_arguments(raw)
         return raw
 
     @staticmethod
@@ -384,7 +430,8 @@ class LLMClient:
 
     @staticmethod
     def _validate_json_response(
-        content: str, schema: dict[str, Any],
+        content: str,
+        schema: dict[str, Any],
     ) -> dict[str, Any]:
         """Parse and validate JSON content against the expected schema.
 
@@ -410,7 +457,7 @@ class LLMClient:
         if missing:
             raise ValueError(f"Missing required keys: {missing}")
 
-        return parsed
+        return cast(dict[str, Any], parsed)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings via the Ollama ``/api/embed`` endpoint.
@@ -436,8 +483,7 @@ class LLMClient:
             dim = len(embeddings[0])
             if dim != _EXPECTED_EMBED_DIM:
                 raise ValueError(
-                    f"Embedding dimension mismatch: got {dim}, "
-                    f"expected {_EXPECTED_EMBED_DIM}"
+                    f"Embedding dimension mismatch: got {dim}, expected {_EXPECTED_EMBED_DIM}"
                 )
 
         return embeddings
@@ -470,7 +516,11 @@ class LLMClient:
         url = f"{cfg.endpoint_url}/analyze/prompt"
         logger.info("Guard input scan → %s", url)
         return await self._request_with_retry(
-            "POST", url, "guard", json_body=body, headers=self._guard_headers(),
+            "POST",
+            url,
+            "guard",
+            json_body=body,
+            headers=self._guard_headers(),
         )
 
     async def guard_output(self, prompt: str, output: str) -> dict[str, Any]:
@@ -481,7 +531,11 @@ class LLMClient:
         url = f"{cfg.endpoint_url}/analyze/output"
         logger.info("Guard output scan → %s", url)
         return await self._request_with_retry(
-            "POST", url, "guard", json_body=body, headers=self._guard_headers(),
+            "POST",
+            url,
+            "guard",
+            json_body=body,
+            headers=self._guard_headers(),
         )
 
     async def health_check(self, model_name: str = "") -> dict[str, bool]:
@@ -504,7 +558,7 @@ class LLMClient:
                 url = f"{cfg.endpoint_url}/health"
             try:
                 resp = await self._client.get(url, timeout=5.0)
-                results[name] = resp.status_code < 400
+                results[name] = resp.status_code < 400  # noqa: PLR2004
             except httpx.RequestError:
                 results[name] = False
         return results
@@ -531,8 +585,7 @@ class LLMClient:
     def _warn_missing_guard_token(self) -> None:
         if not self._guard_token and not self._guard_token_warned:
             logger.warning(
-                "guard_token is empty — guard requests will likely "
-                "fail with 401 Unauthorized"
+                "guard_token is empty — guard requests will likely fail with 401 Unauthorized"
             )
             self.__class__._guard_token_warned = True
 
@@ -553,8 +606,15 @@ class LLMClient:
         for attempt in range(_MAX_RETRIES + 1):
             try:
                 result = await self._single_request(
-                    method, url, model_name, json_body, headers,
-                    effective_timeout, circuit,
+                    _HttpRequest(
+                        method=method,
+                        url=url,
+                        model_name=model_name,
+                        effective_timeout=effective_timeout,
+                        json_body=json_body,
+                        headers=headers,
+                    ),
+                    circuit,
                 )
                 return result
             except httpx.HTTPStatusError as exc:
@@ -566,7 +626,11 @@ class LLMClient:
 
             circuit.record_failure(model_name)
             self._record_prometheus(
-                model_name, url, 0.0, {}, f"error:{type(last_exc).__name__}",
+                model_name,
+                url,
+                0.0,
+                {},
+                f"error:{type(last_exc).__name__}",
             )
             self._log_retry(model_name, attempt, last_exc)  # type: ignore[arg-type]
             if attempt < _MAX_RETRIES:
@@ -577,18 +641,17 @@ class LLMClient:
 
     async def _single_request(
         self,
-        method: str,
-        url: str,
-        model_name: str,
-        json_body: dict[str, Any] | None,
-        headers: dict[str, str] | None,
-        effective_timeout: float,
+        req: _HttpRequest,
         circuit: _CircuitState,
     ) -> dict[str, Any]:
         """Execute one HTTP round-trip and decode the JSON response."""
         t0 = time.monotonic()
         resp = await self._client.request(
-            method, url, json=json_body, timeout=effective_timeout, headers=headers,
+            req.method,
+            req.url,
+            json=req.json_body,
+            timeout=req.effective_timeout,
+            headers=req.headers,
         )
         resp.raise_for_status()
         elapsed = time.monotonic() - t0
@@ -596,53 +659,59 @@ class LLMClient:
         try:
             result: dict[str, Any] = resp.json()
         except ValueError as exc:
-            raise httpx.DecodingError(
-                f"Invalid JSON from {model_name}: {exc}"
-            ) from exc
-        self._record_otel_span(model_name, result)
-        self._record_prometheus(model_name, url, elapsed, result, "ok")
+            raise httpx.DecodingError(f"Invalid JSON from {req.model_name}: {exc}") from exc
+        self._record_otel_span(req.model_name, result)
+        self._record_prometheus(req.model_name, req.url, elapsed, result, "ok")
         return result
 
     @staticmethod
     def _record_otel_span(model_name: str, result: dict[str, Any]) -> None:
         """Attach GenAI span attributes to the current OTel span (if active)."""
         try:
-            from opentelemetry import trace
+            from opentelemetry import trace  # noqa: PLC0415
 
-            from internalcmdb.observability.tracing import (
+            from internalcmdb.observability.tracing import (  # noqa: PLC0415
+                LlmSpanAttrs,
                 record_llm_span_attributes,
             )
 
             span = trace.get_current_span()
-            if span is None or not span.is_recording():
+            if not span.is_recording():
                 return
             usage = result.get("usage", {})
-            choices = result.get("choices", [])
-            finish = [c.get("finish_reason", "") for c in choices if isinstance(c, dict)]
+            choices = cast(list[dict[str, Any]], result.get("choices", []))
+            finish: list[str] = [str(c.get("finish_reason", "")) for c in choices]
             record_llm_span_attributes(
                 span,
-                model=result.get("model", model_name),
-                input_tokens=usage.get("prompt_tokens", 0),
-                output_tokens=usage.get("completion_tokens", 0),
-                finish_reasons=finish or None,
+                LlmSpanAttrs(
+                    model=result.get("model", model_name),
+                    input_tokens=usage.get("prompt_tokens", 0),
+                    output_tokens=usage.get("completion_tokens", 0),
+                    finish_reasons=finish or None,
+                ),
             )
         except Exception:
-            pass
+            logger.debug("OTel span attribute recording failed", exc_info=True)
 
     @staticmethod
     def _record_prometheus(
-        model_name: str, url: str, elapsed: float,
-        result: dict[str, Any], status: str,
+        model_name: str,
+        url: str,
+        elapsed: float,
+        result: dict[str, Any],
+        status: str,
     ) -> None:
         """Record LLM call duration and token counts to Prometheus metrics."""
         try:
-            from internalcmdb.observability.metrics import (
+            from internalcmdb.observability.metrics import (  # noqa: PLC0415
                 LLM_CALL_DURATION,
                 LLM_TOKENS_TOTAL,
             )
 
             LLM_CALL_DURATION.labels(
-                model=model_name, endpoint=url, status=status,
+                model=model_name,
+                endpoint=url,
+                status=status,
             ).observe(elapsed)
 
             usage = result.get("usage", {})
@@ -653,7 +722,7 @@ class LLMClient:
             if out_tok:
                 LLM_TOKENS_TOTAL.labels(model=model_name, direction="output").inc(out_tok)
         except Exception:
-            pass
+            logger.debug("Prometheus LLM metrics unavailable", exc_info=True)
 
     @staticmethod
     def _log_retry(model_name: str, attempt: int, exc: Exception) -> None:

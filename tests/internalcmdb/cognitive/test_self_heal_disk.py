@@ -17,14 +17,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from internalcmdb.cognitive.self_heal_disk import (
-    PROTECTED_IMAGE_SUBSTRINGS,
-    CleanupAnalysis,
-    CleanupResult,
     SafeDockerCleaner,
     docker_socket_available,
     format_bytes,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -88,12 +84,12 @@ class TestFormatBytes:
 
 class TestDockerSocketAvailable:
     @patch("internalcmdb.cognitive.self_heal_disk.os.path.exists", return_value=False)
-    def test_missing_socket(self, _mock: MagicMock) -> None:
+    def test_missing_socket(self, mock_exists: MagicMock) -> None:
         assert docker_socket_available() is False
 
     @patch("internalcmdb.cognitive.self_heal_disk.os.access", return_value=True)
     @patch("internalcmdb.cognitive.self_heal_disk.os.path.exists", return_value=True)
-    def test_accessible_socket(self, _e: MagicMock, _a: MagicMock) -> None:
+    def test_accessible_socket(self, mock_exists: MagicMock, mock_access: MagicMock) -> None:
         assert docker_socket_available() is True
 
 
@@ -146,11 +142,13 @@ class TestAnalyze:
         sysdf = {"BuildCache": [{"InUse": False, "Size": 1_000_000}], "Images": []}
 
         with patch.object(cleaner, "_request") as mock_req:
-            mock_req.side_effect = _mock_request({
-                "GET /system/df": (200, json.dumps(sysdf)),
-                "GET /images/json": (200, json.dumps(images)),
-                "GET /containers/json": (200, json.dumps(containers)),
-            })
+            mock_req.side_effect = _mock_request(
+                {
+                    "GET /system/df": (200, json.dumps(sysdf)),
+                    "GET /images/json": (200, json.dumps(images)),
+                    "GET /containers/json": (200, json.dumps(containers)),
+                }
+            )
 
             analysis = cleaner.analyze()
 
@@ -164,11 +162,13 @@ class TestAnalyze:
         cleaner = SafeDockerCleaner("/fake.sock")
 
         with patch.object(cleaner, "_request") as mock_req:
-            mock_req.side_effect = _mock_request({
-                "GET /system/df": (200, json.dumps({"BuildCache": [], "Images": []})),
-                "GET /images/json": (200, "[]"),
-                "GET /containers/json": (200, "[]"),
-            })
+            mock_req.side_effect = _mock_request(
+                {
+                    "GET /system/df": (200, json.dumps({"BuildCache": [], "Images": []})),
+                    "GET /images/json": (200, "[]"),
+                    "GET /containers/json": (200, "[]"),
+                }
+            )
 
             analysis = cleaner.analyze()
 
@@ -181,11 +181,13 @@ class TestAnalyze:
         images = [_make_image("sha256:dangling1")]
 
         with patch.object(cleaner, "_request") as mock_req:
-            mock_req.side_effect = _mock_request({
-                "GET /system/df": (200, json.dumps({"BuildCache": []})),
-                "GET /images/json": (200, json.dumps(images)),
-                "GET /containers/json": (200, "[]"),
-            })
+            mock_req.side_effect = _mock_request(
+                {
+                    "GET /system/df": (200, json.dumps({"BuildCache": []})),
+                    "GET /images/json": (200, json.dumps(images)),
+                    "GET /containers/json": (200, "[]"),
+                }
+            )
 
             analysis = cleaner.analyze()
 
@@ -209,13 +211,18 @@ class TestExecuteCleanup:
         ]
 
         with patch.object(cleaner, "_request") as mock_req:
-            mock_req.side_effect = _mock_request({
-                "POST /build/prune": (200, json.dumps({"SpaceReclaimed": 50_000_000})),
-                "POST /images/prune": (200, json.dumps({"SpaceReclaimed": 10_000_000, "ImagesDeleted": []})),
-                "GET /containers/json": (200, json.dumps(containers)),
-                "GET /images/json": (200, json.dumps(images)),
-                "DELETE /images/sha256:remove-me": (200, "[]"),
-            })
+            mock_req.side_effect = _mock_request(
+                {
+                    "POST /build/prune": (200, json.dumps({"SpaceReclaimed": 50_000_000})),
+                    "POST /images/prune": (
+                        200,
+                        json.dumps({"SpaceReclaimed": 10_000_000, "ImagesDeleted": []}),
+                    ),
+                    "GET /containers/json": (200, json.dumps(containers)),
+                    "GET /images/json": (200, json.dumps(images)),
+                    "DELETE /images/sha256:remove-me": (200, "[]"),
+                }
+            )
 
             result = cleaner.execute_cleanup(disk_pct=92.0)
 
@@ -236,18 +243,20 @@ class TestExecuteCleanup:
         ]
 
         with patch.object(cleaner, "_request") as mock_req:
-            mock_req.side_effect = _mock_request({
-                "POST /build/prune": (200, json.dumps({"SpaceReclaimed": 0})),
-                "POST /images/prune": (200, json.dumps({"SpaceReclaimed": 0})),
-                "GET /containers/json": (200, "[]"),
-                "GET /images/json": (200, json.dumps(images)),
-            })
+            mock_req.side_effect = _mock_request(
+                {
+                    "POST /build/prune": (200, json.dumps({"SpaceReclaimed": 0})),
+                    "POST /images/prune": (200, json.dumps({"SpaceReclaimed": 0})),
+                    "GET /containers/json": (200, "[]"),
+                    "GET /images/json": (200, json.dumps(images)),
+                }
+            )
 
             result = cleaner.execute_cleanup()
 
         assert result.unused_images_removed == []
         assert result.unused_images_freed_bytes == 0
-        protected_logs = [l for l in result.audit_log if "PROTECTED" in l]
+        protected_logs = [log for log in result.audit_log if "PROTECTED" in log]
         assert len(protected_logs) == 3
 
     def test_container_images_never_removed(self) -> None:
@@ -263,12 +272,14 @@ class TestExecuteCleanup:
         ]
 
         with patch.object(cleaner, "_request") as mock_req:
-            mock_req.side_effect = _mock_request({
-                "POST /build/prune": (200, json.dumps({"SpaceReclaimed": 0})),
-                "POST /images/prune": (200, json.dumps({"SpaceReclaimed": 0})),
-                "GET /containers/json": (200, json.dumps(containers)),
-                "GET /images/json": (200, json.dumps(images)),
-            })
+            mock_req.side_effect = _mock_request(
+                {
+                    "POST /build/prune": (200, json.dumps({"SpaceReclaimed": 0})),
+                    "POST /images/prune": (200, json.dumps({"SpaceReclaimed": 0})),
+                    "GET /containers/json": (200, json.dumps(containers)),
+                    "GET /images/json": (200, json.dumps(images)),
+                }
+            )
 
             result = cleaner.execute_cleanup()
 
@@ -278,11 +289,13 @@ class TestExecuteCleanup:
         cleaner = SafeDockerCleaner("/fake.sock")
 
         with patch.object(cleaner, "_request") as mock_req:
-            mock_req.side_effect = _mock_request({
-                "POST /build/prune": (500, "Internal Server Error"),
-                "POST /images/prune": (500, "Internal Server Error"),
-                "GET /containers/json": (500, "fail"),
-            })
+            mock_req.side_effect = _mock_request(
+                {
+                    "POST /build/prune": (500, "Internal Server Error"),
+                    "POST /images/prune": (500, "Internal Server Error"),
+                    "GET /containers/json": (500, "fail"),
+                }
+            )
 
             result = cleaner.execute_cleanup()
 

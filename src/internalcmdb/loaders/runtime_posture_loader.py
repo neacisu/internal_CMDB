@@ -409,9 +409,7 @@ def _running_names_from_posture(data: dict[str, Any]) -> set[str]:
     running_containers: list[Any] = cast(list[Any], data.get("containers") or [])
     return {
         str(c_inner["name"])
-        for c_inner in (
-            cast(dict[str, Any], c) for c in running_containers if isinstance(c, dict)
-        )
+        for c_inner in (cast(dict[str, Any], c) for c in running_containers if isinstance(c, dict))
         if c_inner.get("name")
     }
 

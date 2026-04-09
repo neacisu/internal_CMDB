@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,7 +13,6 @@ from internalcmdb.workers.retention import (
     _vacuum_table,
     _validate_identifier,
 )
-
 
 # ---------------------------------------------------------------------------
 # _validate_identifier
@@ -88,7 +87,7 @@ class TestTableExists:
 
         _table_exists(conn, "governance.audit_event")
 
-        _, kwargs = conn.execute.call_args
+        _, _kwargs = conn.execute.call_args
         params = conn.execute.call_args[0][1]
         assert params["schema"] == "governance"
         assert params["tbl"] == "audit_event"
@@ -108,9 +107,7 @@ class TestDropOldPartitions:
         conn.execute.return_value.fetchall.return_value = []
 
         with patch("internalcmdb.workers.retention._validate_identifier"):
-            result = _drop_old_partitions(
-                conn, "telemetry.metric_point", "collected_at", "90 days"
-            )
+            result = _drop_old_partitions(conn, "telemetry.metric_point", "collected_at", "90 days")
 
         assert result == 0
 
@@ -121,9 +118,7 @@ class TestDropOldPartitions:
         conn.execute.return_value = execute_mock
 
         with patch("internalcmdb.workers.retention._validate_identifier"):
-            result = _drop_old_partitions(
-                conn, "telemetry.metric_point", "collected_at", "90 days"
-            )
+            result = _drop_old_partitions(conn, "telemetry.metric_point", "collected_at", "90 days")
 
         assert result == 0
 
@@ -149,9 +144,7 @@ class TestDropOldPartitions:
         conn.execute.side_effect = execute_side_effect
 
         with patch("internalcmdb.workers.retention._validate_identifier"):
-            result = _drop_old_partitions(
-                conn, "telemetry.metric_point", "collected_at", "90 days"
-            )
+            result = _drop_old_partitions(conn, "telemetry.metric_point", "collected_at", "90 days")
 
         assert result >= 0
 
@@ -175,14 +168,9 @@ class TestDropOldPartitions:
         conn.execute.side_effect = execute_side_effect
 
         with patch("internalcmdb.workers.retention._validate_identifier"):
-            result = _drop_old_partitions(
-                conn, "telemetry.metric_point", "collected_at", "90 days"
-            )
+            _drop_old_partitions(conn, "telemetry.metric_point", "collected_at", "90 days")
 
-        drop_calls = [
-            c for c in conn.execute.call_args_list
-            if "DROP TABLE" in str(c)
-        ]
+        drop_calls = [c for c in conn.execute.call_args_list if "DROP TABLE" in str(c)]
         assert len(drop_calls) <= 1
 
 

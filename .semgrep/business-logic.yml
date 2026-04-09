@@ -1,0 +1,281 @@
+rules:
+  # =========================================================================
+  # Business Logic / Application-Specific Security Rules
+  # Targeted at internalCMDB: FastAPI + SQLAlchemy async + HITL workflow.
+  # =========================================================================
+
+  # -------------------------------------------------------------------------
+  # RULE BL-01: FastAPI router endpoint without require_role dependency
+  #
+  # Risk: Any HTTP endpoint that mutates state or returns sensitive data must
+  # declare an RBAC dependency. An endpoint missing `require_role` is
+  # accessible to unauthenticated callers or callers with any role.
+  #
+  # Pattern: @router.(post|put|patch|delete|get) NOT followed by
+  # dependencies=[Depends(require_role(...))]
+  #
+  # Note: GET endpoints on public/health paths are intentionally unauthenticated;
+  # suppress those with `# nosemgrep: bl-missing-rbac` where appropriate.
+  # -------------------------------------------------------------------------
+  - id: bl-missing-rbac-on-mutating-endpoint
+    patterns:
+      - pattern: |
+          @router.$METHOD(...)
+          async def $FUNC(..., session: ...) -> ...:
+              ...
+      - pattern-not: |
+          @router.$METHOD(..., dependencies=[Depends(require_role(...))])
+          async def $FUNC(...) -> ...:
+              ...
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: "^(post|put|patch|delete)$"
+    message: >
+      [HIGH] Mutating endpoint $FUNC (@router.$METHOD) has no
+      require_role() dependency. Any authenticated (or unauthenticated if
+      auth middleware is misconfigured) caller can invoke it.
+      Add `dependencies=[Depends(require_role("role1", ...))]`.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-862: Missing Authorization"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE BL-02: Direct role string comparison instead of require_role()
+  #
+  # Risk: Manually comparing role strings (e.g., `if user.role == "admin"`)
+  # is prone to typos, case-sensitivity bugs, and bypasses the centralised
+  # RBAC enforcement logic in the middleware.
+  # -------------------------------------------------------------------------
+  - id: bl-direct-role-string-comparison
+    patterns:
+      - pattern: $X.role == $ROLE_STR
+      - metavariable-regex:
+          metavariable: $ROLE_STR
+          regex: '^"(platform_admin|hitl_reviewer|operator|viewer|admin|superuser)"$'
+    message: >
+      [HIGH] Direct role string comparison ($X.role == $ROLE_STR) instead
+      of the centralised require_role() middleware. This is a RBAC bypass
+      risk: typos, wrong case, or additional roles will be silently missed.
+      Use `Depends(require_role(...))` in the endpoint's `dependencies=` list.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-284: Improper Access Control"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE BL-03: JWT decode without explicit algorithms list
+  #
+  # Risk: Omitting `algorithms=` allows the "none" algorithm attack where a
+  # crafted token with algorithm:"none" is accepted without a signature check.
+  # -------------------------------------------------------------------------
+  - id: bl-jwt-decode-no-algorithms
+    patterns:
+      - pattern: jwt.decode($TOKEN, $SECRET, ...)
+      - pattern-not: jwt.decode($TOKEN, $SECRET, algorithms=[...], ...)
+      - pattern-not: jwt.decode($TOKEN, $SECRET, ..., algorithms=[...])
+    message: >
+      [CRITICAL] jwt.decode() called without specifying `algorithms=`.
+      When the algorithm list is omitted an attacker can craft a token with
+      algorithm "none" that is accepted without signature verification.
+      Always pass `algorithms=["HS256"]` (or your actual algorithm).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE BL-04: pyjwt decode without algorithms (alias pattern)
+  # -------------------------------------------------------------------------
+  - id: bl-pyjwt-decode-no-algorithms
+    patterns:
+      - pattern: pyjwt.decode($TOKEN, $SECRET, ...)
+      - pattern-not: pyjwt.decode($TOKEN, $SECRET, algorithms=[...], ...)
+    message: >
+      [CRITICAL] pyjwt.decode() called without specifying `algorithms=`.
+      This enables the "none" algorithm attack. Always specify
+      `algorithms=["HS256"]` (or your deployment algorithm).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      owasp: "A02:2021 - Cryptographic Failures"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE BL-05: HITL decision written directly (bypassing HITLWorkflow)
+  #
+  # Risk: Writing to the hitl_item table directly (not via HITLWorkflow)
+  # skips audit trail, escalation logic, expiry checks, and event emission.
+  # All HITL state transitions must go through HITLWorkflow.approve/reject/
+  # escalate/modify.
+  # -------------------------------------------------------------------------
+  - id: bl-hitl-direct-db-write
+    patterns:
+      - pattern: |
+          await $SESSION.execute(
+            text("UPDATE governance.hitl_item ..."),
+            ...
+          )
+      - pattern-not-inside: |
+          class HITLWorkflow:
+              ...
+    message: >
+      [HIGH] Direct UPDATE on governance.hitl_item outside HITLWorkflow.
+      Bypassing HITLWorkflow skips: audit trail, escalation counters,
+      expiry enforcement, and domain event emission. Use
+      HITLWorkflow.approve() / reject() / escalate() / modify() instead.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: correctness
+      cwe: "CWE-284: Improper Access Control"
+      owasp: "A01:2021 - Broken Access Control"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE BL-06: Rate-limiter missing on authentication/sensitive endpoints
+  #
+  # Risk: POST /login, /password-reset, and similar endpoints without
+  # @limiter.limit() are vulnerable to credential stuffing and brute force.
+  # -------------------------------------------------------------------------
+  - id: bl-missing-rate-limit-on-auth-endpoint
+    patterns:
+      - pattern: |
+          @router.post($PATH)
+          async def $FUNC(...) -> ...:
+              ...
+      - metavariable-regex:
+          metavariable: $PATH
+          regex: "(?i)(login|logout|password|reset|register|signup|token|auth)"
+      - pattern-not: |
+          @router.post($PATH)
+          @limiter.limit(...)
+          async def $FUNC(...) -> ...:
+              ...
+    message: >
+      [HIGH] Endpoint $FUNC (POST $PATH) looks like an auth/credential
+      endpoint but has no @limiter.limit() decorator. Without rate limiting
+      it is vulnerable to brute-force and credential stuffing.
+      Add `@limiter.limit("X/minute")` between the @router decorator and
+      `async def`.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-307: Improper Restriction of Excessive Authentication Attempts"
+      owasp: "A07:2021 - Identification and Authentication Failures"
+      confidence: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # RULE BL-07: SQLAlchemy text() with string concatenation (+)
+  #
+  # Risk: Concatenating strings into a SQL query string is SQL injection,
+  # even if the values appear "safe" at the call site.
+  # -------------------------------------------------------------------------
+  - id: bl-sqlalchemy-text-string-concat
+    patterns:
+      - pattern: text("..." + $X + "...")
+      - pattern: text("..." + $X)
+      - pattern: text($X + "...")
+    message: >
+      [CRITICAL] SQLAlchemy text() constructed with string concatenation.
+      Use named bind parameters: text("... :param ..."), {"param": value}.
+      SQL injection vulnerability — OWASP A03:2021.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE BL-08: SQLAlchemy text() with % format string
+  # -------------------------------------------------------------------------
+  - id: bl-sqlalchemy-text-percent-format
+    patterns:
+      - pattern: text("..." % $X)
+      - pattern: text($QUERY % $PARAMS)
+    message: >
+      [CRITICAL] SQLAlchemy text() built with % string formatting.
+      Use named bind parameters: text("... :param ..."), {"param": value}.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 - Injection"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE BL-09: AsyncSession used outside async function context
+  #
+  # Risk: Using an AsyncSession in a synchronous function silently runs the
+  # coroutine as a regular object, bypassing all async transaction guarantees.
+  # -------------------------------------------------------------------------
+  - id: bl-async-session-in-sync-function
+    patterns:
+      - pattern: |
+          def $FUNC(..., session: AsyncSession, ...) -> ...:
+              session.$METHOD(...)
+              ...
+      - pattern-not: |
+          async def $FUNC(...) -> ...:
+              ...
+    message: >
+      [HIGH] AsyncSession received in synchronous function $FUNC. Calling
+      session methods synchronously on an async session does not execute the
+      query — it returns a coroutine object. Mark $FUNC as `async def` and
+      await all session calls.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: correctness
+      cwe: "CWE-362: Race Condition"
+      confidence: HIGH
+
+  # -------------------------------------------------------------------------
+  # RULE BL-10: Audit trail missing for governance state-change operations
+  #
+  # Risk: Any function that changes governance/approval state (approve,
+  # reject, escalate) without writing to an audit log creates an
+  # untraceability gap for compliance and forensics.
+  # -------------------------------------------------------------------------
+  - id: bl-governance-change-without-audit
+    patterns:
+      - pattern: |
+          async def $FUNC(...):
+              ...
+              await $SESSION.execute(text("UPDATE governance.$TABLE SET status = ..."), ...)
+              ...
+      - pattern-not: |
+          async def $FUNC(...):
+              ...
+              await $SESSION.execute(text("INSERT INTO audit ..."), ...)
+              ...
+      - pattern-not-inside: |
+          class HITLWorkflow:
+              ...
+    message: >
+      [MEDIUM] Function $FUNC updates governance.$TABLE status without an
+      observable INSERT into an audit table in the same transaction.
+      Every governance state change must produce an immutable audit record
+      for EU AI Act Article 12 compliance traceability.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: compliance
+      cwe: "CWE-778: Insufficient Logging"
+      owasp: "A09:2021 - Security Logging and Monitoring Failures"
+      confidence: LOW

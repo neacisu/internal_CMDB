@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,11 +11,9 @@ from internalcmdb.governance.guard_gate import (
     RC_2,
     RC_3,
     RC_4,
-    GateDecision,
     GuardGate,
     classify_risk,
 )
-
 
 # ---------------------------------------------------------------------------
 # classify_risk (L4) — standalone function tests

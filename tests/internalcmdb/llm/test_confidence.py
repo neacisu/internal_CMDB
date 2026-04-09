@@ -145,9 +145,7 @@ class TestParseConfidence:
         )
 
     def test_invalid_json_falls_back_regex_decimal(self) -> None:
-        assert ConfidenceCalibrator._parse_confidence("model says 0.73 here") == pytest.approx(
-            0.73
-        )
+        assert ConfidenceCalibrator._parse_confidence("model says 0.73 here") == pytest.approx(0.73)
 
     def test_percent_style_greater_than_one_scaled(self) -> None:
         """Valori > 1.0 din regex sunt tratate ca procent (ex. 95 → 0.95)."""

@@ -44,7 +44,7 @@ class QueryResult:
     Attributes:
         answer:      The synthesised answer text from the reasoning model.
         sources:     List of source chunk metadata used to build the answer.
-        confidence:  0.0–1.0 confidence estimate (based on source count and
+        confidence:  0.0-1.0 confidence estimate (based on source count and
                      model-reported finish reason).
         tokens_used: Approximate total token count consumed (prompt + completion).
     """
@@ -153,9 +153,7 @@ class QueryEngine:
         """)
 
         try:
-            result = await self._session.execute(
-                stmt, {"vec": vec_literal, "top_k": self._top_k}
-            )
+            result = await self._session.execute(stmt, {"vec": vec_literal, "top_k": self._top_k})
             rows = result.mappings().all()
         except Exception:
             logger.exception("pgvector search failed — returning empty result set")
@@ -200,7 +198,10 @@ class QueryEngine:
             if tokens_used + block_tokens > max_tokens and parts:
                 logger.info(
                     "Context budget reached at source %d/%d (%d tokens used of %d)",
-                    i, len(sources), tokens_used, max_tokens,
+                    i,
+                    len(sources),
+                    tokens_used,
+                    max_tokens,
                 )
                 break
             parts.append(block)
@@ -266,9 +267,5 @@ class QueryEngine:
 
         answer_length_score = min(1.0, len(answer) / 200.0)
 
-        confidence = (
-            distance_score * 0.5
-            + source_count_score * 0.3
-            + answer_length_score * 0.2
-        )
+        confidence = distance_score * 0.5 + source_count_score * 0.3 + answer_length_score * 0.2
         return round(min(1.0, max(0.0, confidence)), 4)

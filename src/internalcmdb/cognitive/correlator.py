@@ -48,12 +48,10 @@ class IncidentCorrelator:
         correlation_map: dict[str, str] = {}
 
         for event in events:
-            event = {
-                k: (str(v) if hasattr(v, "isoformat") else v) for k, v in event.items()
-            }
+            event_str = {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in event.items()}
 
-            corr_id = event.get("correlation_id")
-            target_id = event.get("target_id")
+            corr_id = event_str.get("correlation_id")
+            target_id = event_str.get("target_id")
 
             group_key = None
             if corr_id and str(corr_id) in correlation_map:
@@ -71,13 +69,15 @@ class IncidentCorrelator:
 
         incidents: list[dict[str, Any]] = []
         for group_key, group_events in groups.items():
-            incidents.append({
-                "group_key": group_key,
-                "event_count": len(group_events),
-                "events": group_events,
-                "severity": _highest_severity(group_events),
-                "time_span_seconds": _time_span(group_events),
-            })
+            incidents.append(
+                {
+                    "group_key": group_key,
+                    "event_count": len(group_events),
+                    "events": group_events,
+                    "severity": _highest_severity(group_events),
+                    "time_span_seconds": _time_span(group_events),
+                }
+            )
 
         incidents.sort(key=lambda x: x["event_count"], reverse=True)
         return incidents
@@ -144,10 +144,9 @@ class IncidentCorrelator:
 
         chain = []
         for r in chain_result.fetchall():
-            chain.append({
-                k: (str(v) if hasattr(v, "isoformat") else v)
-                for k, v in r._mapping.items()
-            })
+            chain.append(
+                {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in r._mapping.items()}
+            )
 
         return {
             "incident_id": incident_id,
@@ -178,14 +177,14 @@ def _highest_severity(events: list[dict[str, Any]]) -> str:
 def _time_span(events: list[dict[str, Any]]) -> float:
     """Rough time span in seconds based on string timestamps."""
     timestamps = [e.get("created_at", "") for e in events if e.get("created_at")]
-    if len(timestamps) < 2:
+    if len(timestamps) < 2:  # noqa: PLR2004
         return 0.0
     timestamps.sort()
     try:
         first = _parse_iso_datetime(timestamps[0])
         last = _parse_iso_datetime(timestamps[-1])
         return (last - first).total_seconds()
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return 0.0
 
 
@@ -195,5 +194,5 @@ def _within_cooldown(ts_a: str, ts_b: str, cooldown_seconds: int) -> bool:
         a = _parse_iso_datetime(ts_a)
         b = _parse_iso_datetime(ts_b)
         return abs((b - a).total_seconds()) < cooldown_seconds
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return False
