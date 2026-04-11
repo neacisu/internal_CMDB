@@ -754,6 +754,35 @@ export const deleteUserPreference = (key: string) =>
 export const getSystemInfo = () => apiFetch<SystemInfo>("/settings/system-info");
 
 /* ------------------------------------------------------------------ */
+/*  Integrations — TimelinesAI (WhatsApp)                             */
+/* ------------------------------------------------------------------ */
+
+export interface TimelinesAIConfig {
+  enabled: boolean;
+  api_token: string;
+  webhook_secret: string;
+  subscribed_events: string[];
+  auto_reply_enabled: boolean;
+  auto_reply_template: string;
+}
+
+export interface TimelinesAITestResult {
+  ok: boolean;
+  workspace_name?: string;
+  error?: string;
+}
+
+export const getTimelinesAIConfig = () =>
+  apiFetch<TimelinesAIConfig>("/integrations/timelinesai/config");
+export const saveTimelinesAIConfig = (body: TimelinesAIConfig) =>
+  apiFetch<TimelinesAIConfig>("/integrations/timelinesai/config", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+export const testTimelinesAIConnection = () =>
+  apiFetch<TimelinesAITestResult>("/integrations/timelinesai/test", { method: "POST" });
+
+/* ------------------------------------------------------------------ */
 /*  Agent Sessions (ReAct loop)                                       */
 /* ------------------------------------------------------------------ */
 

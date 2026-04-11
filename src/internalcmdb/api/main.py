@@ -39,6 +39,9 @@ from .routers import (
     auth as auth_router,
 )
 from .routers import (
+    integrations as integrations_router,
+)
+from .routers import (
     settings as settings_router,
 )
 
@@ -249,6 +252,7 @@ def create_app() -> FastAPI:
     fapp.include_router(graph.router, prefix=prefix)
     fapp.include_router(slo.router, prefix=prefix)
     fapp.include_router(settings_router.router, prefix=prefix)
+    fapp.include_router(integrations_router.router, prefix=prefix)
 
     # Real-time WebSocket + SSE (mounted at /api/v1/ for consistency)
     fapp.include_router(realtime.router, prefix=prefix)

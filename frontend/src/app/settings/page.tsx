@@ -14,6 +14,7 @@ import NotificationsPanel from "./panels/NotificationsPanel";
 import PreferencesPanel from "./panels/PreferencesPanel";
 import SystemInfoPanel from "./panels/SystemInfoPanel";
 import PasswordPanel from "./panels/PasswordPanel";
+import IntegrationsPanel from "./panels/IntegrationsPanel";
 
 function SettingsContent() {
   const searchParams = useSearchParams();
@@ -42,6 +43,7 @@ function SettingsContent() {
               <TabsTrigger value="observability">Observability</TabsTrigger>
               <TabsTrigger value="notifications">Notifications</TabsTrigger>
               <TabsTrigger value="preferences">Preferences</TabsTrigger>
+              <TabsTrigger value="integrations">Integrations</TabsTrigger>
               <TabsTrigger value="system">System Info</TabsTrigger>
             </>
           )}
@@ -58,6 +60,7 @@ function SettingsContent() {
             <TabsContent value="observability"><ObservabilityPanel /></TabsContent>
             <TabsContent value="notifications"><NotificationsPanel /></TabsContent>
             <TabsContent value="preferences"><PreferencesPanel /></TabsContent>
+            <TabsContent value="integrations"><IntegrationsPanel /></TabsContent>
             <TabsContent value="system"><SystemInfoPanel /></TabsContent>
           </>
         )}
