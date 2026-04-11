@@ -154,33 +154,12 @@ async def test_timelinesai_connection(
     body: TestConnectionRequest,
 ) -> TimelinesAITestResult:
     store = _store()
-    # Use token from request body if provided (unsaved form value), else fall back to stored token
-    req_token = body.api_token if body.api_token and body.api_token != "***" else None
+    req_token = body.api_token if (body.api_token and body.api_token != "***") else None
     token = req_token or await store.get(_SK_TAI_TOKEN)
     if not token:
         raise HTTPException(status_code=400, detail="No API token configured")
-
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(
-                f"{_TIMELINESAI_BASE}/whatsapp_accounts",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-        if resp.status_code == status.HTTP_200_OK:
-            data: Any = resp.json()
-            # Response shape: {"status":"ok","data":{"whatsapp_accounts":[{...}]}}
-            raw_data = data.get("data", {}) if isinstance(data, dict) else {}
-            accounts: list[Any] = (
-                raw_data.get("whatsapp_accounts", [])
-                if isinstance(raw_data, dict)
-                else raw_data if isinstance(raw_data, list) else []
-            )
-            first = accounts[0] if accounts else {}
-            name = first.get("account_name") or first.get("owner_name")
-            return TimelinesAITestResult(ok=True, workspace_name=name)
-        if resp.status_code == status.HTTP_401_UNAUTHORIZED:
-            return TimelinesAITestResult(ok=False, error="Invalid or expired API token")
-        return TimelinesAITestResult(ok=False, error=f"API returned {resp.status_code}")
+        return await _call_timelinesai_test(str(token))
     except httpx.TimeoutException:
         return TimelinesAITestResult(ok=False, error="Connection timeout")
     except httpx.ConnectError as exc:
@@ -188,6 +167,30 @@ async def test_timelinesai_connection(
     except Exception as exc:
         logger.exception("TimelinesAI test failed")
         return TimelinesAITestResult(ok=False, error=str(exc))
+
+
+def _extract_account_name(data: Any) -> str | None:
+    """Extract account name from TimelinesAI whatsapp_accounts response."""
+    # Response shape: {"status":"ok","data":{"whatsapp_accounts":[{...}]}}
+    raw_data = data.get("data", {}) if isinstance(data, dict) else {}
+    accounts: list[Any] = (
+        raw_data.get("whatsapp_accounts", []) if isinstance(raw_data, dict) else []
+    )
+    first = accounts[0] if accounts else {}
+    return first.get("account_name") or first.get("owner_name")
+
+
+async def _call_timelinesai_test(token: str) -> TimelinesAITestResult:
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.get(
+            f"{_TIMELINESAI_BASE}/whatsapp_accounts",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    if resp.status_code == status.HTTP_200_OK:
+        return TimelinesAITestResult(ok=True, workspace_name=_extract_account_name(resp.json()))
+    if resp.status_code == status.HTTP_401_UNAUTHORIZED:
+        return TimelinesAITestResult(ok=False, error="Invalid or expired API token")
+    return TimelinesAITestResult(ok=False, error=f"API returned {resp.status_code}")
 
 
 @router.post(
