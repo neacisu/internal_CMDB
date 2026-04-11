@@ -460,16 +460,16 @@ def _parse_vital_gpu(gpu_payload: dict[str, Any] | None) -> float | None:
     return round(max(pcts), 1) if pcts else None
 
 
-def _parse_vital_docker(docker_payload: dict[str, Any] | None) -> tuple[int, int]:
-    """Return (containers_total, containers_running) from a docker_state payload dict."""
+def _parse_vital_docker(docker_payload: dict[str, Any] | None) -> tuple[int, int, int, int]:
+    """Return (total, running, healthy, unhealthy) from a docker_state payload dict."""
     if not docker_payload:
-        return 0, 0
-    containers_list = docker_payload.get("containers", [])
-    total = docker_payload.get("total", len(containers_list))
-    running = sum(
-        1 for c in containers_list if isinstance(c, dict) and "Up" in str(c.get("status", ""))
-    )
-    return total, running
+        return 0, 0, 0, 0
+    containers_list = cast(list[dict[str, Any]], docker_payload.get("containers") or [])
+    total = int(docker_payload.get("total") or len(containers_list))
+    running = sum(1 for c in containers_list if "Up" in str(c.get("status", "")))
+    healthy = sum(1 for c in containers_list if c.get("health") == "healthy")
+    unhealthy = sum(1 for c in containers_list if c.get("health") == "unhealthy")
+    return total, running, healthy, unhealthy
 
 
 def _build_vital_dict(
@@ -485,7 +485,9 @@ def _build_vital_dict(
     mem_pct = round((mem_total - mem_avail) / mem_total * 100, 1) if mem_total > 0 else None
     mem_total_gb = round(mem_total / (1024 * 1024), 1) if mem_total else None
 
-    containers_total, containers_running = _parse_vital_docker(extras.docker)
+    containers_total, containers_running, containers_healthy, containers_unhealthy = (
+        _parse_vital_docker(extras.docker)
+    )
 
     return {
         "agent_id": str(agent.agent_id),
@@ -499,6 +501,8 @@ def _build_vital_dict(
         "disk_root_pct": _parse_vital_disk(extras.disk),
         "containers_running": containers_running,
         "containers_total": containers_total,
+        "containers_healthy": containers_healthy,
+        "containers_unhealthy": containers_unhealthy,
         "gpu_pct": _parse_vital_gpu(extras.gpu),
         "vitals_at": vitals_at,
     }

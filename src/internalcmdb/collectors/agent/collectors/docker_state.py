@@ -11,7 +11,8 @@ def collect() -> dict[str, Any]:
     """Return Docker container state via ``docker ps``."""
     fmt = (
         '{"name":{{json .Names}},"image":{{json .Image}},'
-        '"status":{{json .Status}},"ports":{{json .Ports}},'
+        '"status":{{json .Status}},"health":{{json .Health}},'
+        '"ports":{{json .Ports}},'
         '"created":{{json .CreatedAt}},"id":{{json .ID}}}'
     )
     try:

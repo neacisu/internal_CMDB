@@ -533,6 +533,8 @@ export interface FleetVital {
   disk_root_pct: number | null;
   containers_running: number;
   containers_total: number;
+  containers_healthy: number;
+  containers_unhealthy: number;
   gpu_pct: number | null;
   vitals_at: string | null;
 }

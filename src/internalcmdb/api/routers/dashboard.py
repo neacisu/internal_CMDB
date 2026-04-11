@@ -337,13 +337,15 @@ def _parse_disk_root_pct(disk_snap: dict[str, Any] | None) -> float | None:
     return None
 
 
-def _parse_docker_counts(docker_snap: dict[str, Any] | None) -> tuple[int, int]:
-    """Return (total, running) container counts from a docker_state payload."""
+def _parse_docker_counts(docker_snap: dict[str, Any] | None) -> tuple[int, int, int, int]:
+    """Return (total, running, healthy, unhealthy) container counts from a docker_state payload."""
     if not docker_snap:
-        return 0, 0
+        return 0, 0, 0, 0
     containers_list = cast(list[dict[str, Any]], docker_snap.get("containers") or [])
     running = sum(1 for c in containers_list if "Up" in str(c.get("status", "")))
-    return int(docker_snap.get("total") or 0), running
+    healthy = sum(1 for c in containers_list if c.get("health") == "healthy")
+    unhealthy = sum(1 for c in containers_list if c.get("health") == "unhealthy")
+    return int(docker_snap.get("total") or 0), running, healthy, unhealthy
 
 
 def _latest_snapshot(db: Session, agent_id: object, kind: str) -> dict[str, Any] | None:
@@ -387,7 +389,7 @@ def fleet_vitals(
         mem_pct, mem_total_gb = _parse_vitals_mem(sv)
         cpu_pct: float | None = sv.get("cpu_pct")
         disk_pct = _parse_disk_root_pct(_latest_snapshot(db, agent.agent_id, "disk_state"))
-        container_count, running_count = _parse_docker_counts(
+        container_count, running_count, healthy_count, unhealthy_count = _parse_docker_counts(
             _latest_snapshot(db, agent.agent_id, "docker_state"),
         )
         gpu_pct = _parse_gpu_pct(_latest_snapshot(db, agent.agent_id, "gpu_state"))
@@ -405,6 +407,8 @@ def fleet_vitals(
                 "disk_root_pct": disk_pct,
                 "containers_running": running_count,
                 "containers_total": container_count,
+                "containers_healthy": healthy_count,
+                "containers_unhealthy": unhealthy_count,
                 "gpu_pct": gpu_pct,
                 "vitals_at": str(vitals_snap[1]) if vitals_snap else None,
             }

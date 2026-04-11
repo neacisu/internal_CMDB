@@ -62,6 +62,21 @@ function SystemCard({ host }: Readonly<{ host: HostDetail }>) {
   );
 }
 
+function DockerHealthLabel({ vital }: Readonly<{ vital: FleetVital }>) {
+  if (vital.containers_total === 0) return <p className="text-xs text-(--tx4)">no docker</p>;
+  if ((vital.containers_unhealthy ?? 0) > 0) {
+    return (
+      <p className="text-xs" style={{ color: "var(--er)", fontFamily: "var(--fM)" }}>
+        ⚠ {vital.containers_unhealthy} unhealthy
+      </p>
+    );
+  }
+  if ((vital.containers_healthy ?? 0) > 0) {
+    return <p className="text-xs text-(--tx4)">{vital.containers_healthy} healthy</p>;
+  }
+  return <p className="text-xs text-(--tx4)">running / total</p>;
+}
+
 function VitalMetricsCard({ vital }: Readonly<{ vital: FleetVital }>) {
   return (
     <Card className="md:col-span-2">
@@ -117,7 +132,7 @@ function VitalMetricsCard({ vital }: Readonly<{ vital: FleetVital }>) {
             <p className="text-lg font-semibold" style={{ fontFamily: "var(--fM)" }}>
               {vital.containers_total > 0 ? `${vital.containers_running} / ${vital.containers_total}` : "N/A"}
             </p>
-            <p className="text-xs text-(--tx4)">{vital.containers_total > 0 ? "running / total" : "no docker"}</p>
+            <DockerHealthLabel vital={vital} />
           </div>
         </div>
         {vital.last_heartbeat_at && (

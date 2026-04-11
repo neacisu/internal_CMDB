@@ -325,9 +325,18 @@ export default function DashboardPage() {
                         </td>
                         <td style={{ padding: "7px 10px" }}>
                           {v.containers_total > 0 ? (
-                            <span style={{ color: "var(--in)" }}>
-                              <Container size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
-                              {v.containers_running}/{v.containers_total}
+                            <span
+                              title={v.containers_unhealthy > 0 ? `${v.containers_unhealthy} unhealthy` : undefined}
+                            >
+                              <Container size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 3, color: v.containers_unhealthy > 0 ? "var(--er)" : "var(--in)" }} />
+                              <span style={{ color: v.containers_unhealthy > 0 ? "var(--er)" : "var(--in)" }}>
+                                {v.containers_running}/{v.containers_total}
+                              </span>
+                              {(v.containers_unhealthy ?? 0) > 0 && (
+                                <span style={{ color: "var(--er)", marginLeft: 5, fontSize: "0.78em", fontFamily: "var(--fM)" }}>
+                                  ⚠ {v.containers_unhealthy}
+                                </span>
+                              )}
                             </span>
                           ) : (
                             <span style={{ color: "var(--tx4)" }}>—</span>
