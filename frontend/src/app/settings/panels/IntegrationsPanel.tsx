@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -16,11 +16,6 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   MessageSquare,
   Save,
@@ -87,13 +82,14 @@ export default function IntegrationsPanel() {
   const [form, setForm] = useState<TimelinesAIConfig | null>(null);
   const [webhookOpen, setWebhookOpen] = useState(false);
 
-  const { isLoading } = useQuery<TimelinesAIConfig>({
+  const { isLoading, data: queryData } = useQuery<TimelinesAIConfig>({
     queryKey: ["settings", "integrations", "timelinesai"],
     queryFn: getTimelinesAIConfig,
-    onSuccess: (data) => {
-      if (!form) setForm(data);
-    },
-  } as Parameters<typeof useQuery>[0]);
+  });
+
+  useEffect(() => {
+    if (queryData && !form) setForm(queryData);
+  }, [queryData]);
 
   const saveMutation = useMutation({
     mutationFn: (cfg: TimelinesAIConfig) => saveTimelinesAIConfig(cfg),
@@ -105,7 +101,7 @@ export default function IntegrationsPanel() {
   });
 
   const testMutation = useMutation({
-    mutationFn: testTimelinesAIConnection,
+    mutationFn: (token?: string) => testTimelinesAIConnection(token),
     onSuccess: (res) => {
       if (res.ok) {
         toast.success(`Connected — workspace: ${res.workspace_name ?? "OK"}`);
@@ -229,7 +225,7 @@ export default function IntegrationsPanel() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => testMutation.mutate()}
+              onClick={() => testMutation.mutate(form.api_token === "***" ? undefined : form.api_token)}
               disabled={!form.api_token || testMutation.isPending}
               className="gap-1.5"
             >
@@ -244,18 +240,18 @@ export default function IntegrationsPanel() {
           </div>
 
           {/* Webhook section */}
-          <Collapsible open={webhookOpen} onOpenChange={setWebhookOpen}>
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="flex items-center gap-2 w-full py-2 border-t border-[oklch(0.24_0.012_255)] text-sm font-(--fM) text-sidebar-foreground hover:text-(--tx1) transition-colors"
-              >
-                <Webhook className="h-3.5 w-3.5" />
-                Webhook configuration
-                <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform ${webhookOpen ? "rotate-180" : ""}`} />
-              </button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="flex flex-col gap-4 pt-3">
+          <div className="border-t border-[oklch(0.24_0.012_255)]">
+            <button
+              type="button"
+              onClick={() => setWebhookOpen(s => !s)}
+              className="flex items-center gap-2 w-full py-2 text-sm font-(--fM) text-sidebar-foreground hover:text-(--tx1) transition-colors"
+            >
+              <Webhook className="h-3.5 w-3.5" />
+              Webhook configuration
+              <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform ${webhookOpen ? "rotate-180" : ""}`} />
+            </button>
+            {webhookOpen && (
+              <div className="flex flex-col gap-4 pt-3">
 
               {/* Webhook Secret */}
               <div className="flex flex-col gap-1.5">
@@ -322,8 +318,9 @@ export default function IntegrationsPanel() {
                 </p>
               </div>
 
-            </CollapsibleContent>
-          </Collapsible>
+            </div>
+            )}
+          </div>
 
           {/* Auto-reply section */}
           <div className="flex flex-col gap-3 pt-1 border-t border-[oklch(0.24_0.012_255)]">
@@ -346,7 +343,7 @@ export default function IntegrationsPanel() {
                   onChange={e => set("auto_reply_template", e.target.value)}
                   placeholder="Hi! We received your message and will reply shortly."
                   rows={3}
-                  className="w-full rounded-lg border border-[oklch(0.24_0.012_255)] bg-(--sl3) text-(--tx1) text-sm px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-[oklch(0.72_0.18_255)] placeholder:text-(--tx3)"8_255)] placeholder:text-(--tx3)"
+                  className="w-full rounded-lg border border-[oklch(0.24_0.012_255)] bg-(--sl3) text-(--tx1) text-sm px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-[oklch(0.72_0.18_255)] placeholder:text-(--tx3)"
                 />
               </div>
             )}

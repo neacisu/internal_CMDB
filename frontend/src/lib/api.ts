@@ -779,8 +779,11 @@ export const saveTimelinesAIConfig = (body: TimelinesAIConfig) =>
     method: "PUT",
     body: JSON.stringify(body),
   });
-export const testTimelinesAIConnection = () =>
-  apiFetch<TimelinesAITestResult>("/integrations/timelinesai/test", { method: "POST" });
+export const testTimelinesAIConnection = (api_token?: string) =>
+  apiFetch<TimelinesAITestResult>("/integrations/timelinesai/test", {
+    method: "POST",
+    body: JSON.stringify({ api_token: api_token ?? null }),
+  });
 
 /* ------------------------------------------------------------------ */
 /*  Agent Sessions (ReAct loop)                                       */

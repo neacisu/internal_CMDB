@@ -32,6 +32,8 @@ _ADMIN_ROLES = ("admin",)
 
 _TIMELINESAI_BASE = "https://app.timelines.ai/integrations/api"
 
+_EVT_MSG_RECEIVED = "message:received:new"
+
 # Setting keys
 _SK_TAI_ENABLED = "integrations.timelinesai.enabled"
 _SK_TAI_TOKEN = "integrations.timelinesai.api_token"
@@ -49,7 +51,7 @@ class TimelinesAIConfig(BaseModel):
     enabled: bool = False
     api_token: str = ""
     webhook_secret: str = ""
-    subscribed_events: list[str] = ["message:received:new"]
+    subscribed_events: list[str] = [_EVT_MSG_RECEIVED]
     auto_reply_enabled: bool = False
     auto_reply_template: str = ""
 
@@ -57,7 +59,7 @@ class TimelinesAIConfig(BaseModel):
     @classmethod
     def _validate_events(cls, v: list[str]) -> list[str]:
         allowed = {
-            "message:new", "message:received:new", "message:sent:new",
+            "message:new", _EVT_MSG_RECEIVED, "message:sent:new",
             "chat:created", "chat:received:created", "chat:sent:created",
             "chat:assigned", "chat:unassigned",
         }
@@ -78,6 +80,10 @@ class TimelinesAITestResult(BaseModel):
     error: str | None = None
 
 
+class TestConnectionRequest(BaseModel):
+    api_token: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -91,7 +97,7 @@ async def _load_config(store: SettingsStore) -> TimelinesAIConfig:
         enabled=bool(await store.get(_SK_TAI_ENABLED) or False),
         api_token="",  # never return the raw token
         webhook_secret="",  # never return the secret
-        subscribed_events=list(await store.get(_SK_TAI_EVENTS) or ["message:received:new"]),
+        subscribed_events=list(await store.get(_SK_TAI_EVENTS) or [_EVT_MSG_RECEIVED]),
         auto_reply_enabled=bool(await store.get(_SK_TAI_AUTO_REPLY) or False),
         auto_reply_template=str(await store.get(_SK_TAI_REPLY_TPL) or ""),
     )
@@ -144,9 +150,13 @@ async def save_timelinesai_config(body: TimelinesAIConfig) -> TimelinesAIConfig:
     dependencies=[Depends(require_role(*_READER_ROLES))],
     summary="Test TimelinesAI API connection using stored token",
 )
-async def test_timelinesai_connection() -> TimelinesAITestResult:
+async def test_timelinesai_connection(
+    body: TestConnectionRequest,
+) -> TimelinesAITestResult:
     store = _store()
-    token = await store.get(_SK_TAI_TOKEN)
+    # Use token from request body if provided (unsaved form value), else fall back to stored token
+    req_token = body.api_token if body.api_token and body.api_token != "***" else None
+    token = req_token or await store.get(_SK_TAI_TOKEN)
     if not token:
         raise HTTPException(status_code=400, detail="No API token configured")
 
@@ -218,7 +228,7 @@ async def timelinesai_webhook(request: Request) -> dict[str, str]:
         return {"status": "event_not_subscribed"}
 
     # Auto-reply for new incoming messages
-    if event_type == "message:received:new":
+    if event_type == _EVT_MSG_RECEIVED:
         auto_reply = await store.get(_SK_TAI_AUTO_REPLY)
         if auto_reply:
             template = str(await store.get(_SK_TAI_REPLY_TPL) or "")

@@ -109,7 +109,7 @@ export default function NotificationsPanel() {
 
   if (isLoading) return (
     <div className="flex flex-col gap-2">
-      {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full rounded-[8px]" />)}
+      {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
     </div>
   );
 
@@ -195,7 +195,7 @@ export default function NotificationsPanel() {
                     type="checkbox"
                     checked={newForm.is_active}
                     onChange={e => setNewForm(f => ({ ...f, is_active: e.target.checked }))}
-                    className="h-4 w-4 rounded accent-[var(--ok)] cursor-pointer"
+                    className="h-4 w-4 rounded accent-(--ok) cursor-pointer"
                   />
                   <Label htmlFor="ch-active" className="cursor-pointer text-sm">Active</Label>
                 </div>
@@ -237,7 +237,7 @@ export default function NotificationsPanel() {
               {data.map(ch => (
                 <TableRow key={ch.channel_id} className="border-[oklch(0.24_0.012_255)]">
                   <TableCell className="font-medium text-sm">{ch.name}</TableCell>
-                  <TableCell className="text-(--tx3) text-xs font-(--fM) max-w-[180px] truncate">
+                  <TableCell className="text-(--tx3) text-xs font-(--fM) max-w-45 truncate">
                     {ch.target_url ?? "—"}
                   </TableCell>
                   <TableCell>
@@ -245,7 +245,7 @@ export default function NotificationsPanel() {
                       {ch.events.map(ev => (
                         <span
                           key={ev}
-                          className="rounded-[4px] bg-(--sl3) px-1.5 py-0.5 text-[11px] text-(--tx3) font-(--fM)"
+                          className="rounded-sm bg-(--sl3) px-1.5 py-0.5 text-[11px] text-(--tx3) font-(--fM)"
                         >
                           {ev}
                         </span>
