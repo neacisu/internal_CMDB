@@ -184,7 +184,7 @@ class SettingsStore:
             row = conn.execute(
                 text("""
                     UPDATE config.app_setting
-                       SET value_jsonb = :val::jsonb,
+                       SET value_jsonb = CAST(:val AS jsonb),
                            updated_at  = now(),
                            updated_by  = :by
                      WHERE setting_key = :key
