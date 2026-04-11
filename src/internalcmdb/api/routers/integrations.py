@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, field_validator
 
 from internalcmdb.api.middleware.rbac import require_role
+from internalcmdb.api.routers.settings import _user_id_from_request
 from internalcmdb.config.settings_store import SettingsStore, get_settings_store
 
 logger = logging.getLogger(__name__)
@@ -130,17 +131,18 @@ async def get_timelinesai_config() -> TimelinesAIConfig:
     dependencies=[Depends(require_role(*_ADMIN_ROLES))],
     summary="Save TimelinesAI integration configuration",
 )
-async def save_timelinesai_config(body: TimelinesAIConfig) -> TimelinesAIConfig:
+async def save_timelinesai_config(body: TimelinesAIConfig, request: Request) -> TimelinesAIConfig:
     store = _store()
-    await store.set(_SK_TAI_ENABLED, body.enabled)
-    await store.set(_SK_TAI_EVENTS, body.subscribed_events)
-    await store.set(_SK_TAI_AUTO_REPLY, body.auto_reply_enabled)
-    await store.set(_SK_TAI_REPLY_TPL, body.auto_reply_template)
+    user = _user_id_from_request(request)
+    await store.set(_SK_TAI_ENABLED, body.enabled, updated_by=user)
+    await store.set(_SK_TAI_EVENTS, body.subscribed_events, updated_by=user)
+    await store.set(_SK_TAI_AUTO_REPLY, body.auto_reply_enabled, updated_by=user)
+    await store.set(_SK_TAI_REPLY_TPL, body.auto_reply_template, updated_by=user)
     # Only update secrets if they are not the masked placeholder
     if body.api_token and body.api_token != "***":
-        await store.set(_SK_TAI_TOKEN, body.api_token)
+        await store.set(_SK_TAI_TOKEN, body.api_token, updated_by=user)
     if body.webhook_secret and body.webhook_secret != "***":
-        await store.set(_SK_TAI_WEBHOOK_SECRET, body.webhook_secret)
+        await store.set(_SK_TAI_WEBHOOK_SECRET, body.webhook_secret, updated_by=user)
     return await _load_config(store)
 
 
