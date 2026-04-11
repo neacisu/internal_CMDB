@@ -168,8 +168,15 @@ async def test_timelinesai_connection(
             )
         if resp.status_code == status.HTTP_200_OK:
             data: Any = resp.json()
-            accounts = data if isinstance(data, list) else data.get("data", [])
-            name = accounts[0].get("full_name") if accounts else None
+            # Response shape: {"status":"ok","data":{"whatsapp_accounts":[{...}]}}
+            raw_data = data.get("data", {}) if isinstance(data, dict) else {}
+            accounts: list[Any] = (
+                raw_data.get("whatsapp_accounts", [])
+                if isinstance(raw_data, dict)
+                else raw_data if isinstance(raw_data, list) else []
+            )
+            first = accounts[0] if accounts else {}
+            name = first.get("account_name") or first.get("owner_name")
             return TimelinesAITestResult(ok=True, workspace_name=name)
         if resp.status_code == status.HTTP_401_UNAUTHORIZED:
             return TimelinesAITestResult(ok=False, error="Invalid or expired API token")
