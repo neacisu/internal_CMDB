@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LLMPanel from "./panels/LLMPanel";
@@ -14,7 +15,7 @@ import PreferencesPanel from "./panels/PreferencesPanel";
 import SystemInfoPanel from "./panels/SystemInfoPanel";
 import PasswordPanel from "./panels/PasswordPanel";
 
-export default function SettingsPage() {
+function SettingsContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
   const required = searchParams.get("required") === "true";
@@ -65,5 +66,13 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense>
+      <SettingsContent />
+    </Suspense>
   );
 }

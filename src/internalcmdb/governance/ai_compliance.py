@@ -33,7 +33,7 @@ import logging
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, ProgrammingError
@@ -177,7 +177,7 @@ class AIComplianceManager:
         call_counts = await self._fetch_llm_call_counts_by_model_30d()
         rows = [asdict(entry) for entry in self._inventory]
         for row in rows:
-            mids = row.get("model_ids") or []
+            mids: list[str] = cast(list[str], row.get("model_ids") or [])
             total = sum(int(call_counts.get(m, 0)) for m in mids)
             row["llm_calls_last_30d"] = total
             row["llm_calls_by_model_30d"] = {m: int(call_counts.get(m, 0)) for m in mids}
@@ -312,8 +312,9 @@ class AIComplianceManager:
         lines: list[str],
         article_12: dict[str, Any],
     ) -> None:
-        def pf(v):
+        def pf(v: object) -> str:
             return "PASS" if v else "FAIL"
+
         lines.extend(
             [
                 "## 4. Record-Keeping (Article 12)",
@@ -346,8 +347,9 @@ class AIComplianceManager:
         lines: list[str],
         article_52: dict[str, Any],
     ) -> None:
-        def pf(v):
+        def pf(v: object) -> str:
             return "PASS" if v else "FAIL"
+
         lines.extend(
             [
                 "## 6. Transparency Obligations (Article 52)",
@@ -367,8 +369,9 @@ class AIComplianceManager:
         lines: list[str],
         article_15: dict[str, Any],
     ) -> None:
-        def pf(v):
+        def pf(v: object) -> str:
             return "PASS" if v else "FAIL"
+
         lines.extend(
             [
                 "## 7. Accuracy, Robustness, and Cybersecurity (Article 15)",

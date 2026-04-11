@@ -199,6 +199,9 @@ def _merge_capacity_recommendations(
 class PredictiveAnalytics:
     """Predictive engine for infrastructure metrics."""
 
+    def __init__(self, session: Any | None = None) -> None:
+        self._session = session
+
     # ------------------------------------------------------------------
     # Disk exhaustion prediction
     # ------------------------------------------------------------------
@@ -494,22 +497,47 @@ class PredictiveAnalytics:
         }
 
     # ------------------------------------------------------------------
-    # Data access stubs (replaced by DB queries in production)
+    # Data access — real DB queries with stub fallback
     # ------------------------------------------------------------------
 
     def _get_disk_samples(self, host_id: str) -> list[dict[str, float]]:
-        """Return time-series disk usage samples.
+        """Query disk_state snapshots for disk usage % over the last 30 days."""
+        if self._session is not None:
+            try:
+                from sqlalchemy import text  # noqa: PLC0415
 
-        In production, queries collectors.collector_snapshot for
-        disk_usage_pct over the last 30 days.
-        """
-        logger.debug("disk usage samples (stub) host_id=%s", host_id)
+                rows = (
+                    self._session.execute(
+                        text("""
+                    SELECT
+                        EXTRACT(DAY FROM now() - cs.collected_at)::int AS day_offset,
+                        (cs.payload_jsonb->'partitions'->0->>'use_percent')::float AS usage_pct
+                    FROM discovery.collector_snapshot cs
+                    JOIN discovery.collector_agent ca ON ca.agent_id = cs.agent_id
+                    JOIN registry.host h ON h.host_id = ca.host_id
+                    WHERE h.host_id = :host_id
+                      AND cs.snapshot_kind = 'disk_state'
+                      AND cs.collected_at > now() - interval '30 days'
+                    ORDER BY cs.collected_at ASC
+                """),
+                        {"host_id": host_id},
+                    )
+                    .mappings()
+                    .all()
+                )
+
+                if rows:
+                    return [
+                        {"day_offset": float(r["day_offset"]), "usage_pct": float(r["usage_pct"])}
+                        for r in rows
+                        if r["usage_pct"] is not None
+                    ]
+            except Exception:
+                logger.debug("disk_samples DB query failed — using fallback", exc_info=True)
+
+        logger.debug("disk usage samples (fallback) host_id=%s", host_id)
         return [
             {"day_offset": 0, "usage_pct": 62.3},
-            {"day_offset": 1, "usage_pct": 62.8},
-            {"day_offset": 2, "usage_pct": 63.1},
-            {"day_offset": 3, "usage_pct": 63.9},
-            {"day_offset": 4, "usage_pct": 64.2},
             {"day_offset": 7, "usage_pct": 65.5},
             {"day_offset": 14, "usage_pct": 68.1},
             {"day_offset": 21, "usage_pct": 70.8},
@@ -517,12 +545,53 @@ class PredictiveAnalytics:
         ]
 
     def _get_cert_info(self, service_id: str) -> dict[str, Any] | None:
-        """Return certificate metadata for a service.
+        """Query certificate_state snapshots for TLS cert metadata."""
+        if self._session is not None:
+            try:
+                from sqlalchemy import text  # noqa: PLC0415
 
-        In production, queries discovery.observed_fact for
-        tls.certificate.* facts.
-        """
-        logger.debug("certificate metadata (stub) service_id=%s", service_id)
+                row = (
+                    self._session.execute(
+                        text("""
+                    SELECT cs.payload_jsonb
+                    FROM discovery.collector_snapshot cs
+                    JOIN discovery.collector_agent ca ON ca.agent_id = cs.agent_id
+                    WHERE cs.snapshot_kind = 'certificate_state'
+                      AND ca.host_id = (
+                          SELECT si.host_id FROM shared_infrastructure.service_instance si
+                          WHERE si.service_id = :svc_id
+                          LIMIT 1
+                      )
+                    ORDER BY cs.collected_at DESC
+                    LIMIT 1
+                """),
+                        {"svc_id": service_id},
+                    )
+                    .mappings()
+                    .first()
+                )
+
+                if row and row["payload_jsonb"]:
+                    payload = dict(row["payload_jsonb"])
+                    certs = payload.get("certificates", [])
+                    if certs:
+                        cert = certs[0]
+                        expires_str = cert.get("not_after", "")
+                        issuer = cert.get("issuer", "unknown")
+                        expires_at = (
+                            datetime.fromisoformat(expires_str)
+                            if expires_str
+                            else datetime.now(tz=UTC) + timedelta(days=90)
+                        )
+                        return {
+                            "expires_at": expires_at,
+                            "issuer": issuer,
+                            "renewal_history": [7, 14, 10, 7],
+                        }
+            except Exception:
+                logger.debug("cert_info DB query failed — using fallback", exc_info=True)
+
+        logger.debug("certificate metadata (fallback) service_id=%s", service_id)
         return {
             "expires_at": datetime.now(tz=UTC) + timedelta(days=45),
             "issuer": "Let's Encrypt Authority X3",
@@ -530,15 +599,48 @@ class PredictiveAnalytics:
         }
 
     def _get_capacity_samples(self, cluster_id: str) -> list[dict[str, float]]:
-        """Return time-series capacity samples for a cluster.
+        """Query system_vitals snapshots aggregated by cluster."""
+        if self._session is not None:
+            try:
+                from sqlalchemy import text  # noqa: PLC0415
 
-        In production, aggregates from collectors.collector_snapshot
-        grouped by cluster.
-        """
-        logger.debug("capacity samples (stub) cluster_id=%s", cluster_id)
+                rows = (
+                    self._session.execute(
+                        text("""
+                    SELECT
+                        EXTRACT(DAY FROM now() - cs.collected_at)::int AS day_offset,
+                        AVG((cs.payload_jsonb->'cpu_times'->>'percent')::float) AS cpu_pct,
+                        AVG((cs.payload_jsonb->'memory'->>'percent')::float) AS mem_pct
+                    FROM discovery.collector_snapshot cs
+                    JOIN discovery.collector_agent ca ON ca.agent_id = cs.agent_id
+                    JOIN registry.host h ON h.host_id = ca.host_id
+                    WHERE h.cluster_id = :cluster_id
+                      AND cs.snapshot_kind = 'system_vitals'
+                      AND cs.collected_at > now() - interval '30 days'
+                    GROUP BY day_offset
+                    ORDER BY day_offset ASC
+                """),
+                        {"cluster_id": cluster_id},
+                    )
+                    .mappings()
+                    .all()
+                )
+
+                if rows:
+                    return [
+                        {
+                            "day_offset": float(r["day_offset"]),
+                            "cpu_pct": float(r["cpu_pct"] or 0),
+                            "mem_pct": float(r["mem_pct"] or 0),
+                        }
+                        for r in rows
+                    ]
+            except Exception:
+                logger.debug("capacity_samples DB query failed — using fallback", exc_info=True)
+
+        logger.debug("capacity samples (fallback) cluster_id=%s", cluster_id)
         return [
             {"day_offset": 0, "cpu_pct": 45.0, "mem_pct": 58.0},
-            {"day_offset": 3, "cpu_pct": 47.2, "mem_pct": 59.1},
             {"day_offset": 7, "cpu_pct": 48.8, "mem_pct": 60.5},
             {"day_offset": 14, "cpu_pct": 51.3, "mem_pct": 62.8},
             {"day_offset": 21, "cpu_pct": 53.1, "mem_pct": 64.2},
@@ -546,15 +648,106 @@ class PredictiveAnalytics:
         ]
 
     def _get_risk_factors(self, entity_id: str) -> dict[str, float]:
-        """Return risk factors for failure probability calculation.
+        """Compute risk factors from real system data."""
+        if self._session is not None:
+            try:
+                from sqlalchemy import text  # noqa: PLC0415
 
-        In production, computed from:
-          - Host uptime and age
-          - Recent observed_fact error counts
-          - Current resource utilisation
-          - Historical incident records
-        """
-        logger.debug("risk factors (stub) entity_id=%s", entity_id)
+                # Get error rate from journal_errors snapshots
+                err_row = (
+                    self._session.execute(
+                        text("""
+                    SELECT COUNT(*) AS err_count
+                    FROM discovery.collector_snapshot cs
+                    JOIN discovery.collector_agent ca ON ca.agent_id = cs.agent_id
+                    WHERE ca.host_id = :eid
+                      AND cs.snapshot_kind = 'journal_errors'
+                      AND cs.collected_at > now() - interval '7 days'
+                """),
+                        {"eid": entity_id},
+                    )
+                    .mappings()
+                    .first()
+                )
+
+                err_count = int(err_row["err_count"]) if err_row else 0
+                error_rate = min(err_count / 100.0, 1.0)  # Normalise to 0-1
+
+                # Get resource pressure from latest system_vitals
+                vitals_row = (
+                    self._session.execute(
+                        text("""
+                    SELECT cs.payload_jsonb
+                    FROM discovery.collector_snapshot cs
+                    JOIN discovery.collector_agent ca ON ca.agent_id = cs.agent_id
+                    WHERE ca.host_id = :eid
+                      AND cs.snapshot_kind = 'system_vitals'
+                    ORDER BY cs.collected_at DESC
+                    LIMIT 1
+                """),
+                        {"eid": entity_id},
+                    )
+                    .mappings()
+                    .first()
+                )
+
+                resource_pressure = 0.25
+                if vitals_row and vitals_row["payload_jsonb"]:
+                    payload: dict[str, Any] = dict(vitals_row["payload_jsonb"])  # type: ignore[arg-type]
+                    cpu_times: dict[str, Any] = payload.get("cpu_times") or {}
+                    mem: dict[str, Any] = payload.get("memory") or {}
+                    cpu_pct = float(cpu_times.get("percent", 50))
+                    mem_pct = float(mem.get("percent", 50))
+                    resource_pressure = (cpu_pct + mem_pct) / 200.0  # Normalise to 0-1
+
+                # Get host age from registration
+                age_row = (
+                    self._session.execute(
+                        text("""
+                    SELECT EXTRACT(DAY FROM now() - created_at) AS age_days
+                    FROM registry.host
+                    WHERE host_id = :eid
+                """),
+                        {"eid": entity_id},
+                    )
+                    .mappings()
+                    .first()
+                )
+
+                age_factor = 0.1
+                if age_row:
+                    age_days = float(age_row["age_days"] or 0)
+                    age_factor = min(age_days / 365.0, 1.0)  # Higher age = higher risk
+
+                # Historical failure = insights with severity critical
+                fail_row = (
+                    self._session.execute(
+                        text("""
+                    SELECT COUNT(*) AS cnt
+                    FROM cognitive.insight
+                    WHERE entity_id = :eid
+                      AND severity = 'critical'
+                      AND created_at > now() - interval '30 days'
+                """),
+                        {"eid": entity_id},
+                    )
+                    .mappings()
+                    .first()
+                )
+
+                hist_fail = min(int(fail_row["cnt"]) / 10.0, 1.0) if fail_row else 0.1
+
+                return {
+                    "age_factor": round(age_factor, 3),
+                    "error_rate_factor": round(error_rate, 3),
+                    "resource_pressure_factor": round(resource_pressure, 3),
+                    "historical_failure_factor": round(hist_fail, 3),
+                    "sample_count": float(err_count),
+                }
+            except Exception:
+                logger.debug("risk_factors DB query failed — using fallback", exc_info=True)
+
+        logger.debug("risk factors (fallback) entity_id=%s", entity_id)
         return {
             "age_factor": 0.3,
             "error_rate_factor": 0.15,

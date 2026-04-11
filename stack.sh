@@ -48,7 +48,7 @@ stop_pid() {
     # wait up to 10 s
     local i=0
     while kill -0 "$pid" 2>/dev/null && (( i < 20 )); do
-      sleep 0.5; (( i++ ))
+      sleep 0.5; i=$(( i + 1 ))
     done
     kill -KILL "$pid" 2>/dev/null || true
     rm -f "$pidfile"
@@ -64,6 +64,7 @@ verify_redis() {
   local url
   local py
   local safe_url
+  local attempt max_attempts wait_sec
   url=$(grep -E '^REDIS_URL=' "$(dirname "$0")/.env" 2>/dev/null | cut -d= -f2-)
   url="${url:-$REDIS_URL}"
 
@@ -79,24 +80,33 @@ verify_redis() {
   fi
 
   safe_url=$(printf '%s' "$url" | sed -E 's#(rediss?://)[^@]+@#\1***@#')
+  max_attempts=5
+  wait_sec=3
 
-  if REDIS_CHECK_URL="$url" "$py" -c "
-import os
-import redis
-import sys
-
+  for attempt in $(seq 1 "$max_attempts"); do
+    if REDIS_CHECK_URL="$url" "$py" -c "
+import os, redis, ssl, sys
+url = os.environ['REDIS_CHECK_URL']
+kwargs = {'socket_connect_timeout': 5}
+if url.startswith('rediss://'):
+    kwargs['ssl_cert_reqs'] = ssl.CERT_NONE
 try:
-    r = redis.from_url(os.environ['REDIS_CHECK_URL'], socket_connect_timeout=5)
-    r.ping()
+    redis.from_url(url, **kwargs).ping()
 except Exception as e:
     print(e, file=sys.stderr)
     sys.exit(1)
 " 2>/tmp/redis_check.err; then
-  success "Redis OK (${safe_url})"
-  else
-    error "Cannot reach Redis: $(cat /tmp/redis_check.err)"
-    exit 1
-  fi
+      success "Redis OK (${safe_url})"
+      return 0
+    fi
+    if [[ "$attempt" -lt "$max_attempts" ]]; then
+      warn "Redis not ready (attempt ${attempt}/${max_attempts}): $(cat /tmp/redis_check.err) — retrying in ${wait_sec}s..."
+      sleep "$wait_sec"
+    fi
+  done
+
+  error "Cannot reach Redis after ${max_attempts} attempts: $(cat /tmp/redis_check.err)"
+  exit 1
 }
 
 redis_is_reachable() {
@@ -179,6 +189,18 @@ cmd_start() {
   if pid_is_running "$agent_pid"; then
     warn "Collector agent already running (PID $(cat "$agent_pid"))"
   else
+    # Wait until FastAPI is actually accepting connections before starting agent
+    local api_ready=0
+    for _try in $(seq 1 15); do
+      if curl -sf "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1; then
+        api_ready=1; break
+      fi
+      sleep 1
+    done
+    if [[ "$api_ready" -eq 0 ]]; then
+      error "FastAPI did not become ready in time — skipping agent start"
+      exit 1
+    fi
     info "Starting collector agent for host '${AGENT_HOST_CODE}'..."
     PYTHONPATH="$ROOT/src" AGENT_API_URL="$AGENT_API_URL" AGENT_HOST_CODE="$AGENT_HOST_CODE" \
       python3 -m internalcmdb.collectors.agent \
@@ -201,6 +223,8 @@ cmd_start() {
   local ui_pid="$PID_DIR/ui.pid"
   if pid_is_running "$ui_pid"; then
     warn "Next.js already running (PID $(cat "$ui_pid"))"
+  elif ss -tlnp "sport = :${UI_PORT}" 2>/dev/null | grep -q 'pid='; then
+    warn "Port :${UI_PORT} is in use by another process (Docker container?). Skipping local Next.js start."
   else
     # Remove stale Turbopack lock (left by a previous crashed/killed instance)
     rm -f "$FRONTEND/.next/dev/lock"
@@ -229,17 +253,17 @@ cmd_start() {
 kill_ports() {
   for port in "$API_PORT" "$UI_PORT"; do
     local pids
-    pids=$(lsof -ti TCP:"$port" 2>/dev/null || true)
+    pids=$(ss -tlnp "sport = :${port}" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
     if [[ -n "$pids" ]]; then
-      info "Killing stale process(es) on :${port} (PID ${pids})..."
-      echo "$pids" | tr ' ' '\n' | while read -r pid; do
+      info "Killing stale process(es) on :${port} (PID ${pids//$'\n'/ })..."
+      echo "$pids" | while read -r pid; do
         kill -TERM "$pid" 2>/dev/null || true
       done
       sleep 1
       # Force-kill anything still alive
-      pids=$(lsof -ti TCP:"$port" 2>/dev/null || true)
+      pids=$(ss -tlnp "sport = :${port}" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
       if [[ -n "$pids" ]]; then
-        echo "$pids" | tr ' ' '\n' | while read -r pid; do
+        echo "$pids" | while read -r pid; do
           kill -KILL "$pid" 2>/dev/null || true
         done
       fi

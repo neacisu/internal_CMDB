@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -159,7 +160,7 @@ class TestDeduplicateAlerts:
 
     def test_alert_without_name_or_host_always_kept(self) -> None:
         c = self._correlator()
-        alerts = [{}, {}]
+        alerts: list[dict[str, Any]] = [{}, {}]
         result = c.deduplicate_alerts(alerts)
         assert len(result) == 2
 
@@ -206,14 +207,14 @@ class TestHelpers:
 
     def test_time_span_single_event_zero(self) -> None:
         events = [{"created_at": "2024-06-01T10:00:00+00:00"}]
-        assert _time_span(events) == 0.0
+        assert math.isclose(_time_span(events), 0.0)
 
     def test_time_span_two_events(self) -> None:
         events = [
             {"created_at": "2024-06-01T10:00:00+00:00"},
             {"created_at": "2024-06-01T10:05:00+00:00"},
         ]
-        assert _time_span(events) == pytest.approx(300.0)
+        assert math.isclose(_time_span(events), 300.0)
 
     def test_within_cooldown_true(self) -> None:
         assert (

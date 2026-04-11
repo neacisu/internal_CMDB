@@ -95,7 +95,9 @@ export default function HostsPage() {
               <TableHead>Arch</TableHead>
               <TableHead>Caps</TableHead>
               <TableHead>Agent</TableHead>
+              <TableHead>CPU</TableHead>
               <TableHead>RAM / Load</TableHead>
+              <TableHead>GPU</TableHead>
               <TableHead className="text-right">Confidence</TableHead>
             </TableRow>
           </TableHeader>
@@ -103,7 +105,7 @@ export default function HostsPage() {
             {isLoading
               ? Array.from({ length: 10 }).map((_, i) => (
                   <TableRow key={`skeleton-row-${String(i)}`}>
-                    {Array.from({ length: 9 }).map((__, j) => (
+                    {Array.from({ length: 11 }).map((__, j) => (
                       <TableCell key={`skeleton-cell-${String(i)}-${String(j)}`}><Skeleton className="h-4 w-full" /></TableCell>
                     ))}
                   </TableRow>
@@ -165,11 +167,31 @@ export default function HostsPage() {
                     <TableCell className="text-xs" style={{ fontFamily: "var(--fM)" }}>
                       {(() => {
                         const v = vitalsMap[host.host_code];
+                        if (v?.status !== "online" || v.cpu_pct == null) return <span className="text-(--tx4)">—</span>;
+                        let color = "var(--ok)";
+                        if (v.cpu_pct > 85) color = "var(--er)";
+                        else if (v.cpu_pct > 60) color = "var(--wa)";
+                        return <span style={{ color }}>{v.cpu_pct}%</span>;
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-xs" style={{ fontFamily: "var(--fM)" }}>
+                      {(() => {
+                        const v = vitalsMap[host.host_code];
                         if (v?.status !== "online") return "—";
                         const parts: string[] = [];
                         if (v.memory_pct != null) parts.push(`${v.memory_pct}%`);
                         if (v.load_avg.length > 0) parts.push(`⚡${v.load_avg[0].toFixed(1)}`);
                         return parts.join(" · ") || "—";
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-xs" style={{ fontFamily: "var(--fM)" }}>
+                      {(() => {
+                        const v = vitalsMap[host.host_code];
+                        if (v?.status !== "online" || v.gpu_pct == null) return <span className="text-(--tx4)">—</span>;
+                        let color = "var(--ok)";
+                        if (v.gpu_pct > 85) color = "var(--er)";
+                        else if (v.gpu_pct > 60) color = "var(--wa)";
+                        return <span style={{ color }}>{v.gpu_pct}%</span>;
                       })()}
                     </TableCell>
                     <TableCell className="text-right text-xs" style={{ fontFamily: "var(--fM)" }}>

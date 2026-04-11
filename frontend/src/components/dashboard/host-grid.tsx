@@ -1,12 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getHosts, getFleetVitals, type Host, type Page, type FleetVital } from "@/lib/api";
+import { getHosts, type Host, type Page } from "@/lib/api";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Cpu, Container, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+import { useRefreshCountdown, fmtTime, useFleetVitalsSSE } from "@/lib/hooks";
 
 const HOSTS_INTERVAL = 60_000;
 
@@ -16,11 +16,8 @@ export function HostGrid() {
     queryFn: () => getHosts("page_size=48"),
     refetchInterval: HOSTS_INTERVAL,
   });
-  const { data: vitals } = useQuery<FleetVital[]>({
-    queryKey: ["fleet", "vitals"],
-    queryFn: getFleetVitals,
-    refetchInterval: 10_000,
-  });
+  // Real-time vitals shared with Dashboard via SSE hook
+  const { vitals } = useFleetVitalsSSE();
   const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, HOSTS_INTERVAL);
 
   if (isLoading)
@@ -39,7 +36,7 @@ export function HostGrid() {
     <div>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
       {data.items.map((host) => {
-        const v = vitals?.find(vv => vv.host_code === host.host_code);
+        const v = vitals.find(vv => vv.host_code === host.host_code);
         const memPct = v?.memory_pct;
         return (
           <Link
@@ -69,6 +66,12 @@ export function HostGrid() {
               )}
               {v?.status === "online" && (
                 <span className="ml-auto flex items-center gap-1" style={{ fontFamily: "var(--fM)", fontSize: 10 }}>
+                  {v.cpu_pct != null && (() => {
+                    let color = "var(--ok)";
+                    if (v.cpu_pct > 85) color = "var(--er)";
+                    else if (v.cpu_pct > 60) color = "var(--wa)";
+                    return <span style={{ color }} title="CPU%">C:{v.cpu_pct}%</span>;
+                  })()}
                   {memPct != null && (() => {
                     let color = "var(--ok)";
                     if (memPct > 85) color = "var(--er)";
@@ -78,6 +81,12 @@ export function HostGrid() {
                         {memPct}%
                       </span>
                     );
+                  })()}
+                  {v.gpu_pct != null && (() => {
+                    let color = "var(--ok)";
+                    if (v.gpu_pct > 85) color = "var(--er)";
+                    else if (v.gpu_pct > 60) color = "var(--wa)";
+                    return <span style={{ color }} title="GPU%">G:{v.gpu_pct}%</span>;
                   })()}
                   {v.load_avg.length > 0 && (
                     <span style={{ color: "var(--tx4)" }}>

@@ -31,7 +31,7 @@ from internalcmdb.workers.cognitive_tasks import (
 
 
 class TestTaskRegistry:
-    """All 11 cognitive tasks must be registered."""
+    """All 12 cognitive tasks must be registered."""
 
     EXPECTED_TASKS: ClassVar[list[str]] = [
         "cognitive_fact_analysis",
@@ -45,6 +45,7 @@ class TestTaskRegistry:
         "container_log_audit",
         "hitl_escalation",
         "accuracy_eval",
+        "autonomous_reasoning_cycle",
     ]
 
     def test_all_tasks_registered(self) -> None:
@@ -52,7 +53,7 @@ class TestTaskRegistry:
             assert name in COGNITIVE_TASKS, f"Task '{name}' not in COGNITIVE_TASKS"
 
     def test_registry_count(self) -> None:
-        assert len(COGNITIVE_TASKS) == 11
+        assert len(COGNITIVE_TASKS) == 12
 
     def test_all_tasks_are_callable(self) -> None:
         for name, fn in COGNITIVE_TASKS.items():
@@ -187,8 +188,21 @@ class TestCognitiveTaskExecution:
     async def test_task_returns_completed(self, ctx: dict[str, Any], task_name: str) -> None:
         task_fn = COGNITIVE_TASKS[task_name]
 
+        # Tasks that use asyncio.to_thread for DB work need sensible defaults
+        _thread_defaults: dict[str, dict[str, Any]] = {
+            "hitl_escalation": {"stale_items": 0, "escalated": 0},
+            "accuracy_eval": {
+                "samples_evaluated": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "faithful_pct": 0.0,
+            },
+        }
+        to_thread_return = _thread_defaults.get(task_name, {})
+        to_thread_mock = AsyncMock(return_value=to_thread_return)
         with (
-            patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", new_callable=AsyncMock),
+            patch("internalcmdb.workers.cognitive_tasks.asyncio.to_thread", to_thread_mock),
             patch("internalcmdb.workers.cognitive_tasks._check_redis", new_callable=AsyncMock),
         ):
             result = await task_fn(ctx)

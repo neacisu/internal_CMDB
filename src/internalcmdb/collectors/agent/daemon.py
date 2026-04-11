@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
+import shlex
+import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -131,6 +134,38 @@ class AgentDaemon:
     max_buffer_size: int = 1000
     flush_interval: float = 5.0
     flush_batch_size: int = 10
+    redis_url: str = ""
+
+    # Command channel configuration
+    _COMMAND_ALLOWLIST: dict[str, list[str]] = field(
+        init=False,
+        default_factory=lambda: {
+            "run_diagnostic": [
+                "df -h",
+                "ps aux --sort=-%mem | head -20",
+                "systemctl list-units --state=failed",
+                "systemctl status ",
+                "systemctl restart ",
+                "docker ps -a --format json",
+                "journalctl -p err --since '1 hour ago' --no-pager | tail -100",
+                "uptime",
+                "free -h",
+                "ss -tlnp",
+                "openssl x509 -in ",
+                "curl -s -o /dev/null -w ",
+            ],
+            "read_file": [
+                "/etc/ssh/sshd_config",
+                "/etc/systemd/",
+                "/etc/haproxy/",
+                "/etc/nginx/",
+                "/etc/fail2ban/",
+            ],
+            "service_status": [],
+            "docker_inspect": [],
+        },
+    )
+    _MAX_COMMAND_OUTPUT: int = field(init=False, default=65_536)
 
     @property
     def _ssl_verify(self) -> bool | str:
@@ -156,11 +191,14 @@ class AgentDaemon:
         await self._enroll()
         self._running = True
 
-        await asyncio.gather(
+        tasks = [
             self._collection_loop(),
             self._flush_loop(),
             self._heartbeat_ping_loop(),
-        )
+        ]
+        if self.redis_url:
+            tasks.append(self._command_listener_loop())
+        await asyncio.gather(*tasks)
 
     async def _enroll(self) -> None:
         """Register with the control plane."""
@@ -331,3 +369,274 @@ class AgentDaemon:
         self._running = False
         await self._flush()
         logger.info("Agent stopped")
+
+    # ------------------------------------------------------------------
+    # Command Channel — Redis pub/sub listener
+    # ------------------------------------------------------------------
+
+    async def _command_listener_loop(self) -> None:
+        """Listen for commands on the agent's Redis channel."""
+        try:
+            import redis.asyncio as aioredis  # noqa: PLC0415
+        except ImportError:
+            logger.warning("redis package not available — command channel disabled")
+            return
+
+        channel_name = f"infraq:agent:{self.agent_id}:commands"
+        logger.info("Command channel listening on %s", channel_name)
+
+        while self._running:
+            try:
+                r: aioredis.Redis[str] = aioredis.from_url(  # type: ignore[assignment]
+                    self.redis_url, decode_responses=True
+                )
+                try:
+                    pubsub = r.pubsub()  # type: ignore[misc]
+                    await pubsub.subscribe(channel_name)  # type: ignore[misc]
+                    while self._running:
+                        message = await pubsub.get_message(  # type: ignore[misc]
+                            ignore_subscribe_messages=True,
+                            timeout=1.0,
+                        )
+                        if message is None:
+                            continue
+                        if message["type"] != "message":
+                            continue
+                        raw_data = message.get("data")  # type: ignore[misc]
+                        if not isinstance(raw_data, str):
+                            continue
+                        await self._handle_command(raw_data)
+                    await pubsub.unsubscribe(channel_name)  # type: ignore[misc]
+                finally:
+                    await r.aclose()
+            except Exception:
+                logger.exception("Command listener error — reconnecting in 5s")
+                await asyncio.sleep(5)
+
+    async def _handle_command(self, raw_message: str) -> None:
+        """Parse, validate, and execute a received command."""
+        try:
+            cmd = json.loads(raw_message)
+        except json.JSONDecodeError, TypeError:
+            logger.warning("Invalid command JSON received")
+            return
+
+        command_id = cmd.get("command_id", "")
+        command_type = cmd.get("command_type", "")
+        payload = cmd.get("payload", {})
+        timeout = min(cmd.get("timeout", 30), 120)
+        signature = cmd.get("signature", "")
+
+        # Verify HMAC signature — mandatory for all commands
+        if not self.api_token:
+            logger.warning("Command %s: no api_token configured, rejecting", command_id)
+            await self._send_command_result(
+                command_id,
+                {
+                    "error": "Agent has no API token configured",
+                    "exit_code": -1,
+                },
+            )
+            return
+
+        if not signature:
+            logger.warning("Command %s: missing HMAC signature, rejecting", command_id)
+            await self._send_command_result(
+                command_id,
+                {
+                    "error": "HMAC signature required",
+                    "exit_code": -1,
+                },
+            )
+            return
+
+        payload_json = json.dumps(payload, sort_keys=True)
+        expected = hmac.new(
+            self.api_token.encode(),
+            f"{command_id}:{payload_json}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            logger.warning("Command %s: HMAC verification failed", command_id)
+            await self._send_command_result(
+                command_id,
+                {
+                    "error": "HMAC verification failed",
+                    "exit_code": -1,
+                },
+            )
+            return
+
+        # Execute command
+        logger.info("Executing command %s: %s", command_id, command_type)
+        t0 = time.monotonic()
+        try:
+            payload["_subprocess_timeout"] = timeout
+            async with asyncio.timeout(timeout + 5):
+                result = await self._execute_command(command_type, payload)
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            result["duration_ms"] = duration_ms
+        except TimeoutError:
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            result = {
+                "error": "Command timed out",
+                "exit_code": -1,
+                "duration_ms": duration_ms,
+            }
+        except Exception as exc:
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            result = {
+                "error": str(exc),
+                "exit_code": -1,
+                "duration_ms": duration_ms,
+            }
+            logger.exception("Command %s failed", command_id)
+
+        await self._send_command_result(command_id, result)
+
+    async def _execute_command(
+        self,
+        command_type: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Dispatch and execute a command by type."""
+        if command_type == "run_diagnostic":
+            return await self._cmd_run_diagnostic(payload)
+        if command_type == "read_file":
+            return await self._cmd_read_file(payload)
+        if command_type == "service_status":
+            return await self._cmd_service_status(payload)
+        if command_type == "docker_inspect":
+            return await self._cmd_docker_inspect(payload)
+        return {"error": f"Unknown command_type: {command_type}", "exit_code": -1}
+
+    async def _cmd_run_diagnostic(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Execute a read-only diagnostic shell command."""
+        shell_cmd = payload.get("command", "")
+        allowed = self._COMMAND_ALLOWLIST.get("run_diagnostic", [])
+        if not any(shell_cmd.startswith(a) for a in allowed):
+            return {"error": f"Command not in allowlist: {shell_cmd}", "exit_code": -1}
+
+        subprocess_timeout = payload.get("_subprocess_timeout", 30)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self._run_subprocess,
+            shell_cmd,
+            subprocess_timeout,
+        )
+
+    @staticmethod
+    def _run_subprocess(cmd: str, timeout: int) -> dict[str, Any]:
+        """Run a subprocess safely with output truncation."""
+        try:
+            result = subprocess.run(
+                shlex.split(cmd),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            stdout = result.stdout[:65_536]
+            stderr = result.stderr[:65_536]
+            return {
+                "stdout": stdout,
+                "stderr": stderr,
+                "exit_code": result.returncode,
+            }
+        except subprocess.TimeoutExpired:
+            return {"error": "Subprocess timed out", "exit_code": -1, "stdout": "", "stderr": ""}
+        except FileNotFoundError:
+            return {"error": f"Command not found: {cmd}", "exit_code": -1}
+
+    async def _cmd_read_file(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Read a configuration file (allowlisted paths only)."""
+        file_path = payload.get("path", "")
+        allowed_prefixes = self._COMMAND_ALLOWLIST.get("read_file", [])
+        if not any(file_path.startswith(p) for p in allowed_prefixes):
+            return {"error": f"Path not in allowlist: {file_path}", "exit_code": -1}
+        if ".." in file_path:
+            return {"error": "Path traversal blocked", "exit_code": -1}
+
+        import pathlib  # noqa: PLC0415
+
+        loop = asyncio.get_event_loop()
+
+        def _read() -> dict[str, Any]:
+            p = pathlib.Path(file_path)
+            if not p.exists():
+                return {"error": f"File not found: {file_path}", "exit_code": 1}
+            if not p.is_file():
+                return {"error": f"Not a file: {file_path}", "exit_code": 1}
+            content = p.read_text(errors="replace")[:65_536]
+            return {"stdout": content, "stderr": "", "exit_code": 0}
+
+        return await loop.run_in_executor(None, _read)
+
+    async def _cmd_service_status(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Get systemd service status."""
+        service = payload.get("service", "")
+        if not service or "/" in service or ".." in service:
+            return {"error": f"Invalid service name: {service}", "exit_code": -1}
+        cmd = f"systemctl status {service} --no-pager"
+        return await self._cmd_run_diagnostic(
+            {
+                "command": cmd,
+                "_subprocess_timeout": payload.get("_subprocess_timeout", 30),
+            }
+        )
+
+    async def _cmd_docker_inspect(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Inspect a Docker container."""
+        container = payload.get("container", "")
+        if not container or "/" in container or ".." in container:
+            return {"error": f"Invalid container name: {container}", "exit_code": -1}
+        cmd = f"docker inspect {container}"
+        subprocess_timeout = payload.get("_subprocess_timeout", 30)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self._run_subprocess,
+            cmd,
+            subprocess_timeout,
+        )
+
+    async def _send_command_result(
+        self,
+        command_id: str,
+        result: dict[str, Any],
+    ) -> None:
+        """Publish command result back to Redis and update API."""
+        # Publish to Redis results channel
+        try:
+            import redis.asyncio as aioredis  # noqa: PLC0415
+
+            r: aioredis.Redis[str] = aioredis.from_url(  # type: ignore[assignment]
+                self.redis_url, decode_responses=True
+            )
+            try:
+                channel = f"infraq:agent:results:{command_id}"
+                await r.publish(channel, json.dumps(result))  # type: ignore[misc]
+            finally:
+                await r.aclose()
+        except Exception:
+            logger.debug("Redis result publish failed for %s", command_id)
+
+        # Also report back to API
+        if self.agent_id:
+            url = f"{self.api_url}/agent-commands/{self.agent_id}/commands/{command_id}/result"
+            headers = self._auth_headers()
+            try:
+                async with httpx.AsyncClient(timeout=10, verify=self._ssl_verify) as client:
+                    await client.post(url, json=result, headers=headers)
+            except httpx.HTTPError:
+                logger.debug("Result POST failed for command %s", command_id)

@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { getLLMConfig, updateLLMConfig, type LLMConfig } from "@/lib/api";
+import { getLLMConfig, getLLMHealth, updateLLMConfig, type LLMConfig, type LLMHealthMap } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Save, Cpu } from "lucide-react";
+import { Save, Cpu, Wifi, WifiOff } from "lucide-react";
 
 type FlatForm = {
   reasoning_url: string;
@@ -62,6 +62,21 @@ const BACKEND_SECTIONS = [
   { key: "guard", label: "Guard" },
 ] as const;
 
+function HealthBadge({ h }: Readonly<{ h: LLMHealthMap[keyof LLMHealthMap] | undefined }>) {
+  if (!h) return null;
+  return h.ok ? (
+    <span className="inline-flex items-center gap-1 text-xs text-(--ok) font-medium">
+      <Wifi size={12} />
+      {h.latency_ms}ms
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-xs text-(--er) font-medium" title={h.error}>
+      <WifiOff size={12} />
+      offline
+    </span>
+  );
+}
+
 function FieldRow({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
   return (
     <div className="grid grid-cols-[160px_1fr] items-center gap-3">
@@ -81,9 +96,18 @@ export default function LLMPanel() {
     staleTime: 30_000,
   });
 
-  useEffect(() => {
-    if (data && !form) setForm(toFlat(data));
-  }, [data, form]);
+  const { data: health } = useQuery<LLMHealthMap>({
+    queryKey: ["settings", "llm", "health"],
+    queryFn: getLLMHealth,
+    staleTime: 25_000,
+    refetchInterval: 30_000,
+  });
+
+  // Derive displayed form values: user edits (form) take priority over API data.
+  const displayForm = useMemo<FlatForm | null>(
+    () => form ?? (data ? toFlat(data) : null),
+    [form, data],
+  );
 
   const saveMut = useMutation({
     mutationFn: (f: FlatForm) => {
@@ -111,7 +135,7 @@ export default function LLMPanel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setForm(f => f ? { ...f, guard_token: "" } : f);
+      setForm(f => f ? { ...f, guard_token: "" } : null);
       toast.success("LLM settings saved");
     },
     onError: (e) => toast.error(String(e)),
@@ -127,10 +151,10 @@ export default function LLMPanel() {
     <p className="text-(--er) text-sm">Failed to load: {(error as Error)?.message ?? "Unknown error"}</p>
   );
 
-  if (!form) return null;
+  if (!displayForm) return null;
 
   const set = <K extends keyof FlatForm>(key: K, val: FlatForm[K]) =>
-    setForm(f => f ? { ...f, [key]: val } : f);
+    setForm(_f => ({ ...displayForm, [key]: val }));
 
   return (
     <div className="flex flex-col gap-5">
@@ -157,6 +181,7 @@ export default function LLMPanel() {
             <CardTitle className="flex items-center gap-2 text-[15px] font-(--fD)">
               <Cpu className="h-4 w-4 text-(--tx3)" />
               {label} Backend
+              <HealthBadge h={health?.[key]} />
             </CardTitle>
             <CardDescription className="text-(--tx3) text-sm">
               {sectionDescription}
@@ -165,14 +190,14 @@ export default function LLMPanel() {
           <CardContent className="flex flex-col gap-3">
             <FieldRow label="URL">
               <Input
-                value={form[`${key}_url` as keyof FlatForm] as string}
+                value={displayForm[`${key}_url` as keyof FlatForm] as string}
                 onChange={e => set(`${key}_url` as keyof FlatForm, e.target.value as FlatForm[keyof FlatForm])}
                 placeholder="http://localhost:11434"
               />
             </FieldRow>
             <FieldRow label="Model ID">
               <Input
-                value={form[`${key}_model_id` as keyof FlatForm] as string}
+                value={displayForm[`${key}_model_id` as keyof FlatForm] as string}
                 onChange={e => set(`${key}_model_id` as keyof FlatForm, e.target.value as FlatForm[keyof FlatForm])}
                 placeholder="llama3.2"
               />
@@ -182,7 +207,7 @@ export default function LLMPanel() {
                 type="number"
                 min={1}
                 max={300}
-                value={form[`${key}_timeout_s` as keyof FlatForm] as number}
+                value={displayForm[`${key}_timeout_s` as keyof FlatForm] as number}
                 onChange={e => set(`${key}_timeout_s` as keyof FlatForm, Number(e.target.value) as FlatForm[keyof FlatForm])}
               />
             </FieldRow>
@@ -190,7 +215,7 @@ export default function LLMPanel() {
               <FieldRow label="Guard Token">
                 <Input
                   type="password"
-                  value={form.guard_token}
+                  value={displayForm.guard_token}
                   onChange={e => set("guard_token", e.target.value)}
                   placeholder="•••••••• (enter new value to change)"
                 />
@@ -208,30 +233,30 @@ export default function LLMPanel() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <FieldRow label="CB Threshold">
-            <Input type="number" min={1} max={100} value={form.circuit_breaker_threshold}
+            <Input type="number" min={1} max={100} value={displayForm.circuit_breaker_threshold}
               onChange={e => set("circuit_breaker_threshold", Number(e.target.value))} />
           </FieldRow>
           <FieldRow label="CB Cooldown (s)">
-            <Input type="number" min={1} max={3600} value={form.circuit_breaker_cooldown_s}
+            <Input type="number" min={1} max={3600} value={displayForm.circuit_breaker_cooldown_s}
               onChange={e => set("circuit_breaker_cooldown_s", Number(e.target.value))} />
           </FieldRow>
           <FieldRow label="Max Connections">
-            <Input type="number" min={1} max={500} value={form.max_connections}
+            <Input type="number" min={1} max={500} value={displayForm.max_connections}
               onChange={e => set("max_connections", Number(e.target.value))} />
           </FieldRow>
           <FieldRow label="Max Keepalive">
-            <Input type="number" min={1} max={500} value={form.max_keepalive}
+            <Input type="number" min={1} max={500} value={displayForm.max_keepalive}
               onChange={e => set("max_keepalive", Number(e.target.value))} />
           </FieldRow>
           <FieldRow label="Max Retries">
-            <Input type="number" min={0} max={10} value={form.max_retries}
+            <Input type="number" min={0} max={10} value={displayForm.max_retries}
               onChange={e => set("max_retries", Number(e.target.value))} />
           </FieldRow>
         </CardContent>
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={() => form && saveMut.mutate(form)} disabled={saveMut.isPending}>
+        <Button onClick={() => displayForm && saveMut.mutate(displayForm)} disabled={saveMut.isPending}>
           <Save className="h-4 w-4" />
           {saveMut.isPending ? "Saving…" : "Save LLM Settings"}
         </Button>

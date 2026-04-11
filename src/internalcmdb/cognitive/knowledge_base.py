@@ -62,6 +62,72 @@ class KnowledgeBase:
         self._session = session
         self._llm = llm
         self._chunker = Chunker(config or ChunkerConfig())
+        self._doc_version_cache: dict[str, uuid.UUID] = {}
+
+    async def _get_or_create_doc_version(self, source_tag: str) -> uuid.UUID:
+        """Return a *stable-per-source* document_version_id, creating parent rows lazily."""
+        if source_tag in self._doc_version_cache:
+            return self._doc_version_cache[source_tag]
+
+        # Pick any taxonomy term from the document_kind domain as the kind FK.
+        kind_row = (
+            await self._session.execute(
+                text(
+                    "SELECT t.taxonomy_term_id"
+                    " FROM taxonomy.taxonomy_term t"
+                    " JOIN taxonomy.taxonomy_domain d"
+                    "   ON d.taxonomy_domain_id = t.taxonomy_domain_id"
+                    " WHERE d.domain_code = 'document_kind'"
+                    " ORDER BY t.term_code LIMIT 1"
+                )
+            )
+        ).fetchone()
+        if not kind_row:
+            raise RuntimeError("No document_kind taxonomy term found; run seeds first.")
+        kind_term_id: uuid.UUID = kind_row[0]
+
+        doc_path = f"kb-synthetic://{source_tag}"
+
+        # UPSERT docs.document — ON CONFLICT returns existing id via DO UPDATE (no-op update).
+        doc_id: uuid.UUID = (
+            await self._session.execute(
+                text(
+                    "INSERT INTO docs.document"
+                    "  (document_id, document_kind_term_id, document_path, title, status_text)"
+                    " VALUES (gen_random_uuid(), :kind_id, :path, :title, 'active')"
+                    " ON CONFLICT (document_path)"
+                    " DO UPDATE SET updated_at = now()"
+                    " RETURNING document_id"
+                ),
+                {"kind_id": kind_term_id, "path": doc_path, "title": doc_path},
+            )
+        ).scalar()  # type: ignore[assignment]
+
+        version_row = (
+            await self._session.execute(
+                text(
+                    "SELECT document_version_id FROM docs.document_version"
+                    " WHERE document_id = :did ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"did": doc_id},
+            )
+        ).fetchone()
+
+        if version_row:
+            version_id = version_row[0]
+        else:
+            version_id = uuid.uuid4()
+            await self._session.execute(
+                text(
+                    "INSERT INTO docs.document_version"
+                    "  (document_version_id, document_id, content_hash, is_current)"
+                    " VALUES (:vid, :did, :chash, false)"
+                ),
+                {"vid": version_id, "did": doc_id, "chash": str(uuid.uuid4())},
+            )
+
+        self._doc_version_cache[source_tag] = version_id
+        return version_id
 
     async def embed_document(
         self,
@@ -80,7 +146,9 @@ class KnowledgeBase:
         if not text_chunks:
             return []
 
-        doc_version_id = document_version_id or uuid.uuid4()
+        doc_version_id = document_version_id or await self._get_or_create_doc_version(
+            metadata.get("source", "unknown")
+        )
         chunk_ids: list[str] = []
 
         for batch_start in range(0, len(text_chunks), _EMBED_BATCH_SIZE):
@@ -117,7 +185,7 @@ class KnowledgeBase:
                              metadata_jsonb)
                         VALUES
                             (:cid, :dvid, :idx, :hash, :content, :tokens,
-                             :section, :meta::jsonb)
+                             :section, CAST(:meta AS jsonb))
                     """),
                     {
                         "cid": chunk_id,
@@ -139,8 +207,8 @@ class KnowledgeBase:
                              embedding_model_code, embedding_vector,
                              lexical_tsv, metadata_jsonb)
                         VALUES
-                            (:eid, :cid, :model, :vec::vector,
-                             to_tsvector('english', :content), :meta::jsonb)
+                            (:eid, :cid, :model, CAST(:vec AS vector),
+                             to_tsvector('english', :content), CAST(:meta AS jsonb))
                     """),
                     {
                         "eid": str(uuid.uuid4()),
@@ -185,11 +253,11 @@ class KnowledgeBase:
                        dc.content_text,
                        dc.section_path_text,
                        dc.metadata_jsonb,
-                       1 - (ce.embedding_vector <=> :vec::vector) AS score
+                       1 - (ce.embedding_vector <=> CAST(:vec AS vector)) AS score
                   FROM retrieval.chunk_embedding ce
                   JOIN retrieval.document_chunk dc
                     ON dc.document_chunk_id = ce.document_chunk_id
-                 ORDER BY ce.embedding_vector <=> :vec::vector
+                 ORDER BY ce.embedding_vector <=> CAST(:vec AS vector)
                  LIMIT :k
             """),
             {"vec": vec_literal, "k": top_k},

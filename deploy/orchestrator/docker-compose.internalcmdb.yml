@@ -102,6 +102,9 @@ services:
       - BACKEND_URL=http://127.0.0.1:4444
       - NEXT_TELEMETRY_DISABLED=1
       - NODE_OPTIONS=--max-old-space-size=1536
+      # JWT_SECRET_KEY must match the API — required by Next.js middleware
+      # to verify the cmdb_session cookie without calling the API.
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     # Source mounted — next dev watches all files and reloads on save.
     # node_modules volume is populated from the image on first start (no pnpm install at runtime).
     volumes:

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
+from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import Row, text
 from sqlalchemy.engine import CursorResult
@@ -18,6 +21,9 @@ from ..middleware.rate_limit import rate_limit
 from ..middleware.rbac import require_role
 
 if TYPE_CHECKING:
+    from redis.asyncio import Redis as _AioRedis
+    from redis.asyncio.client import PubSub as _AioPubSub
+
     from internalcmdb.cognitive.analyzer import AnalysisResult
 
 logger = logging.getLogger(__name__)
@@ -47,6 +53,37 @@ class NLQueryResponse(BaseModel):
     sources: list[SourceChunk] = []
     confidence: float = 0.0
     tokens_used: int = 0
+
+
+def _label_insight(meta: dict[str, Any]) -> str:
+    """Return a display label for a ``cognitive_insight`` source chunk."""
+    cat: str = str(meta.get("category") or "insight")
+    sev: str = str(meta.get("severity") or "")
+    return f"{cat}/{sev}" if sev else cat
+
+
+def _label_file_source(meta: dict[str, Any], src: str) -> str:
+    """Return a display label for a ``docs`` or ``subprojects`` source chunk."""
+    file_path: str = str(meta.get("file") or "")
+    if file_path:
+        return os.path.splitext(os.path.basename(file_path))[0]
+    return src
+
+
+def _source_label(s: dict[str, Any]) -> str:
+    """Build a human-readable label for a source chunk from its metadata."""
+    meta: dict[str, Any] = cast(dict[str, Any], s.get("metadata") or {})
+    src: str = str(meta.get("source") or "")
+    if src == "cmdb_host":
+        return str(meta.get("host_code") or "host")
+    if src == "cmdb_service":
+        return str(meta.get("service_code") or "service")
+    if src == "cognitive_insight":
+        return _label_insight(meta)
+    if src in ("docs", "subprojects"):
+        return _label_file_source(meta, src)
+    # Fallback: use section_path_text if populated, else source tag
+    return str(s.get("section") or src or "source")
 
 
 class AnalyzeRequest(BaseModel):
@@ -207,7 +244,7 @@ async def cognitive_query(
                 SourceChunk(
                     chunk_id=s.get("chunk_id", ""),
                     content=s.get("content", ""),
-                    section=s.get("section"),
+                    section=_source_label(s),
                     distance=s.get("distance"),
                 )
                 for s in result.sources
@@ -924,3 +961,441 @@ async def list_playbooks(
                 risk_level="medium",
             ),
         ]
+
+
+# ---------------------------------------------------------------------------
+# Agent Sessions (ReAct)
+# ---------------------------------------------------------------------------
+
+
+def _default_dict_list() -> list[dict[str, Any]]:
+    """Typed default factory for list[dict[str, Any]] Pydantic fields.
+
+    Using a named function instead of bare ``list`` as the default_factory prevents
+    Pylance ``reportUnknownVariableType`` — ``list`` alone resolves as
+    ``list[Unknown]`` because the builtin is not parameterised at call-site,
+    and for nested generics (``list[dict[str, Any]]``) Pylance cannot narrow it.
+    """
+    return []
+
+
+class AgentSessionOut(BaseModel):
+    session_id: str
+    goal: str = ""
+    status: str = "running"
+    model_used: str = "reasoning"
+    iterations: int = 0
+    tokens_used: int = 0
+    tool_calls: list[dict[str, Any]] = Field(default_factory=_default_dict_list)
+    conversation: list[dict[str, Any]] = Field(default_factory=_default_dict_list)
+    final_answer: str | None = None
+    error: str | None = None
+    triggered_by: str = "cognitive_engine"
+    created_at: str | None = None
+    completed_at: str | None = None
+
+
+def _row_to_agent_session(mapping: Any) -> AgentSessionOut:
+    """Convert a raw SQLAlchemy ``RowMapping`` to :class:`AgentSessionOut`.
+
+    Field-by-field assignment with explicit type coercions avoids the
+    ``reportArgumentType`` Pylance diagnostic that fires when a dict
+    comprehension producing ``Any | str`` is splatted (``**``) into a Pydantic
+    constructor that expects typed parameters (``int``, ``list[dict[str,Any]]``).
+    ``Any | str`` is not assignable to ``int`` under Pylance strict analysis
+    because the ``str`` branch is visible; named-parameter callsites receive
+    ``Any`` from direct dict-key access, which Pylance freely coerces.
+    """
+
+    def _iso(val: Any) -> str | None:
+        """Return ISO-8601 string for datetime, plain str for other values, None for NULL."""
+        if val is None:
+            return None
+        return val.isoformat() if hasattr(val, "isoformat") else str(val)
+
+    return AgentSessionOut(
+        session_id=str(mapping["session_id"]),
+        goal=str(mapping["goal"] or ""),
+        status=str(mapping["status"] or "running"),
+        model_used=str(mapping["model_used"] or "reasoning"),
+        iterations=int(mapping["iterations"] or 0),
+        tokens_used=int(mapping["tokens_used"] or 0),
+        tool_calls=cast(list[dict[str, Any]], mapping["tool_calls"] or []),
+        conversation=cast(list[dict[str, Any]], mapping["conversation"] or []),
+        final_answer=(
+            str(mapping["final_answer"])
+            if mapping["final_answer"] is not None
+            else None
+        ),
+        error=(
+            str(mapping["error"])
+            if mapping["error"] is not None
+            else None
+        ),
+        triggered_by=str(mapping["triggered_by"] or "cognitive_engine"),
+        created_at=_iso(mapping["created_at"]),
+        completed_at=_iso(mapping["completed_at"]),
+    )
+
+
+class StartAgentSessionRequest(BaseModel):
+    goal: str = Field(min_length=1, max_length=2000)
+    context: dict[str, Any] = Field(default_factory=dict)
+    model_name: str = "reasoning"
+
+
+@router.get(
+    "/agent-sessions",
+    response_model=list[AgentSessionOut],
+    dependencies=[Depends(require_role("operator", "platform_admin"))],
+)
+async def list_agent_sessions(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> list[AgentSessionOut]:
+    """List ReAct agent sessions ordered by most recent."""
+    try:
+        offset = (page - 1) * page_size
+        result = await session.execute(
+            text("""
+                SELECT session_id, goal, status, model_used, iterations,
+                       tokens_used, tool_calls, conversation, final_answer,
+                       error, triggered_by, created_at, completed_at
+                FROM cognitive.agent_session
+                ORDER BY created_at DESC
+                LIMIT :limit OFFSET :offset
+            """),
+            {"limit": page_size, "offset": offset},
+        )
+        rows = result.fetchall()
+        return [_row_to_agent_session(r._mapping) for r in rows]
+    except Exception as exc:
+        logger.warning("Failed to list agent sessions: %s", exc)
+        return []
+
+
+@router.get(
+    "/agent-sessions/{session_id}",
+    response_model=AgentSessionOut,
+    dependencies=[Depends(require_role("operator", "platform_admin"))],
+)
+async def get_agent_session(
+    session_id: str,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> AgentSessionOut:
+    """Get a single agent session by ID."""
+    result = await session.execute(
+        text("""
+            SELECT session_id, goal, status, model_used, iterations,
+                   tokens_used, tool_calls, conversation, final_answer,
+                   error, triggered_by, created_at, completed_at
+            FROM cognitive.agent_session
+            WHERE session_id = :sid
+        """),
+        {"sid": session_id},
+    )
+    row = result.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Agent session not found")
+    return _row_to_agent_session(row._mapping)
+
+
+@router.post(
+    "/agent-sessions",
+    response_model=AgentSessionOut,
+    dependencies=[Depends(require_role("operator", "platform_admin"))],
+)
+async def start_agent_session(
+    body: StartAgentSessionRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> AgentSessionOut:
+    """Start a new ReAct agent session in the background.
+
+    Returns immediately with ``status="running"`` and a ``session_id``.
+    Stream live step events via ``GET /agent-sessions/{session_id}/stream``.
+    """
+    from internalcmdb.cognitive.agent_loop import AgentLoop  # noqa: PLC0415
+
+    session_id = str(uuid.uuid4())
+    user = getattr(request.state, "user_id", "api_user")
+    now = _now_iso()
+
+    # Pre-register the session so GET /agent-sessions/{id} works immediately
+    await session.execute(
+        text("""
+            INSERT INTO cognitive.agent_session
+                (session_id, goal, status, model_used, iterations, tokens_used,
+                 tool_calls, conversation, triggered_by, created_at)
+            VALUES
+                (:sid, :goal, 'running', :model, 0, 0,
+                 '[]'::json, '[]'::json, :tb, :created)
+            ON CONFLICT (session_id) DO NOTHING
+        """),
+        {
+            "sid": session_id,
+            "goal": body.goal,
+            "model": body.model_name or "reasoning",
+            "tb": str(user),
+            "created": now,
+        },
+    )
+    await session.commit()
+
+    async def _run_in_background() -> None:
+        loop = AgentLoop(model_name=body.model_name)
+        # Preserve the pre-assigned session_id
+        loop._session_id_override = session_id  # type: ignore[attr-defined]
+        await loop.run(body.goal, body.context, triggered_by=str(user))
+
+    background_tasks.add_task(_run_in_background)
+
+    return AgentSessionOut(
+        session_id=session_id,
+        goal=body.goal,
+        status="running",
+        model_used=body.model_name or "reasoning",
+        iterations=0,
+        tokens_used=0,
+        tool_calls=[],
+        conversation=[],
+        triggered_by=str(user),
+        created_at=now,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SSE helper
+# ---------------------------------------------------------------------------
+
+import asyncio as _asyncio  # noqa: E402
+import json as _json  # noqa: E402
+
+try:
+    import redis.asyncio as _aioredis
+except ImportError:
+    _aioredis = None  # type: ignore[assignment]
+
+
+def _is_done_event(data: str) -> bool:
+    """Return True if the JSON payload contains ``phase: "done"``."""
+    try:
+        return bool(_json.loads(data).get("phase") == "done")
+    except (_json.JSONDecodeError, AttributeError):
+        return False
+
+
+async def _sse_generator(session_id: str, redis_url: str, request: Request):  # type: ignore[return]
+    """Async generator that yields SSE-formatted lines from Redis pubsub."""
+    if _aioredis is None:
+        raise RuntimeError("redis[asyncio] package is not installed")
+    r: _AioRedis = _aioredis.from_url(redis_url, decode_responses=True)  # type: ignore[reportUnknownMemberType]
+    pubsub: _AioPubSub = r.pubsub()  # type: ignore[reportUnknownMemberType]
+    try:
+        await pubsub.subscribe(f"infraq:agent:stream:{session_id}")  # type: ignore[reportUnknownMemberType]
+        while not await request.is_disconnected():
+            try:
+                _get_coro = cast(
+                    Awaitable[dict[str, Any] | None],
+                    pubsub.get_message(  # type: ignore[reportUnknownMemberType]
+                        ignore_subscribe_messages=True, timeout=1.0
+                    ),
+                )
+                msg: dict[str, Any] | None = await _asyncio.wait_for(_get_coro, timeout=2.0)
+            except TimeoutError:
+                yield 'data: {"ping": true}\n\n'
+                continue
+            if msg is None:
+                yield 'data: {"ping": true}\n\n'
+                continue
+            data = msg.get("data", "")
+            if not isinstance(data, str):
+                continue
+            yield f"data: {data}\n\n"
+            if _is_done_event(data):
+                break
+    finally:
+        await pubsub.unsubscribe()  # type: ignore[reportUnknownMemberType]
+        await r.aclose()
+
+
+@router.get(
+    "/agent-sessions/{session_id}/stream",
+    dependencies=[Depends(require_role("operator", "platform_admin"))],
+)
+async def stream_agent_session(
+    session_id: str,
+    request: Request,
+) -> StreamingResponse:
+    """Server-Sent Events stream for a running agent session.
+
+    Emits ``data: <json>\\n\\n`` for each ReAct step.
+    The stream closes automatically when a ``phase="done"`` event arrives
+    or when the client disconnects.
+    """
+    from internalcmdb.api.config import get_settings  # noqa: PLC0415
+
+    settings = get_settings()
+    return StreamingResponse(
+        _sse_generator(session_id, settings.redis_url, request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post(
+    "/agent-sessions/{session_id}/stop",
+    response_model=AgentSessionOut,
+    dependencies=[Depends(require_role("operator", "platform_admin"))],
+)
+async def stop_agent_session(
+    session_id: str,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> AgentSessionOut:
+    """Force-stop a running agent session."""
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    row = await session.execute(
+        text("""
+            UPDATE cognitive.agent_session
+            SET status = 'failed',
+                error = 'Force-stopped by operator',
+                completed_at = :now
+            WHERE session_id = :sid AND status = 'running'
+            RETURNING session_id, goal, status, model_used, iterations,
+                      tokens_used, tool_calls, conversation, final_answer,
+                      error, triggered_by, created_at, completed_at
+        """),
+        {"sid": session_id, "now": datetime.now(tz=UTC)},
+    )
+    result = row.mappings().first()
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session {session_id} not found or not running",
+        )
+    await session.commit()
+
+    return AgentSessionOut(
+        session_id=str(result["session_id"]),
+        goal=result["goal"],
+        status=result["status"],
+        model_used=result["model_used"] or "reasoning",
+        iterations=result["iterations"] or 0,
+        tokens_used=result["tokens_used"] or 0,
+        tool_calls=result["tool_calls"] or [],
+        conversation=result["conversation"] or [],
+        final_answer=result["final_answer"],
+        error=result["error"],
+        triggered_by=result["triggered_by"] or "unknown",
+        created_at=str(result["created_at"]) if result["created_at"] else "",
+        completed_at=str(result["completed_at"]) if result["completed_at"] else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Auto-Remediation trigger from insight
+# ---------------------------------------------------------------------------
+
+
+class RemediationResponse(BaseModel):
+    session_id: str
+    status: str
+
+
+@router.post(
+    "/insights/{insight_id}/remediate",
+    response_model=RemediationResponse,
+    dependencies=[Depends(require_role("operator", "platform_admin"))],
+)
+async def remediate_insight(
+    insight_id: str,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> RemediationResponse:
+    """Trigger autonomous remediation for a specific insight via the ReAct agent."""
+    # Fetch the insight for context
+    result = await session.execute(
+        text("""
+            SELECT insight_id, entity_id, entity_type, severity, title,
+                   description, remediation, category
+            FROM cognitive.insight
+            WHERE insight_id = :iid AND status = 'active'
+        """),
+        {"iid": insight_id},
+    )
+    row = result.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Insight not found or not active")
+
+    insight = _row_to_dict(row)
+
+    # Build goal from insight content
+    goal = (
+        f"Remediate the following issue on {insight.get('entity_type', 'entity')} "
+        f"{insight.get('entity_id', 'unknown')}: {insight.get('title', '')}. "
+        f"Description: {insight.get('description', '')}. "
+        f"Suggested remediation: {insight.get('remediation', 'none')}."
+    )
+
+    from internalcmdb.cognitive.agent_loop import AgentLoop  # noqa: PLC0415
+
+    loop = AgentLoop(model_name="reasoning")
+    agent_result = await loop.run(
+        goal,
+        context={"insight_id": insight_id, **insight},
+        triggered_by="auto_remediate",
+    )
+
+    # Mark the insight as being remediated
+    await session.execute(
+        text("""
+            UPDATE cognitive.insight
+            SET status = 'remediating', updated_at = NOW()
+            WHERE insight_id = :iid
+        """),
+        {"iid": insight_id},
+    )
+    await session.commit()
+
+    return RemediationResponse(
+        session_id=agent_result.session_id,
+        status=agent_result.status,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Knowledge-base manual ingest
+# ---------------------------------------------------------------------------
+
+
+class KBIngestResponse(BaseModel):
+    status: str
+    counts: dict[str, int]
+
+
+@router.post(
+    "/knowledge-base/ingest",
+    response_model=KBIngestResponse,
+    dependencies=[Depends(require_role("platform_admin"))],
+)
+async def trigger_kb_ingest(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> KBIngestResponse:
+    """Trigger a synchronous knowledge-base ingest from all data sources.
+
+    Reserved for ``platform_admin`` role.  Prefer the ARQ cron for routine
+    ingestion; use this endpoint to force an immediate refresh.
+    """
+    from internalcmdb.cognitive.kb_ingestor import KnowledgeBaseIngestor  # noqa: PLC0415
+    from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
+
+    async with LLMClient() as llm:
+        ingestor = KnowledgeBaseIngestor()
+        counts = await ingestor.ingest_all(session, llm)
+
+    return KBIngestResponse(status="ok", counts=counts)

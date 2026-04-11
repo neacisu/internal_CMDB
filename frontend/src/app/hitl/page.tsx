@@ -8,6 +8,8 @@ import {
   getHITLHistory,
   approveHITLItem,
   rejectHITLItem,
+  bulkApproveHITL,
+  bulkRejectHITL,
   type HITLItem,
   type HITLStats,
 } from "@/lib/api";
@@ -33,6 +35,8 @@ import {
   ArrowUpCircle,
   Target,
   BarChart3,
+  ChevronDown,
+  Brain,
 } from "lucide-react";
 import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
 import { timeAgo } from "@/lib/utils";
@@ -74,6 +78,31 @@ function riskBadge(rc: string) {
 export default function HITLPage() {
   const queryClient = useQueryClient();
   const [page] = useState(1);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (!queue) return;
+    setSelectedItems((prev) =>
+      prev.size === queue.length ? new Set() : new Set(queue.map((i) => i.item_id)),
+    );
+  };
 
   const { data: queue, isLoading, dataUpdatedAt } = useQuery<HITLItem[]>({
     queryKey: ["hitl", "queue", page],
@@ -112,6 +141,22 @@ export default function HITLPage() {
     },
   });
 
+  const bulkApproveMut = useMutation({
+    mutationFn: (ids: string[]) => bulkApproveHITL(ids, "operator", "Bulk approved via UI"),
+    onSuccess: () => {
+      setSelectedItems(new Set());
+      queryClient.invalidateQueries({ queryKey: ["hitl"] });
+    },
+  });
+
+  const bulkRejectMut = useMutation({
+    mutationFn: (ids: string[]) => bulkRejectHITL(ids, "operator", "Bulk rejected via UI"),
+    onSuccess: () => {
+      setSelectedItems(new Set());
+      queryClient.invalidateQueries({ queryKey: ["hitl"] });
+    },
+  });
+
   let queueTabBody: ReactNode;
   if (isLoading) {
     queueTabBody = (
@@ -134,9 +179,64 @@ export default function HITLPage() {
   } else {
     queueTabBody = (
       <div className="space-y-3">
+        {/* Bulk action bar */}
+        {selectedItems.size > 0 && (
+          <div className="flex items-center gap-3 p-2 rounded-md bg-(--sl2) border border-border/50">
+            <span className="text-xs text-(--tx3)">
+              {selectedItems.size} selected
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-(--ok)/40 text-(--ok) hover:bg-(--ok)/10"
+              onClick={() => bulkApproveMut.mutate([...selectedItems])}
+              disabled={bulkApproveMut.isPending}
+            >
+              <CheckCircle size={12} className="mr-1" />
+              Approve All
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-(--er)/40 text-(--er) hover:bg-(--er)/10"
+              onClick={() => bulkRejectMut.mutate([...selectedItems])}
+              disabled={bulkRejectMut.isPending}
+            >
+              <XCircle size={12} className="mr-1" />
+              Reject All
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => setSelectedItems(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        )}
+        {/* Select all toggle */}
+        {queue && queue.length > 1 && (
+          <label className="flex items-center gap-2 text-xs text-(--tx3) cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={selectedItems.size === queue.length}
+              onChange={toggleSelectAll}
+              className="rounded border-border"
+            />
+            Select all ({queue.length})
+          </label>
+        )}
         {queue?.map((item) => (
           <Card key={item.item_id} className="hover:border-(--ac1)/30 transition-colors">
-            <CardContent className="p-4 flex items-center gap-4">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-4">
+              <input
+                type="checkbox"
+                checked={selectedItems.has(item.item_id)}
+                onChange={() => toggleSelect(item.item_id)}
+                className="rounded border-border shrink-0"
+              />
               <div className="flex gap-2 shrink-0">
                 <Badge className={`${priorityBadge(item.priority)} text-xs px-1.5 py-0`}>
                   {item.priority}
@@ -166,6 +266,19 @@ export default function HITLPage() {
                   </p>
                 </div>
               )}
+              {(item.llm_suggestion || item.context_jsonb) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 shrink-0"
+                  onClick={() => toggleExpand(item.item_id)}
+                >
+                  <ChevronDown
+                    size={14}
+                    className={`transition-transform ${expandedItems.has(item.item_id) ? "rotate-180" : ""}`}
+                  />
+                </Button>
+              )}
               <div className="flex gap-1 shrink-0">
                 <Button
                   size="sm"
@@ -188,6 +301,32 @@ export default function HITLPage() {
                   Reject
                 </Button>
               </div>
+              </div>
+
+              {/* Expandable LLM context panel */}
+              {expandedItems.has(item.item_id) && (
+                <div className="mt-3 pt-3 border-t border-border/50 space-y-2">
+                  {item.llm_suggestion && (
+                    <div className="rounded-md bg-(--sl2) p-3 border border-border/50">
+                      <p className="text-xs font-medium flex items-center gap-1 mb-1.5 text-sidebar-foreground">
+                        <Brain size={12} style={{ color: "var(--pu)" }} />
+                        LLM Suggestion
+                      </p>
+                      <pre className="text-xs text-(--tx3) whitespace-pre-wrap" style={{ fontFamily: "var(--fM)" }}>
+                        {JSON.stringify(item.llm_suggestion, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                  {item.context_jsonb && (
+                    <div className="rounded-md bg-(--sl2) p-3 border border-border/50">
+                      <p className="text-xs font-medium mb-1.5 text-sidebar-foreground">Evidence / Context</p>
+                      <pre className="text-xs text-(--tx3) whitespace-pre-wrap max-h-48 overflow-auto" style={{ fontFamily: "var(--fM)" }}>
+                        {JSON.stringify(item.context_jsonb, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}

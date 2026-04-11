@@ -50,7 +50,7 @@ class QueryResult:
     """
 
     answer: str
-    sources: list[dict[str, Any]] = field(default_factory=list)
+    sources: list[dict[str, Any]] = field(default_factory=lambda: [])
     confidence: float = 0.0
     tokens_used: int = 0
 
@@ -79,11 +79,21 @@ class QueryEngine:
     async def query(self, question: str) -> QueryResult:
         """Execute the full RAG pipeline for *question*.
 
+        First attempts a direct SQL answer for fleet-aggregate queries (e.g.
+        "how many hosts are online?") so users get instant accurate counts even
+        before the knowledge base is populated.  Falls back to the full RAG
+        pipeline for all other questions.
+
         Returns a :class:`QueryResult` with the synthesised answer and
         provenance metadata.
         """
         if not question or not question.strip():
             return QueryResult(answer="Empty question provided.", confidence=0.0)
+
+        # Step 0 — Try direct fleet answer before expensive RAG pipeline
+        direct = await self._direct_fleet_answer(question)
+        if direct is not None:
+            return direct
 
         # Step 1 — Embed the question
         try:
@@ -140,15 +150,16 @@ class QueryEngine:
             SELECT dc.document_chunk_id,
                    dc.content_text,
                    dc.section_path_text,
+                   dc.metadata_jsonb,
                    dc.token_count,
                    dc.chunk_index,
                    ce.embedding_model_code,
-                   (ce.embedding_vector <=> :vec::vector) AS distance
+                   (ce.embedding_vector <=> CAST(:vec AS vector)) AS distance
             FROM   retrieval.chunk_embedding ce
             JOIN   retrieval.document_chunk  dc
                    ON dc.document_chunk_id = ce.document_chunk_id
             WHERE  ce.embedding_vector IS NOT NULL
-            ORDER  BY ce.embedding_vector <=> :vec::vector
+            ORDER  BY ce.embedding_vector <=> CAST(:vec AS vector)
             LIMIT  :top_k
         """)
 
@@ -164,6 +175,7 @@ class QueryEngine:
                 "chunk_id": str(r["document_chunk_id"]),
                 "content": r["content_text"],
                 "section": r["section_path_text"] or "",
+                "metadata": dict(r["metadata_jsonb"]) if r["metadata_jsonb"] else {},
                 "token_count": r["token_count"] or 0,
                 "chunk_index": r["chunk_index"],
                 "model": r["embedding_model_code"],
@@ -171,6 +183,102 @@ class QueryEngine:
             }
             for r in rows
         ]
+
+    # ------------------------------------------------------------------
+    # Direct fleet-query short-circuit  (TODO 3.1)
+    # ------------------------------------------------------------------
+
+    #: Keywords that indicate a fleet-aggregate (count/status) intent.
+    _FLEET_KEYWORDS: frozenset[str] = frozenset(
+        {
+            "how many",
+            "count",
+            "total",
+            "number of",
+            "hosts",
+            "servers",
+            "nodes",
+            "machines",
+            "online",
+            "offline",
+            "status",
+            "healthy",
+            "unhealthy",
+            "critical",
+            "warning",
+            "ok",
+            "available",
+            "unavailable",
+            "environment",
+            "env",
+            "production",
+            "staging",
+            "dev",
+            "service",
+            "services",
+        }
+    )
+
+    async def _direct_fleet_answer(self, question: str) -> QueryResult | None:
+        """Return a QueryResult built from live SQL if the question is a fleet query.
+
+        Detects fleet-aggregate intent by checking for keyword overlap with
+        _FLEET_KEYWORDS.  If matched, executes lightweight SQL against
+        ``registry.host`` and returns a formatted answer without RAG.
+
+        Returns ``None`` when the question is not fleet-related so the caller
+        falls back to the full RAG pipeline.
+        """
+        q_lower = question.lower()
+        matched = sum(1 for kw in self._FLEET_KEYWORDS if kw in q_lower)
+        if matched < 2:  # require at least 2 fleet keywords to trigger  # noqa: PLR2004
+            return None
+
+        try:
+            result = await self._session.execute(
+                text("""
+                    SELECT
+                        COUNT(*)                                           AS total,
+                        COUNT(DISTINCT h.environment_term_id)             AS env_count,
+                        COUNT(DISTINCT h.lifecycle_term_id)               AS lifecycle_count
+                    FROM registry.host h
+                """)
+            )
+            row = result.mappings().first()
+        except Exception:
+            logger.debug("_direct_fleet_answer: SQL failed — falling back to RAG", exc_info=True)
+            import contextlib  # noqa: PLC0415
+
+            with contextlib.suppress(Exception):
+                await self._session.rollback()
+            return None
+
+        if row is None:
+            return None
+
+        total = row["total"] or 0
+        if total == 0:
+            return None  # empty fleet — fall through to RAG
+
+        answer = (
+            f"Fleet summary (live data from CMDB): "
+            f"{total} total host(s) registered, "
+            f"spanning {row['env_count']} distinct environment(s) "
+            f"and {row['lifecycle_count']} lifecycle state(s)."
+        )
+        return QueryResult(
+            answer=answer,
+            sources=[
+                {
+                    "chunk_id": "sql:registry.host",
+                    "content": answer,
+                    "section": "fleet_summary",
+                    "distance": 0.0,
+                }
+            ],
+            confidence=0.95,
+            tokens_used=0,
+        )
 
     @staticmethod
     def _assemble_context(

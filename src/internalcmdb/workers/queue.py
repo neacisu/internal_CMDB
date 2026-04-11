@@ -11,7 +11,10 @@ from arq.cron import cron
 from internalcmdb.api.config import get_settings
 from internalcmdb.workers.cognitive_tasks import (
     COGNITIVE_TASKS,
+    autonomous_reasoning_cycle,
     container_log_audit,
+    ingest_knowledge_base,
+    process_approved_hitl_items,
     self_heal_check,
 )
 from internalcmdb.workers.retention import data_retention_job
@@ -61,6 +64,19 @@ class WorkerSettings:
     cron_jobs: ClassVar[list[Any]] = [
         cron(cast(Any, self_heal_check), minute={0, 15, 30, 45}),
         cron(cast(Any, container_log_audit), hour={0, 6, 12, 18}, minute={5}),
+        cron(
+            cast(Any, autonomous_reasoning_cycle),
+            minute={2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57},
+        ),
+        cron(cast(Any, ingest_knowledge_base), minute={0, 15, 30, 45}),
+        cron(
+            cast(Any, process_approved_hitl_items),
+            minute={0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                    16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+                    30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
+                    44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59},
+        ),
     ]
     queue_name = "infraq:arq:queue"
     max_jobs = _MAX_JOBS

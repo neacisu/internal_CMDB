@@ -46,7 +46,7 @@ function healthStatusBadgeClass(status: string): string {
 function severityColor(s: string) {
   if (s === "critical") return "bg-[oklch(0.35_0.12_25)] text-[oklch(0.85_0.1_25)]";
   if (s === "warning") return "bg-[oklch(0.35_0.12_85)] text-[oklch(0.85_0.1_85)]";
-  return "bg-[var(--sl3)] text-[var(--tx3)]";
+  return "bg-(--sl3) text-(--tx3)";
 }
 
 function scoreColor(score: number) {
@@ -267,7 +267,7 @@ function OverviewTab({ scores, scoresLoading, insights, healHistory }: Readonly<
                   <Badge className={`text-[10px] px-1.5 py-0 ${
                     a.status === "completed"
                       ? "bg-[oklch(0.25_0.08_145)] text-[oklch(0.65_0.18_145)]"
-                      : "bg-[var(--sl3)] text-[var(--tx3)]"
+                      : "bg-(--sl3) text-(--tx3)"
                   }`}>
                     {a.status}
                   </Badge>
@@ -338,19 +338,19 @@ function HealthTab({ scores, isLoading }: Readonly<{ scores: HealthScoreOut[] | 
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs" style={{ fontFamily: "var(--fM)" }}>
-                      <div className="flex items-center gap-1.5 min-w-[80px]">
+                      <div className="flex items-center gap-1.5 min-w-20">
                         <Progress value={cpuPct} className="flex-1 h-1.5" />
                         <span style={{ color: cpuPct > 85 ? "oklch(0.65 0.18 25)" : "var(--tx3)" }}>{cpuPct.toFixed(1)}%</span>
                       </div>
                     </TableCell>
                     <TableCell className="text-xs" style={{ fontFamily: "var(--fM)" }}>
-                      <div className="flex items-center gap-1.5 min-w-[80px]">
+                      <div className="flex items-center gap-1.5 min-w-20">
                         <Progress value={memPct} className="flex-1 h-1.5" />
                         <span style={{ color: memPct > 85 ? "oklch(0.65 0.18 25)" : "var(--tx3)" }}>{memPct.toFixed(1)}%</span>
                       </div>
                     </TableCell>
                     <TableCell className="text-xs" style={{ fontFamily: "var(--fM)" }}>
-                      <div className="flex items-center gap-1.5 min-w-[80px]">
+                      <div className="flex items-center gap-1.5 min-w-20">
                         <Progress value={diskPct} className="flex-1 h-1.5" />
                         <span style={{ color: diskPct > 80 ? "oklch(0.65 0.18 25)" : "var(--tx3)" }}>{diskPct.toFixed(0)}%</span>
                       </div>

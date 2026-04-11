@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { login, AuthError } from "@/lib/auth";
 import { PasswordChangePanel } from "@/components/auth/password-change-panel";
@@ -14,7 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -153,5 +153,13 @@ export default function LoginPage() {
         }}
       />
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

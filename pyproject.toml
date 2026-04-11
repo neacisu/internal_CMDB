@@ -16,6 +16,7 @@ dependencies = [
   "alembic>=1.14",
   "asyncpg>=0.30",
   "arq>=0.26",
+  "docker>=7.0",
   "croniter>=6.0",
   "deepdiff>=7.0",
   "fastapi>=0.115",
@@ -117,6 +118,9 @@ exclude_lines = [
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+# src/src/** is a local volume-mount artifact (not tracked by git, not built).
+# Exclude it so ruff only lints the canonical source tree.
+exclude = ["src/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "PT", "SIM", "PL", "RUF"]

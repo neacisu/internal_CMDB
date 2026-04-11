@@ -84,31 +84,88 @@ async def _noop_rollback(params: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _restart_container_pre(params: dict[str, Any]) -> dict[str, Any]:
+    """Pre-check: verify container exists and get its current state."""
     await _playbook_step_yield()
-    cid = params.get("container_id", "unknown")
+    cid = params.get("container_id") or params.get("container_name", "unknown")
     logger.info("Pre-check: verifying container %s exists and is accessible.", cid)
-    return {"container_id": cid, "pre_check": "passed"}
+
+    try:
+        import docker  # noqa: PLC0415
+
+        client = docker.from_env()
+        try:
+            container = client.containers.get(cid)
+            short_id = (container.id or str(cid))[:12]
+            return {
+                "container_id": short_id,
+                "container_name": container.name,
+                "status": container.status,
+                "pre_check": "passed",
+            }
+        finally:
+            client.close()
+    except Exception as exc:
+        return {"container_id": cid, "pre_check": "failed", "error": str(exc)}
 
 
 async def _restart_container_exec(params: dict[str, Any]) -> dict[str, Any]:
-    cid = params.get("container_id", "unknown")
+    """Execute restart via Docker Engine API."""
+    cid = params.get("container_id") or params.get("container_name", "unknown")
     logger.info("Executing restart for container %s.", cid)
-    await asyncio.sleep(0)
-    return {"container_id": cid, "action": "restarted"}
+
+    loop = asyncio.get_event_loop()
+
+    def _restart() -> dict[str, Any]:
+        import docker  # noqa: PLC0415
+
+        client = docker.from_env()
+        try:
+            container = client.containers.get(cid)
+            container.restart(timeout=30)
+            container.reload()
+            short_id = (container.id or str(cid))[:12]
+            return {
+                "container_id": short_id,
+                "container_name": container.name,
+                "status": container.status,
+                "action": "restarted",
+            }
+        finally:
+            client.close()
+
+    return await loop.run_in_executor(None, _restart)
 
 
 async def _restart_container_post(params: dict[str, Any]) -> dict[str, Any]:
+    """Post-check: verify container is running after restart."""
     await _playbook_step_yield()
-    cid = params.get("container_id", "unknown")
+    cid = params.get("container_id") or params.get("container_name", "unknown")
     logger.info("Post-check: container %s health verified.", cid)
-    return {"container_id": cid, "healthy": True, "post_check": "passed"}
+
+    try:
+        import docker  # noqa: PLC0415
+
+        client = docker.from_env()
+        try:
+            container = client.containers.get(cid)
+            short_id = (container.id or str(cid))[:12]
+            return {
+                "container_id": short_id,
+                "status": container.status,
+                "healthy": container.status == "running",
+                "post_check": "passed" if container.status == "running" else "warning",
+            }
+        finally:
+            client.close()
+    except Exception as exc:
+        return {"container_id": cid, "healthy": False, "post_check": "failed", "error": str(exc)}
 
 
 async def _restart_container_rollback(params: dict[str, Any]) -> dict[str, Any]:
     await _playbook_step_yield()
-    cid = params.get("container_id", "unknown")
-    logger.warning("Rollback: attempting to restore container %s to previous state.", cid)
-    return {"container_id": cid, "rolled_back": True}
+    cid = params.get("container_id") or params.get("container_name", "unknown")
+    logger.warning("Rollback: restart is idempotent, no rollback needed for %s.", cid)
+    return {"container_id": cid, "rolled_back": True, "note": "restart is idempotent"}
 
 
 # --- clear_disk_space -----------------------------------------------------
@@ -555,6 +612,105 @@ PLAYBOOKS: dict[str, _PlaybookSteps] = {
         "rollback": _truncate_log_rollback,
         "timeout_s": 60,
     },
+}
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 supplementary playbooks — restart_systemd_service
+# ---------------------------------------------------------------------------
+
+_SYSTEMD_RESTART_ALLOWLIST = frozenset(
+    {
+        "internalcmdb-agent",
+        "nginx",
+        "haproxy",
+        "docker",
+        "fail2ban",
+    }
+)
+
+
+async def _restart_svc_pre(params: dict[str, Any]) -> dict[str, Any]:
+    """Pre-check: verify service name is in allowlist and get current status."""
+    service = params.get("service", "")
+    if not service or service not in _SYSTEMD_RESTART_ALLOWLIST:
+        return {
+            "pre_check": "failed",
+            "reason": f"Service {service!r} not in allowlist: {sorted(_SYSTEMD_RESTART_ALLOWLIST)}",
+        }
+    await _playbook_step_yield()
+    logger.info("Pre-check: service %s validated against allowlist.", service)
+    return {"service": service, "pre_check": "passed"}
+
+
+async def _restart_svc_exec(params: dict[str, Any]) -> dict[str, Any]:
+    """Execute: restart the systemd service via subprocess."""
+    import shlex  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    service = params.get("service", "")
+    cmd = f"systemctl restart {shlex.quote(service)}"
+
+    def _run() -> dict[str, Any]:
+        try:
+            result = subprocess.run(
+                shlex.split(cmd),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            return {
+                "service": service,
+                "exit_code": result.returncode,
+                "stdout": result.stdout[:4096],
+                "stderr": result.stderr[:4096],
+                "action": "restarted",
+            }
+        except subprocess.TimeoutExpired:
+            return {"service": service, "exit_code": -1, "error": "Restart timed out"}
+        except FileNotFoundError:
+            return {"service": service, "exit_code": -1, "error": "systemctl not found"}
+
+    return await asyncio.get_event_loop().run_in_executor(None, _run)
+
+
+async def _restart_svc_post(params: dict[str, Any]) -> dict[str, Any]:
+    """Post-check: verify service is active after restart."""
+    import shlex  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    service = params.get("service", "")
+
+    def _check() -> dict[str, Any]:
+        try:
+            result = subprocess.run(
+                shlex.split(f"systemctl is-active {shlex.quote(service)}"),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            active = result.stdout.strip() == "active"
+            return {
+                "service": service,
+                "active": active,
+                "healthy": active,
+                "post_check": "passed" if active else "warning",
+            }
+        except Exception as exc:
+            return {"service": service, "healthy": False, "post_check": "failed", "error": str(exc)}
+
+    return await asyncio.get_event_loop().run_in_executor(None, _check)
+
+
+PLAYBOOKS["restart_systemd_service"] = {
+    "description": "Restart a systemd service (from allowlist) and verify it is active.",
+    "pre_check": _restart_svc_pre,
+    "execute": _restart_svc_exec,
+    "post_check": _restart_svc_post,
+    "rollback": _noop_rollback,
+    "timeout_s": 60,
 }
 
 

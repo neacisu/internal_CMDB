@@ -527,16 +527,21 @@ export interface FleetVital {
   status: string;
   last_heartbeat_at: string | null;
   load_avg: number[];
+  cpu_pct: number | null;
   memory_pct: number | null;
   memory_total_gb: number | null;
   disk_root_pct: number | null;
   containers_running: number;
   containers_total: number;
+  gpu_pct: number | null;
   vitals_at: string | null;
 }
 
 export const getFleetVitals = () =>
   apiFetch<FleetVital[]>("/dashboard/fleet-vitals");
+
+/** Absolute-path URL for the fleet vitals SSE stream (no BASE prefix — rewrite handles it). */
+export const FLEET_VITALS_SSE_URL = "/api/v1/sse/vitals";
 
 // Documents
 export interface DocMeta {
@@ -687,6 +692,16 @@ export interface SystemInfo {
 
 export const getSettingsAllGroups = () => apiFetch<SettingGroupOut[]>("/settings");
 export const getLLMConfig = () => apiFetch<LLMConfig>("/settings/llm");
+
+export interface LLMBackendHealth {
+  ok: boolean;
+  latency_ms: number;
+  url: string;
+  error?: string;
+}
+export type LLMHealthMap = Record<"reasoning" | "fast" | "embed" | "guard", LLMBackendHealth>;
+export const getLLMHealth = () => apiFetch<LLMHealthMap>("/settings/llm/health");
+
 export const updateLLMConfig = (body: Partial<LLMConfig & {
   reasoning_url?: string; fast_url?: string; embed_url?: string; guard_url?: string;
   guard_token?: string; reasoning_model_id?: string; fast_model_id?: string;
@@ -735,3 +750,110 @@ export const deleteUserPreference = (key: string) =>
   apiFetch<void>(`/settings/preferences/${key}`, { method: "DELETE" });
 
 export const getSystemInfo = () => apiFetch<SystemInfo>("/settings/system-info");
+
+/* ------------------------------------------------------------------ */
+/*  Agent Sessions (ReAct loop)                                       */
+/* ------------------------------------------------------------------ */
+
+export interface AgentSessionOut {
+  session_id: string;
+  goal: string;
+  status: string;
+  model_used: string;
+  iterations: number;
+  tokens_used: number;
+  tool_calls: { tool: string; args: Record<string, unknown>; result: unknown; success: boolean }[];
+  conversation: { iteration: number; phase: string; content: string }[];
+  final_answer: string | null;
+  error: string | null;
+  triggered_by: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface StartAgentRequest {
+  goal: string;
+  context?: Record<string, unknown>;
+  model_name?: string;
+}
+
+export const getAgentSessions = (params = "") =>
+  apiFetch<AgentSessionOut[]>(withQuerySuffix("/cognitive/agent-sessions", params));
+
+export const getAgentSession = (id: string) =>
+  apiFetch<AgentSessionOut>(`/cognitive/agent-sessions/${id}`);
+
+export const startAgentSession = (body: StartAgentRequest) =>
+  apiFetch<AgentSessionOut>("/cognitive/agent-sessions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const stopAgentSession = (sessionId: string) =>
+  apiFetch<AgentSessionOut>(`/cognitive/agent-sessions/${sessionId}/stop`, {
+    method: "POST",
+  });
+
+/**
+ * Open an SSE stream for a running agent session.
+ * Each event carries a JSON payload with {session_id, iteration, phase, content, tool_call, timestamp}.
+ * Phase "done" signals the end of the stream.
+ */
+export function streamAgentSession(sessionId: string): EventSource {
+  return new EventSource(`${BASE}/cognitive/agent-sessions/${sessionId}/stream`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Agent Commands                                                    */
+/* ------------------------------------------------------------------ */
+
+export interface AgentCommand {
+  command_id: string;
+  agent_id: string;
+  command_type: string;
+  status: string;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  duration_ms: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export const sendAgentCommand = (agentId: string, body: { command_type: string; payload: Record<string, unknown>; timeout?: number }) =>
+  apiFetch<AgentCommand>(`/agent-commands/${agentId}/commands`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getAgentCommandResult = (agentId: string, commandId: string) =>
+  apiFetch<AgentCommand>(`/agent-commands/${agentId}/commands/${commandId}`);
+
+export const listAgentCommands = (agentId: string, params = "") =>
+  apiFetch<AgentCommand[]>(withQuerySuffix(`/agent-commands/${agentId}/commands`, params));
+
+/**
+ * Stream command results via SSE.  Returns the raw ``EventSource``
+ * so the caller can attach ``onmessage`` / ``onerror`` handlers.
+ */
+export function streamCommandResult(agentId: string, commandId: string): EventSource {
+  return new EventSource(`${BASE}/agent-commands/${agentId}/commands/${commandId}/stream`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  HITL bulk actions                                                 */
+/* ------------------------------------------------------------------ */
+
+export const bulkApproveHITL = (itemIds: string[], decidedBy: string, reason: string) =>
+  Promise.all(itemIds.map((id) => approveHITLItem(id, decidedBy, reason)));
+
+export const bulkRejectHITL = (itemIds: string[], decidedBy: string, reason: string) =>
+  Promise.all(itemIds.map((id) => rejectHITLItem(id, decidedBy, reason)));
+
+/* ------------------------------------------------------------------ */
+/*  Auto-remediation trigger                                          */
+/* ------------------------------------------------------------------ */
+
+export const triggerRemediation = (insightId: string) =>
+  apiFetch<{ session_id: string; status: string }>(`/cognitive/insights/${insightId}/remediate`, {
+    method: "POST",
+  });

@@ -80,7 +80,13 @@ function VitalMetricsCard({ vital }: Readonly<{ vital: FleetVital }>) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div>
+            <p className="text-xs text-(--tx3) mb-1">CPU</p>
+            <p className="text-lg font-semibold" style={{ fontFamily: "var(--fM)", color: vitalMetricColorPct(vital.cpu_pct) }}>
+              {vital.cpu_pct == null ? "—" : `${vital.cpu_pct}%`}
+            </p>
+          </div>
           <div>
             <p className="text-xs text-(--tx3) mb-1">Memory</p>
             <p className="text-lg font-semibold" style={{ fontFamily: "var(--fM)", color: vitalMetricColorPct(vital.memory_pct) }}>
@@ -92,6 +98,12 @@ function VitalMetricsCard({ vital }: Readonly<{ vital: FleetVital }>) {
             <p className="text-xs text-(--tx3) mb-1">Disk (root /)</p>
             <p className="text-lg font-semibold" style={{ fontFamily: "var(--fM)", color: vitalMetricColorPct(vital.disk_root_pct) }}>
               {vital.disk_root_pct == null ? "—" : `${vital.disk_root_pct}%`}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-(--tx3) mb-1">GPU</p>
+            <p className="text-lg font-semibold" style={{ fontFamily: "var(--fM)", color: vitalMetricColorPct(vital.gpu_pct) }}>
+              {vital.gpu_pct == null ? "—" : `${vital.gpu_pct}%`}
             </p>
           </div>
           <div>

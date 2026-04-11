@@ -1,4 +1,4 @@
-PYTHON ?= python
+PYTHON ?= python3
 
 .PHONY: help init install lint format type test test-cov security audit semgrep semgrep-update check build clean run \
         api ui worker migrate-worker migrate-check dev-up dev-down \
@@ -136,10 +136,10 @@ actionlint:
 	actionlint -color .github/workflows/*.yml
 
 build:
-	python -m build
+	. .venv/bin/activate && $(PYTHON) -m build
 
 run:
-	python -m proiecteit
+	$(PYTHON) -m proiecteit
 
 api:
 	uvicorn internalcmdb.api.main:app --reload --host 0.0.0.0 --port 4444

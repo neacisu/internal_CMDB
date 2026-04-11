@@ -2,8 +2,8 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  getDashboardSummary, getFleetHealth, getFleetVitals,
-  type DashboardSummary, type FleetHealthSummary, type FleetVital,
+  getDashboardSummary, getFleetHealth,
+  type DashboardSummary, type FleetHealthSummary,
 } from "@/lib/api";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { GpuPanel } from "@/components/dashboard/gpu-panel";
@@ -16,10 +16,29 @@ import {
   Server, Cpu, Container, Activity, LayoutGrid,
   RefreshCw, Radio, AlertTriangle, WifiOff, Archive, Users,
 } from "lucide-react";
-import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+import { useRefreshCountdown, fmtTime, useFleetVitalsSSE } from "@/lib/hooks";
 
 const DASHBOARD_INTERVAL = 30_000;
 const FLEET_INTERVAL = 6_000;
+
+function pctColor(pct: number): string {
+  if (pct > 85) return "var(--er)";
+  if (pct > 60) return "var(--wa)";
+  return "var(--ok)";
+}
+
+function PctBar({ value }: Readonly<{ value: number | null }>) {
+  if (value == null) return <span style={{ color: "var(--tx4)" }}>—</span>;
+  const color = pctColor(value);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--sl2)", minWidth: 40, maxWidth: 80 }}>
+        <div style={{ width: `${value}%`, height: "100%", borderRadius: 3, background: color, transition: "width 0.3s" }} />
+      </div>
+      <span style={{ color, fontWeight: 600, minWidth: 32 }}>{value}%</span>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -36,11 +55,8 @@ export default function DashboardPage() {
     refetchInterval: FLEET_INTERVAL,
   });
 
-  const { data: vitals } = useQuery<FleetVital[]>({
-    queryKey: ["fleet", "vitals"],
-    queryFn: getFleetVitals,
-    refetchInterval: FLEET_INTERVAL,
-  });
+  // Real-time vitals via SSE — falls back to polling when SSE unavailable
+  const { vitals, isLive: vitalsLive } = useFleetVitalsSSE();
 
   const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, DASHBOARD_INTERVAL);
   const { secsLeft: fleetSecs, progress: fleetProgress, lastRefreshed: fleetRefreshed } =
@@ -64,13 +80,13 @@ export default function DashboardPage() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          {/* LIVE badge */}
-          <div className="live-badge">
+          {/* LIVE / POLL badge depending on SSE status */}
+          <div className="live-badge" title={vitalsLive ? "Real-time SSE active" : "Polling fallback"}>
             <div className="live-dot-wrap">
-              <div className="live-dot-core" />
-              <div className="live-dot-ring" />
+              <div className="live-dot-core" style={vitalsLive ? {} : { background: "var(--wa)" }} />
+              <div className="live-dot-ring" style={vitalsLive ? {} : { borderColor: "var(--wa)", animationDuration: "2s" }} />
             </div>
-            LIVE
+            {vitalsLive ? "LIVE" : "POLL"}
           </div>
 
           {/* Countdown pill */}
@@ -265,22 +281,16 @@ export default function DashboardPage() {
                     <th style={{ padding: "6px 10px", fontWeight: 600, color: "var(--tx3)" }}>Host</th>
                     <th style={{ padding: "6px 10px", fontWeight: 600, color: "var(--tx3)" }}>Status</th>
                     <th style={{ padding: "6px 10px", fontWeight: 600, color: "var(--tx3)" }}>RAM</th>
+                    <th style={{ padding: "6px 10px", fontWeight: 600, color: "var(--tx3)" }}>CPU %</th>
                     <th style={{ padding: "6px 10px", fontWeight: 600, color: "var(--tx3)" }}>Memory %</th>
                     <th style={{ padding: "6px 10px", fontWeight: 600, color: "var(--tx3)" }}>Disk /</th>
+                    <th style={{ padding: "6px 10px", fontWeight: 600, color: "var(--tx3)" }}>GPU %</th>
                     <th style={{ padding: "6px 10px", fontWeight: 600, color: "var(--tx3)" }}>Load</th>
                     <th style={{ padding: "6px 10px", fontWeight: 600, color: "var(--tx3)" }}>Docker</th>
                   </tr>
                 </thead>
                 <tbody>
                   {vitals.filter(v => v.status === "online").map((v) => {
-                    const memPct = v.memory_pct ?? 0;
-                    const diskPct = v.disk_root_pct ?? 0;
-                    let memColor = "var(--ok)";
-                    if (memPct > 85) memColor = "var(--er)";
-                    else if (memPct > 60) memColor = "var(--wa)";
-                    let diskColor = "var(--ok)";
-                    if (diskPct > 85) diskColor = "var(--er)";
-                    else if (diskPct > 60) diskColor = "var(--wa)";
                     return (
                       <tr key={v.agent_id} style={{ borderBottom: "1px solid var(--sl2)" }}>
                         <td style={{ padding: "7px 10px", fontWeight: 500 }}>{v.host_code}</td>
@@ -299,24 +309,16 @@ export default function DashboardPage() {
                           {v.memory_total_gb == null ? "—" : `${v.memory_total_gb} GB`}
                         </td>
                         <td style={{ padding: "7px 10px" }}>
-                          {v.memory_pct == null ? "—" : (
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--sl2)", minWidth: 40, maxWidth: 80 }}>
-                                <div style={{ width: `${memPct}%`, height: "100%", borderRadius: 3, background: memColor, transition: "width 0.3s" }} />
-                              </div>
-                              <span style={{ color: memColor, fontWeight: 600, minWidth: 32 }}>{memPct}%</span>
-                            </div>
-                          )}
+                          <PctBar value={v.cpu_pct} />
                         </td>
                         <td style={{ padding: "7px 10px" }}>
-                          {v.disk_root_pct == null ? "—" : (
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--sl2)", minWidth: 40, maxWidth: 80 }}>
-                                <div style={{ width: `${diskPct}%`, height: "100%", borderRadius: 3, background: diskColor, transition: "width 0.3s" }} />
-                              </div>
-                              <span style={{ color: diskColor, fontWeight: 600, minWidth: 32 }}>{diskPct}%</span>
-                            </div>
-                          )}
+                          <PctBar value={v.memory_pct} />
+                        </td>
+                        <td style={{ padding: "7px 10px" }}>
+                          <PctBar value={v.disk_root_pct} />
+                        </td>
+                        <td style={{ padding: "7px 10px" }}>
+                          <PctBar value={v.gpu_pct} />
                         </td>
                         <td style={{ padding: "7px 10px", color: "var(--tx3)" }}>
                           {v.load_avg.length > 0 ? v.load_avg.slice(0, 3).map(l => l.toFixed(1)).join(" / ") : "—"}

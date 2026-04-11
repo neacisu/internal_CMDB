@@ -12,10 +12,13 @@ from fastapi.testclient import TestClient
 
 from internalcmdb.api.deps import get_async_session
 from internalcmdb.api.routers.cognitive import (
+    _label_file_source,
+    _label_insight,
     _parse_container_counts,
     _parse_cpu_pct,
     _parse_mem_pct,
     _parse_root_disk_pct,
+    _source_label,
 )
 from internalcmdb.api.routers.cognitive import (
     router as cognitive_router,
@@ -534,3 +537,190 @@ def test_analyze_host_graceful_with_invalid_uuid() -> None:
     client = TestClient(_make_app())
     r = client.post("/api/v1/cognitive/analyze/host/not-a-uuid")
     assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# _source_label — unit tests for the source chunk label builder
+# ---------------------------------------------------------------------------
+
+
+class TestSourceLabel:
+    """Full coverage of _source_label across all source types and edge cases."""
+
+    def test_cmdb_host_with_host_code(self) -> None:
+        s = {"metadata": {"source": "cmdb_host", "host_code": "hz.164"}}
+        assert _source_label(s) == "hz.164"
+
+    def test_cmdb_host_missing_host_code_falls_back(self) -> None:
+        s = {"metadata": {"source": "cmdb_host", "host_code": None}}
+        assert _source_label(s) == "host"
+
+    def test_cmdb_host_empty_host_code_falls_back(self) -> None:
+        s = {"metadata": {"source": "cmdb_host", "host_code": ""}}
+        assert _source_label(s) == "host"
+
+    def test_cmdb_service_with_service_code(self) -> None:
+        s = {"metadata": {"source": "cmdb_service", "service_code": "svc-auth"}}
+        assert _source_label(s) == "svc-auth"
+
+    def test_cmdb_service_missing_service_code_falls_back(self) -> None:
+        s = {"metadata": {"source": "cmdb_service", "service_code": None}}
+        assert _source_label(s) == "service"
+
+    def test_cognitive_insight_with_category_and_severity(self) -> None:
+        s = {"metadata": {
+            "source": "cognitive_insight", "category": "capacity", "severity": "warning",
+        }}
+        assert _source_label(s) == "capacity/warning"
+
+    def test_cognitive_insight_no_severity_returns_category_only(self) -> None:
+        s = {"metadata": {"source": "cognitive_insight", "category": "reliability", "severity": ""}}
+        assert _source_label(s) == "reliability"
+
+    def test_cognitive_insight_missing_category_defaults(self) -> None:
+        s = {"metadata": {"source": "cognitive_insight"}}
+        assert _source_label(s) == "insight"
+
+    def test_cognitive_insight_missing_severity_defaults(self) -> None:
+        s = {"metadata": {"source": "cognitive_insight", "category": "availability"}}
+        assert _source_label(s) == "availability"
+
+    def test_docs_source_returns_basename_without_extension(self) -> None:
+        s = {"metadata": {"source": "docs", "file": "docs/runbooks/deploy.md"}}
+        assert _source_label(s) == "deploy"
+
+    def test_docs_source_nested_path(self) -> None:
+        s = {"metadata": {"source": "docs", "file": "docs/adr/ADR-001-storage.md"}}
+        assert _source_label(s) == "ADR-001-storage"
+
+    def test_docs_source_no_file_returns_source_tag(self) -> None:
+        s = {"metadata": {"source": "docs", "file": None}}
+        assert _source_label(s) == "docs"
+
+    def test_docs_source_empty_file_returns_source_tag(self) -> None:
+        s = {"metadata": {"source": "docs", "file": ""}}
+        assert _source_label(s) == "docs"
+
+    def test_subprojects_source_json_file(self) -> None:
+        s = {"metadata": {"source": "subprojects", "file": "subprojects/audit_result.json"}}
+        assert _source_label(s) == "audit_result"
+
+    def test_unknown_source_uses_section_field(self) -> None:
+        s = {"section": "capacity/info", "metadata": {"source": "unknown_type"}}
+        assert _source_label(s) == "capacity/info"
+
+    def test_unknown_source_no_section_uses_source_tag(self) -> None:
+        s = {"metadata": {"source": "custom_source"}}
+        assert _source_label(s) == "custom_source"
+
+    def test_no_metadata_at_all_uses_section(self) -> None:
+        s = {"section": "my-section"}
+        assert _source_label(s) == "my-section"
+
+    def test_no_metadata_no_section_returns_literal_source(self) -> None:
+        s: dict[str, Any] = {}
+        assert _source_label(s) == "source"
+
+    def test_metadata_none_falls_through_to_section(self) -> None:
+        s = {"metadata": None, "section": "fallback"}
+        assert _source_label(s) == "fallback"
+
+    def test_all_strings_returned_are_str(self) -> None:
+        """Every code path must return a plain str, never None, int, or other types."""
+        cases = [
+            {"metadata": {"source": "cmdb_host", "host_code": "hz.1"}},
+            {"metadata": {"source": "cmdb_service", "service_code": "svc-x"}},
+            {"metadata": {"source": "cognitive_insight", "category": "cap", "severity": "crit"}},
+            {"metadata": {"source": "docs", "file": "docs/readme.md"}},
+            {"metadata": {"source": "subprojects", "file": "sub/report.json"}},
+            {"section": "my-sec"},
+            {},
+        ]
+        for c in cases:
+            result = _source_label(c)
+            assert isinstance(result, str), f"Expected str, got {type(result)} for {c}"
+            assert len(result) > 0, f"Expected non-empty string for {c}"
+
+
+# ---------------------------------------------------------------------------
+# _label_insight — unit tests for the extracted cognitive_insight helper
+# ---------------------------------------------------------------------------
+
+
+class TestLabelInsight:
+    """Direct unit tests for _label_insight(meta) — the extracted helper."""
+
+    def test_category_and_severity_combined(self) -> None:
+        assert _label_insight({"category": "capacity", "severity": "warning"}) == "capacity/warning"
+
+    def test_severity_critical(self) -> None:
+        meta = {"category": "reliability", "severity": "critical"}
+        assert _label_insight(meta) == "reliability/critical"
+
+    def test_empty_severity_returns_category_only(self) -> None:
+        assert _label_insight({"category": "availability", "severity": ""}) == "availability"
+
+    def test_none_severity_returns_category_only(self) -> None:
+        assert _label_insight({"category": "capacity", "severity": None}) == "capacity"
+
+    def test_missing_severity_key_returns_category_only(self) -> None:
+        assert _label_insight({"category": "reliability"}) == "reliability"
+
+    def test_missing_category_defaults_to_insight(self) -> None:
+        assert _label_insight({}) == "insight"
+
+    def test_none_category_defaults_to_insight(self) -> None:
+        assert _label_insight({"category": None}) == "insight"
+
+    def test_always_returns_str(self) -> None:
+        for meta in [
+            {"category": "cap", "severity": "warn"},
+            {"category": "cap"},
+            {"severity": "warn"},
+            {},
+        ]:
+            result = _label_insight(meta)
+            assert isinstance(result, str)
+            assert len(result) > 0
+
+
+# ---------------------------------------------------------------------------
+# _label_file_source — unit tests for the extracted docs/subprojects helper
+# ---------------------------------------------------------------------------
+
+
+class TestLabelFileSource:
+    """Direct unit tests for _label_file_source(meta, src) — the extracted helper."""
+
+    def test_markdown_file_returns_stem(self) -> None:
+        assert _label_file_source({"file": "docs/runbooks/deploy.md"}, "docs") == "deploy"
+
+    def test_json_file_returns_stem(self) -> None:
+        result = _label_file_source({"file": "subprojects/audit_result.json"}, "subprojects")
+        assert result == "audit_result"
+
+    def test_nested_path_returns_only_stem(self) -> None:
+        assert _label_file_source({"file": "a/b/c/deep-doc.md"}, "docs") == "deep-doc"
+
+    def test_file_with_multiple_dots_only_removes_last_extension(self) -> None:
+        assert _label_file_source({"file": "docs/report.v2.md"}, "docs") == "report.v2"
+
+    def test_empty_file_falls_back_to_src(self) -> None:
+        assert _label_file_source({"file": ""}, "docs") == "docs"
+        assert _label_file_source({"file": ""}, "subprojects") == "subprojects"
+
+    def test_none_file_falls_back_to_src(self) -> None:
+        assert _label_file_source({"file": None}, "docs") == "docs"
+
+    def test_missing_file_key_falls_back_to_src(self) -> None:
+        assert _label_file_source({}, "subprojects") == "subprojects"
+
+    def test_always_returns_str(self) -> None:
+        for meta, src in [
+            ({"file": "docs/x.md"}, "docs"),
+            ({"file": None}, "docs"),
+            ({}, "subprojects"),
+        ]:
+            result = _label_file_source(meta, src)
+            assert isinstance(result, str)
+            assert len(result) > 0

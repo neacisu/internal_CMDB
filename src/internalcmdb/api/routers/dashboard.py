@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.functions import count
 
 from internalcmdb.collectors.fleet_health import build_fleet_state, derive_agent_status
-from internalcmdb.models.collectors import CollectorSnapshot
+from internalcmdb.models.collectors import CollectorAgent, CollectorSnapshot
 from internalcmdb.models.discovery import CollectionRun
 from internalcmdb.models.registry import (
     Cluster,
@@ -216,7 +216,7 @@ def get_trends(db: Annotated[Session, Depends(get_db)]) -> list[TrendSeries]:
 
 
 def _agent_entry(
-    agent: object | None,
+    agent: CollectorAgent | None,
     host_code: str,
     hostname: str,
 ) -> dict[str, object]:
@@ -297,26 +297,36 @@ def fleet_health_summary(
     }
 
 
-def _parse_vitals_mem(sv: dict) -> tuple[float | None, float | None]:
+def _parse_gpu_pct(gpu_snap: dict[str, Any] | None) -> float | None:
+    """Return max utilization_gpu_pct across all GPUs from a gpu_state payload."""
+    if not gpu_snap:
+        return None
+    gpus = cast(list[dict[str, Any]], gpu_snap.get("gpus") or [])
+    pcts = [
+        float(g["utilization_gpu_pct"]) for g in gpus if g.get("utilization_gpu_pct") is not None
+    ]
+    return round(max(pcts), 1) if pcts else None
+
+
+def _parse_vitals_mem(sv: dict[str, Any]) -> tuple[float | None, float | None]:
     """Return (mem_pct, mem_total_gb) from a system_vitals payload."""
-    mem = sv.get("memory_kb") or {}
-    mem_total = mem.get("MemTotal", 0)
-    mem_avail = mem.get("MemAvailable", 0)
+    mem: dict[str, Any] = sv.get("memory_kb") or {}
+    mem_total = float(mem.get("MemTotal") or 0)
+    mem_avail = float(mem.get("MemAvailable") or mem.get("MemFree") or 0)
     mem_pct = round((1 - mem_avail / mem_total) * 100, 1) if mem_total > 0 else None
     mem_total_gb = round(mem_total / (1024 * 1024), 1) if mem_total else None
     return mem_pct, mem_total_gb
 
 
-def _parse_disk_root_pct(disk_snap: object) -> float | None:
+def _parse_disk_root_pct(disk_snap: dict[str, Any] | None) -> float | None:
     """Return root-partition used_pct from a disk_state payload."""
-    disk_data = disk_snap or {}
-    if not isinstance(disk_data, dict):
+    if not disk_snap:
         return None
-    disks = disk_data.get("disks", disk_data.get("filesystems", []))
-    root_fs = next(
-        (fs for fs in disks if fs.get("mountpoint", fs.get("mount")) == "/"),
-        None,
+    disks = cast(
+        list[dict[str, Any]],
+        disk_snap.get("disks") or disk_snap.get("filesystems") or [],
     )
+    root_fs = next((fs for fs in disks if fs.get("mountpoint", fs.get("mount")) == "/"), None)
     if root_fs is None:
         return None
     raw = root_fs.get("used_pct", root_fs.get("use_pct"))
@@ -327,20 +337,17 @@ def _parse_disk_root_pct(disk_snap: object) -> float | None:
     return None
 
 
-def _parse_docker_counts(docker_snap: object) -> tuple[int, int]:
+def _parse_docker_counts(docker_snap: dict[str, Any] | None) -> tuple[int, int]:
     """Return (total, running) container counts from a docker_state payload."""
-    docker_data = docker_snap or {}
-    if not isinstance(docker_data, dict):
+    if not docker_snap:
         return 0, 0
-    containers_list = docker_data.get("containers", [])
-    running = sum(
-        1 for c in containers_list if isinstance(c, dict) and "Up" in str(c.get("status", ""))
-    )
-    return docker_data.get("total", 0), running
+    containers_list = cast(list[dict[str, Any]], docker_snap.get("containers") or [])
+    running = sum(1 for c in containers_list if "Up" in str(c.get("status", "")))
+    return int(docker_snap.get("total") or 0), running
 
 
-def _latest_snapshot(db: Session, agent_id: object, kind: str) -> object:
-    return db.execute(
+def _latest_snapshot(db: Session, agent_id: object, kind: str) -> dict[str, Any] | None:
+    val = db.execute(
         select(CollectorSnapshot.payload_jsonb)
         .where(
             CollectorSnapshot.agent_id == agent_id,
@@ -349,6 +356,7 @@ def _latest_snapshot(db: Session, agent_id: object, kind: str) -> object:
         .order_by(CollectorSnapshot.collected_at.desc())
         .limit(1)
     ).scalar()
+    return val if isinstance(val, dict) else None
 
 
 @router.get("/fleet-vitals")
@@ -356,8 +364,6 @@ def fleet_vitals(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict[str, object]]:
     """Latest system vitals per active agent — CPU, RAM, disk, network from snapshots."""
-    from internalcmdb.models.collectors import CollectorAgent  # noqa: PLC0415
-
     agents = db.scalars(
         select(CollectorAgent).where(
             CollectorAgent.is_active.is_(True),
@@ -377,12 +383,14 @@ def fleet_vitals(
             .limit(1)
         ).first()
 
-        sv = vitals_snap[0] if vitals_snap else {}
-        mem_pct, mem_total_gb = _parse_vitals_mem(sv or {})
+        sv: dict[str, Any] = vitals_snap[0] if vitals_snap else {}
+        mem_pct, mem_total_gb = _parse_vitals_mem(sv)
+        cpu_pct: float | None = sv.get("cpu_pct")
         disk_pct = _parse_disk_root_pct(_latest_snapshot(db, agent.agent_id, "disk_state"))
         container_count, running_count = _parse_docker_counts(
             _latest_snapshot(db, agent.agent_id, "docker_state"),
         )
+        gpu_pct = _parse_gpu_pct(_latest_snapshot(db, agent.agent_id, "gpu_state"))
 
         result.append(
             {
@@ -391,11 +399,13 @@ def fleet_vitals(
                 "status": derive_agent_status(agent),
                 "last_heartbeat_at": agent.last_heartbeat_at,
                 "load_avg": sv.get("load_avg", []) if sv else [],
+                "cpu_pct": cpu_pct,
                 "memory_pct": mem_pct,
                 "memory_total_gb": mem_total_gb,
                 "disk_root_pct": disk_pct,
                 "containers_running": running_count,
                 "containers_total": container_count,
+                "gpu_pct": gpu_pct,
                 "vitals_at": str(vitals_snap[1]) if vitals_snap else None,
             }
         )

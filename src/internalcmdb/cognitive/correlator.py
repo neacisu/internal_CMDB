@@ -6,11 +6,15 @@ with cooldown periods, and causal chain tracing through correlated audit events.
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 # fromisoformat() does not accept "Z" before Python 3.11; use explicit UTC offset.
 _ISO8601_UTC_OFFSET = "+00:00"
@@ -65,7 +69,8 @@ class IncidentCorrelator:
             if corr_id:
                 correlation_map[str(corr_id)] = group_key
 
-            groups.setdefault(group_key, []).append(event)
+            group_list: list[dict[str, Any]] = groups.setdefault(group_key, [])
+            group_list.append(event)
 
         incidents: list[dict[str, Any]] = []
         for group_key, group_events in groups.items():
@@ -142,7 +147,7 @@ class IncidentCorrelator:
             {"corr_id": str(corr_id)},
         )
 
-        chain = []
+        chain: list[dict[str, Any]] = []
         for r in chain_result.fetchall():
             chain.append(
                 {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in r._mapping.items()}
@@ -154,6 +159,101 @@ class IncidentCorrelator:
             "chain_length": len(chain),
             "chain": chain,
         }
+
+    async def correlate_with_llm(
+        self,
+        window_minutes: int = 15,
+    ) -> list[dict[str, Any]]:
+        """LLM-enriched correlation: group events + ask LLM for root cause analysis.
+
+        After rule-based grouping, sends each incident cluster to the reasoning
+        model for root cause identification and remediation suggestions.
+        """
+        # First, do the standard rule-based correlation
+        incidents = await self.correlate(window_minutes=window_minutes)
+
+        if not incidents:
+            return incidents
+
+        # Only enrich clusters with >= 2 events or critical severity
+        enrichable = [
+            i
+            for i in incidents
+            if i["event_count"] >= 2 or i["severity"] in ("RC-3", "RC-4")  # noqa: PLR2004
+        ]
+
+        if not enrichable:
+            return incidents
+
+        try:
+            from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
+
+            llm = await LLMClient.from_settings()
+            try:
+                for incident in enrichable[:5]:  # Limit to 5 to conserve tokens
+                    enrichment = await self._enrich_incident(llm, incident)
+                    incident["llm_analysis"] = enrichment
+            finally:
+                await llm.close()
+        except Exception:
+            logger.warning("LLM enrichment failed — returning rule-based results", exc_info=True)
+
+        return incidents
+
+    @staticmethod
+    async def _enrich_incident(
+        llm: Any,
+        incident: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Ask LLM to analyze an incident cluster and identify root cause."""
+        # Prepare a concise event summary for the LLM
+        event_summaries: list[dict[str, Any]] = []
+        for e in incident.get("events", [])[:10]:
+            event_summaries.append(
+                {
+                    "type": e.get("event_type", ""),
+                    "action": e.get("action", ""),
+                    "target": e.get("target_entity", ""),
+                    "target_id": str(e.get("target_id", "")),
+                    "severity": e.get("risk_class", ""),
+                    "time": str(e.get("created_at", "")),
+                }
+            )
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an infrastructure incident analyst. "
+                    "Given a cluster of related events, identify:\n"
+                    "1. The likely root cause\n"
+                    "2. A brief timeline narrative\n"
+                    "3. A recommended remediation plan\n"
+                    "Be concise. Limit to 200 words."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Incident cluster ({incident['event_count']} events, "
+                    f"severity {incident['severity']}, "
+                    f"span {incident['time_span_seconds']:.0f}s):\n\n"
+                    f"```json\n{json.dumps(event_summaries, indent=2, default=str)}\n```"
+                ),
+            },
+        ]
+
+        try:
+            response = await llm.fast(messages, max_tokens=300)
+            content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+            return {
+                "root_cause": content,
+                "model_used": "fast",
+                "tokens_used": response.get("usage", {}).get("total_tokens", 0),
+            }
+        except Exception as exc:
+            logger.debug("LLM incident enrichment failed: %s", exc)
+            return {"root_cause": "", "error": str(exc)}
 
 
 def _parse_iso_datetime(ts: str) -> datetime:
