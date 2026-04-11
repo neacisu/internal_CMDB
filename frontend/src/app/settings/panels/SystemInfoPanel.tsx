@@ -18,7 +18,7 @@ import { RefreshCw, Server, Database, Brain, Clock } from "lucide-react";
 function InfoRow({ label, value }: Readonly<{ label: string; value: React.ReactNode }>) {
   return (
     <div className="flex items-center gap-3 py-1.5 border-b border-[oklch(0.24_0.012_255)] last:border-0">
-      <span className="w-36 flex-shrink-0 text-(--tx3) text-sm">{label}</span>
+      <span className="w-36 shrink-0 text-(--tx3) text-sm">{label}</span>
       <span className="text-(--tx1) text-sm font-(--fM)">{value}</span>
     </div>
   );
@@ -122,16 +122,16 @@ export default function SystemInfoPanel() {
                 <TableRow key={b.name} className="border-[oklch(0.24_0.012_255)]">
                   <TableCell className="font-medium text-sm">{b.name}</TableCell>
                   <TableCell className="font-(--fM) text-xs text-(--tx3)">{b.model}</TableCell>
-                  <TableCell className="font-(--fM) text-xs text-(--tx3) max-w-[180px] truncate">{b.url}</TableCell>
+                  <TableCell className="font-(--fM) text-xs text-(--tx3) max-w-45 truncate">{b.url}</TableCell>
                   <TableCell>
                     <span className="inline-flex items-center gap-1.5">
-                      <span className={`h-2 w-2 rounded-full flex-shrink-0 ${b.reachable ? "bg-(--ok)" : "bg-(--er)"}`} />
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${b.reachable ? "bg-(--ok)" : "bg-(--er)"}`} />
                       <span className={`text-xs font-medium ${b.reachable ? "text-(--ok)" : "text-(--er)"}`}>
                         {b.reachable ? "OK" : "Unreachable"}
                       </span>
                     </span>
                     {b.error && (
-                      <p className="text-(--er) text-xs mt-0.5 truncate max-w-[160px]">{b.error}</p>
+                      <p className="text-(--er) text-xs mt-0.5 truncate max-w-40">{b.error}</p>
                     )}
                   </TableCell>
                   <TableCell className="text-(--tx3) text-sm">
@@ -165,7 +165,7 @@ export default function SystemInfoPanel() {
               : (
                 <ul className="flex flex-col gap-1">
                   {data.cognitive_tasks.map(t => (
-                    <li key={t} className="text-sm font-(--fM) text-(--tx2) bg-(--sl3) rounded-[5px] px-2.5 py-1">
+                    <li key={t} className="text-sm font-(--fM) text-sidebar-foreground bg-(--sl3) rounded-[5px] px-2.5 py-1">
                       {t}
                     </li>
                   ))}
@@ -187,7 +187,7 @@ export default function SystemInfoPanel() {
               : (
                 <ul className="flex flex-col gap-1">
                   {data.cron_jobs.map(j => (
-                    <li key={j} className="text-sm font-(--fM) text-(--tx2) bg-(--sl3) rounded-[5px] px-2.5 py-1">
+                    <li key={j} className="text-sm font-(--fM) text-sidebar-foreground bg-(--sl3) rounded-[5px] px-2.5 py-1">
                       {j}
                     </li>
                   ))}

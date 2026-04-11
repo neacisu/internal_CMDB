@@ -625,7 +625,7 @@ async def get_observability_config() -> ObservabilityConfig:
     store = _store()
     cors_raw = await store.get("obs.cors_origins")
     cors: list[str] = (
-        [str(c) for c in cors_raw] if isinstance(cors_raw, list) else ["http://localhost:3333"]
+        [str(c) for c in cors_raw] if isinstance(cors_raw, list) else ["http://localhost:3333"]  # type: ignore[union-attr]
     )
     insecure_val = await store.get("obs.otlp_insecure")
     sample_val = await store.get("obs.sample_rate")
@@ -1021,7 +1021,7 @@ async def get_system_info() -> SystemInfoOut:
 
     # Cron job descriptions
     cron_descriptions = [
-        f"{cj.name.__name__} every {cj.minute or '*'}m/{cj.hour or '*'}h"
+        f"{cj.name} every {cj.minute or '*'}m/{cj.hour or '*'}h"
         for cj in getattr(WorkerSettings, "cron_jobs", [])
     ]
 
