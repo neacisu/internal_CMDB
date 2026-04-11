@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, cast
 
@@ -337,14 +338,24 @@ def _parse_disk_root_pct(disk_snap: dict[str, Any] | None) -> float | None:
     return None
 
 
+_HEALTH_RE = re.compile(r"\(([a-z]+)\)", re.IGNORECASE)
+
+
+def _container_health(c: dict[str, Any]) -> str:
+    """Extract health — prefers explicit 'health' field, falls back to status string."""
+    if h := c.get("health"):
+        return str(h).lower()
+    return m.group(1).lower() if (m := _HEALTH_RE.search(str(c.get("status", "")))) else ""
+
+
 def _parse_docker_counts(docker_snap: dict[str, Any] | None) -> tuple[int, int, int, int]:
     """Return (total, running, healthy, unhealthy) container counts from a docker_state payload."""
     if not docker_snap:
         return 0, 0, 0, 0
     containers_list = cast(list[dict[str, Any]], docker_snap.get("containers") or [])
     running = sum(1 for c in containers_list if "Up" in str(c.get("status", "")))
-    healthy = sum(1 for c in containers_list if c.get("health") == "healthy")
-    unhealthy = sum(1 for c in containers_list if c.get("health") == "unhealthy")
+    healthy = sum(1 for c in containers_list if _container_health(c) == "healthy")
+    unhealthy = sum(1 for c in containers_list if _container_health(c) == "unhealthy")
     return int(docker_snap.get("total") or 0), running, healthy, unhealthy
 
 

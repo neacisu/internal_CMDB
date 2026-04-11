@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -460,6 +461,16 @@ def _parse_vital_gpu(gpu_payload: dict[str, Any] | None) -> float | None:
     return round(max(pcts), 1) if pcts else None
 
 
+_HEALTH_RE = re.compile(r"\(([a-z]+)\)", re.IGNORECASE)
+
+
+def _container_health(c: dict[str, Any]) -> str:
+    """Extract health from container — prefers 'health' field, falls back to status string."""
+    if h := c.get("health"):
+        return str(h).lower()
+    return m.group(1).lower() if (m := _HEALTH_RE.search(str(c.get("status", "")))) else ""
+
+
 def _parse_vital_docker(docker_payload: dict[str, Any] | None) -> tuple[int, int, int, int]:
     """Return (total, running, healthy, unhealthy) from a docker_state payload dict."""
     if not docker_payload:
@@ -467,8 +478,8 @@ def _parse_vital_docker(docker_payload: dict[str, Any] | None) -> tuple[int, int
     containers_list = cast(list[dict[str, Any]], docker_payload.get("containers") or [])
     total = int(docker_payload.get("total") or len(containers_list))
     running = sum(1 for c in containers_list if "Up" in str(c.get("status", "")))
-    healthy = sum(1 for c in containers_list if c.get("health") == "healthy")
-    unhealthy = sum(1 for c in containers_list if c.get("health") == "unhealthy")
+    healthy = sum(1 for c in containers_list if _container_health(c) == "healthy")
+    unhealthy = sum(1 for c in containers_list if _container_health(c) == "unhealthy")
     return total, running, healthy, unhealthy
 
 
