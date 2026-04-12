@@ -6,11 +6,9 @@ import {
   getFleetHealth,
   getGpuSummary,
   getFleetHealthDashboard,
-  getFleetVitals,
   getHealthScores,
   type FleetHealthSummary,
   type GpuSummaryItem,
-  type FleetVital,
   type HealthScoreOut,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+import { useRefreshCountdown, fmtTime, useFleetVitalsSSE } from "@/lib/hooks";
 import {
   Activity,
   RefreshCw,
@@ -107,12 +105,7 @@ export default function MetricsPage() {
     staleTime: 10_000,
   });
 
-  const { data: vitals } = useQuery<FleetVital[]>({
-    queryKey: ["fleet", "vitals"],
-    queryFn: getFleetVitals,
-    refetchInterval: REFRESH_INTERVAL,
-    staleTime: 4_000,
-  });
+  const { vitals, isLive: vitalsLive } = useFleetVitalsSSE();
 
   const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, REFRESH_INTERVAL);
 
@@ -178,12 +171,12 @@ export default function MetricsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="live-badge">
+          <div className="live-badge" title={vitalsLive ? "Real-time SSE active" : "Polling fallback"}>
             <div className="live-dot-wrap">
-              <div className="live-dot-core" />
-              <div className="live-dot-ring" />
+              <div className="live-dot-core" style={vitalsLive ? {} : { background: "var(--wa)" }} />
+              <div className="live-dot-ring" style={vitalsLive ? {} : { borderColor: "var(--wa)", animationDuration: "2s" }} />
             </div>
-            LIVE
+            {vitalsLive ? "LIVE" : "POLL"}
           </div>
           <div className="countdown-pill">
             <RefreshCw size={11} style={{ opacity: 0.55 }} />
