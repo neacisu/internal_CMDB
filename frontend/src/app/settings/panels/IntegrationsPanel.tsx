@@ -93,8 +93,10 @@ export default function IntegrationsPanel() {
 
   const saveMutation = useMutation({
     mutationFn: (cfg: TimelinesAIConfig) => saveTimelinesAIConfig(cfg),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["settings", "integrations", "timelinesai"] });
+      // Sync form with confirmed server state so badge reflects what was actually saved
+      setForm(data);
       toast.success("TimelinesAI configuration saved");
     },
     onError: (e: Error) => toast.error(`Save failed: ${e.message}`),
