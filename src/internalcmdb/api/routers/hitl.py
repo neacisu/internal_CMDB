@@ -229,8 +229,8 @@ async def hitl_stats(
                 COUNT(*) FILTER (WHERE status = 'approved')   AS approved_count,
                 COUNT(*) FILTER (WHERE status = 'rejected')   AS rejected_count,
                 COUNT(*) FILTER (WHERE status = 'blocked')    AS blocked_count,
-                EXTRACT(EPOCH FROM AVG(decided_at - created_at))
-                    FILTER (WHERE decided_at IS NOT NULL)      AS avg_decision_time_seconds
+                EXTRACT(EPOCH FROM AVG(decided_at - created_at)
+                    FILTER (WHERE decided_at IS NOT NULL))     AS avg_decision_time_seconds
             FROM governance.hitl_item
         """)
     )
