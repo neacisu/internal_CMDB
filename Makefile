@@ -37,7 +37,7 @@ help:
 	@echo "  build-frontend-dev - Rebuild frontend dev image (when package.json/pnpm-lock.yaml change)"
 	@echo "  deploy        - Push branch + rebuild API image + restart stack on orchestrator"
 	@echo "  deploy-api    - Rebuild only API+worker image + restart (faster)"
-	@echo "  deploy-frontend - Rebuild frontend dev image on orchestrator + restart"
+	@echo "  deploy-frontend - Rebuild frontend prod image on orchestrator + restart"
 	@echo "  deploy-logs   - Tail live logs from all containers on orchestrator"
 	@echo "  migrate-worker - Apply migration (alembic upgrade head)"
 	@echo "  dev-up        - Start local dev support services (Redis)"
@@ -179,7 +179,7 @@ build-frontend-dev:
 	DOCKER_BUILDKIT=1 docker build -f Dockerfile.frontend.dev -t internalcmdb-frontend:dev .
 	@echo "Restarting frontend container with new image..."
 	docker stop internalcmdb-frontend && docker rm internalcmdb-frontend
-	docker compose -f $(COMPOSE_FILE) --env-file .env up -d internalcmdb-frontend
+	docker compose -f $(DEV_COMPOSE_FILE) --env-file .env up -d internalcmdb-frontend
 
 start:
 	./stack.sh start
@@ -201,7 +201,8 @@ clean:
 
 # ── Orchestrator deploy ────────────────────────────────────────────────────────
 DEPLOY_DIR   = /opt/stacks/internalcmdb
-COMPOSE_FILE = $(DEPLOY_DIR)/deploy/orchestrator/docker-compose.internalcmdb.yml
+COMPOSE_FILE = $(DEPLOY_DIR)/deploy/orchestrator/docker-compose.internalcmdb.prod.yml
+DEV_COMPOSE_FILE = $(DEPLOY_DIR)/deploy/orchestrator/docker-compose.internalcmdb.yml
 # Aligned with .github/workflows/cd.yml (default main); override: make deploy DEPLOY_BRANCH=other
 DEPLOY_BRANCH ?= main
 
@@ -223,9 +224,9 @@ deploy-api:
 deploy-frontend:
 	git push origin $(DEPLOY_BRANCH)
 	ssh orchestrator 'cd $(DEPLOY_DIR) && git pull origin $(DEPLOY_BRANCH)'
-	ssh orchestrator 'cd $(DEPLOY_DIR) && DOCKER_BUILDKIT=1 docker build -f Dockerfile.frontend.dev -t internalcmdb-frontend:dev .'
+	ssh orchestrator 'cd $(DEPLOY_DIR) && DOCKER_BUILDKIT=1 docker build -f Dockerfile.frontend -t ghcr.io/alexneacsu/internalcmdb-frontend:latest .'
 	ssh orchestrator 'docker compose -f $(COMPOSE_FILE) up -d --no-deps internalcmdb-frontend'
-	@echo "Frontend restarted → https://infraq.app (hot-reload active)"
+	@echo "Frontend restarted → https://infraq.app"
 
 deploy-logs:
 	ssh orchestrator 'docker compose -f $(COMPOSE_FILE) logs -f'

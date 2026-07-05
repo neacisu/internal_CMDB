@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getHosts, getClusters, getFleetVitals, type Host, type Page, type Cluster, type FleetVital } from "@/lib/api";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -22,12 +22,13 @@ export default function HostsPage() {
     `page=${page}`,
     `page_size=20`,
     gpuOnly ? "gpu_capable=true" : "",
+    search.trim() ? `search=${encodeURIComponent(search.trim())}` : "",
   ]
     .filter(Boolean)
     .join("&");
 
   const { data, isLoading } = useQuery<Page<Host>>({
-    queryKey: ["hosts", page, gpuOnly],
+    queryKey: ["hosts", page, gpuOnly, search],
     queryFn: () => getHosts(params),
   });
 
@@ -50,11 +51,11 @@ export default function HostsPage() {
     (vitals ?? []).map((v) => [v.host_code, v])
   );
 
-  const filtered = data?.items.filter((h) =>
-    !search ||
-    h.hostname.toLowerCase().includes(search.toLowerCase()) ||
-    (h.primary_private_ipv4 ?? "").includes(search)
-  );
+  const filtered = data?.items;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   const total = data?.meta.total ?? 0;
   const totalPages = Math.ceil(total / 20);

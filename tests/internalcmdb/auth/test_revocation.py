@@ -76,17 +76,17 @@ def test_is_revoked_returns_false_when_key_absent() -> None:
         assert is_revoked("jti-fresh") is False
 
 
-def test_is_revoked_fail_open_when_redis_unavailable() -> None:
+def test_is_revoked_fail_closed_when_redis_unavailable() -> None:
     with patch("internalcmdb.auth.revocation._redis_client", return_value=None):
         from internalcmdb.auth.revocation import is_revoked  # noqa: PLC0415
 
-        assert is_revoked("any-jti") is False
+        assert is_revoked("any-jti") is True
 
 
-def test_is_revoked_fail_open_on_redis_error() -> None:
+def test_is_revoked_fail_closed_on_redis_error() -> None:
     redis = MagicMock()
     redis.exists.side_effect = Exception("connection reset")
     with patch("internalcmdb.auth.revocation._redis_client", return_value=redis):
         from internalcmdb.auth.revocation import is_revoked  # noqa: PLC0415
 
-        assert is_revoked("jti-error") is False
+        assert is_revoked("jti-error") is True

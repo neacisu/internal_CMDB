@@ -16,7 +16,8 @@ import {
   Server, Cpu, Container, Activity, LayoutGrid,
   RefreshCw, Radio, AlertTriangle, WifiOff, Archive, Users,
 } from "lucide-react";
-import { useRefreshCountdown, fmtTime, useFleetVitalsSSE } from "@/lib/hooks";
+import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+import { useFleetVitalsContext } from "@/lib/fleet-vitals-context";
 
 const DASHBOARD_INTERVAL = 30_000;
 const FLEET_INTERVAL = 6_000;
@@ -56,7 +57,7 @@ export default function DashboardPage() {
   });
 
   // Real-time vitals via SSE — falls back to polling when SSE unavailable
-  const { vitals, isLive: vitalsLive } = useFleetVitalsSSE();
+  const { vitals, isLive: vitalsLive } = useFleetVitalsContext();
 
   const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, DASHBOARD_INTERVAL);
   const { secsLeft: fleetSecs, progress: fleetProgress, lastRefreshed: fleetRefreshed } =
@@ -378,7 +379,7 @@ export default function DashboardPage() {
           <CardTitle>All hosts</CardTitle>
         </CardHeader>
         <CardContent>
-          <HostGrid />
+          <HostGrid vitals={vitals} />
         </CardContent>
       </Card>
     </div>

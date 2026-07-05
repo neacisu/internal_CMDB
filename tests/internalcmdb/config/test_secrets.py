@@ -15,6 +15,7 @@ from internalcmdb.config.secrets import (
     _VAULT_TOKEN,
     SecretProvider,
     VaultConfig,
+    is_placeholder_secret,
     _get_vault_client,
     _invalidate_vault_client,
     _vault_client_cache,
@@ -192,4 +193,46 @@ def test_vault_config_is_dataclass():
     """VaultConfig must be a proper dataclass (has __dataclass_fields__)."""
     assert dataclasses.is_dataclass(VaultConfig)
     fields = {f.name for f in dataclasses.fields(VaultConfig)}
-    assert fields == {"addr", "token", "mount", "path", "timeout"}
+    assert fields == {
+        "addr",
+        "token",
+        "role_id",
+        "secret_id",
+        "secret_id_file",
+        "mount",
+        "path",
+        "timeout",
+        "db_static_creds_path",
+    }
+
+
+def test_is_placeholder_secret_detects_bootstrap_values():
+    assert is_placeholder_secret("change_me")
+    assert is_placeholder_secret("")
+    assert not is_placeholder_secret("x" * 32)
+
+
+def test_invalidate_cache_clears_provider_state():
+    p = SecretProvider(VaultConfig(token=""), cache_ttl=60)
+    p._cache = {"FOO": "bar"}
+    p._cache_ts = time.monotonic()
+    p._jwt_ring_cache = ["secret"]
+    p.invalidate_cache()
+    assert not p._cache
+    assert not p._jwt_ring_cache
+
+
+@pytest.mark.asyncio
+async def test_get_jwt_secret_ring_from_env(monkeypatch: pytest.MonkeyPatch):
+    p = SecretProvider(VaultConfig(token=""))
+    monkeypatch.setenv("JWT_SECRET_KEY", "c" * 32)
+    ring = await p.get_jwt_secret_ring()
+    assert ring == ["c" * 32]
+
+
+@pytest.mark.asyncio
+async def test_production_mode_fails_on_missing_secret(monkeypatch: pytest.MonkeyPatch):
+    p = SecretProvider(VaultConfig(token=""))
+    monkeypatch.setenv("ENV", "production")
+    with pytest.raises(RuntimeError, match="production"):
+        await p.get("__NONEXISTENT_SECRET_ABCXYZ__")

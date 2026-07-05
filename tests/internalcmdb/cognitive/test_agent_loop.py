@@ -9,8 +9,12 @@ Covers:
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from internalcmdb.cognitive.agent_loop import AgentLoop, AgentSession, AgentStep
+from internalcmdb.llm.guard_pipeline import GuardResult
 
 
 class TestModelRouting:
@@ -210,17 +214,39 @@ class TestBuildUserPrompt:
 
 
 # ---------------------------------------------------------------------------
-# _guard_scan_output — no LLM security layer available (import fails gracefully)
+# _guard_scan_output — guard pipeline integration
 # ---------------------------------------------------------------------------
 
 
 class TestGuardScanOutput:
-    def test_returns_empty_string_without_security_layer(self) -> None:
-        """When LLMSecurityLayer is unavailable, guard returns '' (no block)."""
+    @pytest.mark.asyncio
+    async def test_returns_empty_string_when_guard_passes(self) -> None:
+        """When guard scan succeeds with is_valid=True, no block message is returned."""
         loop = AgentLoop()
-        result = loop._guard_scan_output("normal output about disk usage")
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        with (
+            patch("internalcmdb.llm.client.LLMClient", return_value=mock_client),
+            patch(
+                "internalcmdb.llm.guard_pipeline.scan_output",
+                new=AsyncMock(return_value=GuardResult(is_valid=True, score=0.0, details={})),
+            ),
+        ):
+            result = await loop._guard_scan_output("normal output about disk usage")
         assert result == ""
 
-    def test_returns_empty_string_for_empty_content(self) -> None:
+    @pytest.mark.asyncio
+    async def test_returns_empty_string_for_empty_content(self) -> None:
         loop = AgentLoop()
-        assert loop._guard_scan_output("") == ""
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        with (
+            patch("internalcmdb.llm.client.LLMClient", return_value=mock_client),
+            patch(
+                "internalcmdb.llm.guard_pipeline.scan_output",
+                new=AsyncMock(return_value=GuardResult(is_valid=True, score=0.0, details={})),
+            ),
+        ):
+            assert await loop._guard_scan_output("") == ""

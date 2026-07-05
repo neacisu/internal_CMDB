@@ -1,5 +1,6 @@
-"""internalCMDB — control plane package.
+"""Legacy control-plane modules kept for unit-test coverage.
 
-Mediated action requests, policy enforcement, approval workflow, and
-agent run audit ledger (epic-5: pt-016, pt-017, pt-018).
+Runtime code uses ``internalcmdb.governance`` (PolicyEnforcer, ActionWorkflow).
+Do not import this package from production paths — it will be removed once
+governance tests fully subsume the control/ test suite.
 """

@@ -37,6 +37,9 @@ def test_enroll_creates_agent() -> None:
             return_value=None,
         ),
         patch(
+            "internalcmdb.api.routers.collectors._validate_bootstrap_token",
+        ),
+        patch(
             "internalcmdb.api.routers.collectors.get_settings",
         ) as mock_settings,
     ):
@@ -77,6 +80,9 @@ def test_enroll_reuses_existing_agent() -> None:
         patch(
             "internalcmdb.api.routers.collectors.resolve_host",
             return_value=None,
+        ),
+        patch(
+            "internalcmdb.api.routers.collectors._validate_bootstrap_token",
         ),
         patch(
             "internalcmdb.api.routers.collectors.get_settings",

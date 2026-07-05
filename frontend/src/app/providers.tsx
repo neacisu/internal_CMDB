@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
+import { FleetVitalsProvider } from "@/lib/fleet-vitals-context";
 
 export default function Providers({ children }: Readonly<{ children: ReactNode }>) {
   const [client] = useState(
@@ -11,6 +12,8 @@ export default function Providers({ children }: Readonly<{ children: ReactNode }
       })
   );
   return (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <QueryClientProvider client={client}>
+      <FleetVitalsProvider>{children}</FleetVitalsProvider>
+    </QueryClientProvider>
   );
 }

@@ -72,11 +72,14 @@ def record_failed_attempt(ip: str, email: str) -> int:
 
 
 def is_locked_out(ip: str, email: str) -> bool:
-    """Return True if the (ip, email) pair has exceeded the failure threshold."""
+    """Return True if the (ip, email) pair has exceeded the failure threshold.
+
+    Returns True (fail-closed) if Redis is unavailable.
+    """
     client = _redis_client()
     if client is None:
-        logger.warning("Redis unavailable — lockout check skipped ip=%s", ip)
-        return False
+        logger.warning("Redis unavailable — treating ip=%s as locked out (fail-closed)", ip)
+        return True
 
     try:
         raw = cast("str | None", client.get(_key(ip, email)))
@@ -84,8 +87,10 @@ def is_locked_out(ip: str, email: str) -> bool:
             return False
         return int(raw) >= MAX_ATTEMPTS
     except Exception:
-        logger.warning("Redis error — lockout check skipped ip=%s", ip, exc_info=True)
-        return False
+        logger.warning(
+            "Redis error — treating ip=%s as locked out (fail-closed)", ip, exc_info=True
+        )
+        return True
 
 
 def clear_lockout(ip: str, email: str) -> None:

@@ -558,6 +558,74 @@ def _get_engine(ctx: _Ctx):
     return create_engine(url, pool_pre_ping=True)
 
 
+async def _execute_via_action_workflow(
+    ctx: _Ctx,
+    plan: Any,
+) -> Any:
+    """Drive a RemediationPlan through ActionWorkflow (F3.1 single gate)."""
+    from sqlalchemy import create_engine  # noqa: PLC0415
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: PLC0415
+    from sqlalchemy.orm import Session  # noqa: PLC0415
+
+    from internalcmdb.api.config import get_settings  # noqa: PLC0415
+    from internalcmdb.api.deps import _normalize_pg_url  # noqa: PLC0415
+    from internalcmdb.governance.action_workflow import ActionWorkflow  # noqa: PLC0415
+
+    settings = get_settings()
+    db_url = str(ctx.get("database_url") or settings.database_url)
+    redis_url = str(ctx.get("redis_url") or settings.redis_url)
+    async_url = _normalize_pg_url(db_url, driver="asyncpg")
+
+    sync_engine = create_engine(db_url, pool_pre_ping=True)
+    async_engine = create_async_engine(async_url, pool_pre_ping=True)
+
+    try:
+        with Session(sync_engine) as sync_sess:
+            async with AsyncSession(async_engine) as async_sess:
+                wf = ActionWorkflow(sync_sess, async_sess, redis_url)
+                try:
+                    return await wf.execute_plan(plan)
+                finally:
+                    await wf.close()
+    finally:
+        sync_engine.dispose()
+        await async_engine.dispose()
+
+
+def _build_remediation_plan(
+    *,
+    insight_id: str,
+    action_type: str,
+    target_entity: str,
+    params: dict[str, Any],
+    risk_class: str,
+    status: str,
+    explanation: str,
+    confidence: float = 0.95,
+) -> Any:
+    """Construct a RemediationPlan for ActionWorkflow execution."""
+    import uuid as _uuid  # noqa: PLC0415
+
+    from internalcmdb.motor.remediation import RemediationAction, RemediationPlan  # noqa: PLC0415
+
+    return RemediationPlan(
+        plan_id=str(_uuid.uuid4()),
+        insight_id=insight_id,
+        risk_class=risk_class,
+        actions=[
+            RemediationAction(
+                action_type=action_type,
+                target_entity=target_entity,
+                params=params,
+                estimated_duration_s=120,
+            )
+        ],
+        confidence=confidence,
+        explanation=explanation,
+        status=status,
+    )
+
+
 def _query_disk_health(ctx: _Ctx) -> tuple[list[dict[str, Any]], set[str]]:
     """Return (host_disk_rows, recently_healed_host_ids)."""
     from sqlalchemy import text  # noqa: PLC0415
@@ -614,8 +682,9 @@ async def _auto_heal_disk(
     host_code: str,
     disk_pct: float,
 ) -> bool:
-    """Execute Docker cleanup on a host with a local Docker socket."""
+    """Execute Docker cleanup on a host with a local Docker socket via ActionWorkflow."""
     from internalcmdb.cognitive.self_heal_disk import docker_socket_available  # noqa: PLC0415
+    from internalcmdb.motor.remediation import RC_2  # noqa: PLC0415
 
     if not docker_socket_available():
         logger.info("Docker socket unavailable — creating manual insight for %s.", host_code)
@@ -630,26 +699,46 @@ async def _auto_heal_disk(
         )
         return False
 
-    from internalcmdb.motor.playbooks import PlaybookExecutor  # noqa: PLC0415
-
-    executor = PlaybookExecutor()
-    pb_result = await executor.execute(
-        "clear_disk_space",
-        {
+    plan = _build_remediation_plan(
+        insight_id=host_id,
+        action_type="clear_disk_space",
+        target_entity=host_code,
+        params={
             "host": host_code,
             "host_id": host_id,
             "disk_pct": disk_pct,
             "threshold_pct": _DISK_HEAL_THRESHOLD,
         },
+        risk_class=RC_2,
+        status="pending_approval",
+        explanation=f"High disk usage on {host_code}: {disk_pct:.1f}%",
     )
+    wf_result = await _execute_via_action_workflow(ctx, plan)
 
-    pre_check = cast(dict[str, Any], pb_result.output.get("pre_check") or {})
-    if pre_check.get("pre_check") == "skipped":
-        logger.info("Cleanup skipped on %s: %s", host_code, pre_check.get("reason", ""))
+    if wf_result.hitl_item_id:
+        logger.info(
+            "Self-heal plan for %s submitted to HITL item %s",
+            host_code,
+            wf_result.hitl_item_id,
+        )
+        await _persist_disk_insight(
+            ctx,
+            _DiskInsightData(host_id=host_id, host_code=host_code, disk_pct=disk_pct),
+        )
         return False
 
-    exec_out = cast(dict[str, Any], pb_result.output.get("execute") or {})
+    if not wf_result.executed:
+        logger.warning("Self-heal plan for %s blocked: %s", host_code, wf_result.blocked_reason)
+        await _persist_disk_insight(
+            ctx,
+            _DiskInsightData(host_id=host_id, host_code=host_code, disk_pct=disk_pct),
+        )
+        return False
+
+    pb_out = (wf_result.playbook_result or {}).get("clear_disk_space", {})
+    exec_out = (pb_out.get("output") or {}).get("execute") or {}
     freed_mb = float(exec_out.get("freed_mb", 0.0))
+    success = bool(pb_out.get("success"))
 
     await _persist_disk_insight(
         ctx,
@@ -657,12 +746,16 @@ async def _auto_heal_disk(
             host_id=host_id,
             host_code=host_code,
             disk_pct=disk_pct,
-            auto_healed=pb_result.success,
+            auto_healed=success,
             freed_mb=freed_mb,
         ),
     )
-    await _persist_self_heal_action(ctx, host_id, host_code, pb_result, freed_mb)
-    return pb_result.success
+    if success:
+        from types import SimpleNamespace  # noqa: PLC0415
+
+        pb_result = SimpleNamespace(success=True, error="")
+        await _persist_self_heal_action(ctx, host_id, host_code, pb_result, freed_mb)
+    return success
 
 
 async def _persist_disk_insight(
@@ -925,68 +1018,6 @@ async def _persist_log_insight(
     await asyncio.to_thread(_insert)
 
 
-async def _submit_log_hitl(ctx: _Ctx, entry: dict[str, Any]) -> None:
-    """Insert a HITL review item for a container log requiring operator approval."""
-
-    def _insert() -> None:
-        import uuid as _uuid  # noqa: PLC0415
-
-        from sqlalchemy import text  # noqa: PLC0415
-
-        engine = _get_engine(ctx)
-        item_id = str(_uuid.uuid4())
-        size_mb = entry["size_bytes"] / (1024**2)
-        name = entry["container_name"]
-        context = json.dumps(
-            {
-                "container_id": entry["container_id"],
-                "container_name": name,
-                "log_path": entry["log_path"],
-                "size_bytes": entry["size_bytes"],
-                "size_mb": round(size_mb, 1),
-                "recommended_action": "truncate_log",
-                "playbook": "truncate_container_log",
-            }
-        )
-        suggestion = json.dumps(
-            {
-                "action": "truncate_container_log",
-                "params": {
-                    "log_path": entry["log_path"],
-                    "container_name": name,
-                    "container_id": entry["container_id"],
-                    "data_root": entry["data_root"],
-                    "size_bytes": entry["size_bytes"],
-                },
-            }
-        )
-
-        try:
-            with engine.connect() as conn:
-                conn.execute(
-                    text("""
-                        INSERT INTO governance.hitl_item
-                            (item_id, item_type, risk_class, priority, status,
-                             context_jsonb, llm_suggestion, llm_confidence,
-                             llm_model_used, expires_at)
-                        VALUES
-                            (:item_id, 'container_log_truncate', 'RC-2', 'medium',
-                             'pending', :context::jsonb, :suggestion::jsonb, 0.97,
-                             'cognitive_task', now() + interval '4 hours')
-                    """),
-                    {
-                        "item_id": item_id,
-                        "context": context,
-                        "suggestion": suggestion,
-                    },
-                )
-                conn.commit()
-        finally:
-            engine.dispose()
-
-    await asyncio.to_thread(_insert)
-
-
 @_task_wrapper("container_log_audit")
 async def container_log_audit(ctx: _Ctx) -> dict[str, Any]:
     """Scan Docker container JSON log files for runaway growth and auto-heal.
@@ -1014,9 +1045,7 @@ async def container_log_audit(ctx: _Ctx) -> dict[str, Any]:
     auto_truncated = 0
     hitl_created = 0
 
-    from internalcmdb.motor.playbooks import PlaybookExecutor  # noqa: PLC0415
-
-    executor = PlaybookExecutor()
+    from internalcmdb.motor.remediation import RC_1, RC_2  # noqa: PLC0415
 
     for entry in entries:
         if entry["size_bytes"] >= log_auto_truncate_bytes:
@@ -1026,10 +1055,22 @@ async def container_log_audit(ctx: _Ctx) -> dict[str, Any]:
                 entry["log_path"],
                 entry["size_bytes"] / (1024**3),
             )
-            pb_result = await executor.execute("truncate_container_log", entry)
-            if pb_result.success:
+            plan = _build_remediation_plan(
+                insight_id=entry["container_id"],
+                action_type="truncate_container_log",
+                target_entity=entry["container_name"],
+                params=entry,
+                risk_class=RC_1,
+                status="auto_approved",
+                explanation=(
+                    f"Critical container log on {entry['container_name']}: "
+                    f"{entry['size_bytes'] / (1024**3):.2f} GB"
+                ),
+            )
+            wf_result = await _execute_via_action_workflow(ctx, plan)
+            if wf_result.executed:
                 auto_truncated += 1
-            await _persist_log_insight(ctx, entry, auto_truncated=pb_result.success)
+            await _persist_log_insight(ctx, entry, auto_truncated=wf_result.executed)
 
         else:
             logger.warning(
@@ -1038,9 +1079,22 @@ async def container_log_audit(ctx: _Ctx) -> dict[str, Any]:
                 entry["log_path"],
                 entry["size_bytes"] / (1024**2),
             )
-            await _submit_log_hitl(ctx, entry)
+            plan = _build_remediation_plan(
+                insight_id=entry["container_id"],
+                action_type="truncate_container_log",
+                target_entity=entry["container_name"],
+                params=entry,
+                risk_class=RC_2,
+                status="pending_approval",
+                explanation=(
+                    f"Container log on {entry['container_name']} at "
+                    f"{entry['size_bytes'] / (1024**2):.0f} MB requires approval"
+                ),
+            )
+            wf_result = await _execute_via_action_workflow(ctx, plan)
+            if wf_result.hitl_item_id:
+                hitl_created += 1
             await _persist_log_insight(ctx, entry, auto_truncated=False)
-            hitl_created += 1
 
     return {
         "data_root": data_root,
@@ -1177,6 +1231,100 @@ _STOP_WORDS: frozenset[str] = frozenset(
 
 _GROUNDING_THRESHOLD = 0.15
 
+_EMPTY_ACCURACY_RESULT: dict[str, Any] = {
+    "samples_evaluated": 0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "faithful_pct": 0.0,
+}
+
+
+def _fetch_recent_llm_call_rows(conn: Any) -> list[Any]:
+    """Return recent successful LLM call log rows for accuracy evaluation."""
+    from sqlalchemy import text as _text  # noqa: PLC0415
+
+    return (
+        conn.execute(
+            _text("""
+                SELECT call_id, model_id, input_tokens, output_tokens,
+                       guard_input, guard_output, called_at
+                FROM telemetry.llm_call_log
+                WHERE called_at > now() - interval '24 hours'
+                  AND status = 'ok'
+                ORDER BY called_at DESC
+                LIMIT 50
+            """)
+        )
+        .mappings()
+        .all()
+    )
+
+
+def _parse_guard_field(value: Any) -> dict[str, Any]:
+    """Normalize guard_input/guard_output to a dict."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _extract_llm_prompt_response(
+    guard_in: dict[str, Any],
+    guard_out: dict[str, Any],
+) -> tuple[str, str]:
+    """Extract prompt and response strings from guard payloads."""
+    response = str(
+        guard_out.get("sanitized_output")
+        or guard_out.get("output")
+        or ""
+    )
+    prompt = str(
+        guard_in.get("sanitized_prompt")
+        or guard_in.get("prompt")
+        or ""
+    )
+    return prompt, response
+
+
+def _evaluate_llm_accuracy_rows(rows: list[Any]) -> dict[str, Any]:
+    """Compute faithfulness metrics from LLM call log rows."""
+    evaluated = 0
+    faithful = 0
+    total_tokens = 0
+
+    for row in rows:
+        guard_out = _parse_guard_field(row.get("guard_output"))
+        guard_in = _parse_guard_field(row.get("guard_input"))
+        prompt, response = _extract_llm_prompt_response(guard_in, guard_out)
+        total_tokens += (row["input_tokens"] or 0) + (row["output_tokens"] or 0)
+
+        if not response.strip():
+            continue
+
+        evaluated += 1
+        if _is_faithful(prompt, response):
+            faithful += 1
+
+    faithful_pct = (faithful / max(evaluated, 1)) * 100
+    precision = faithful / max(evaluated, 1)
+    recall = min(precision * 1.1, 1.0)
+    f1 = 2 * precision * recall / max(precision + recall, 1e-9)
+
+    return {
+        "samples_evaluated": evaluated,
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1": round(f1, 4),
+        "faithful_pct": round(faithful_pct, 2),
+        "total_tokens_reviewed": total_tokens,
+    }
+
 
 def _is_faithful(prompt: str, response: str) -> bool:
     """Check if a response is grounded in the prompt using token overlap.
@@ -1208,69 +1356,11 @@ async def accuracy_eval(ctx: _Ctx) -> dict[str, Any]:
     engine = _get_engine(ctx)
 
     def _evaluate() -> dict[str, Any]:
-        from sqlalchemy import text as _text  # noqa: PLC0415
-
         with engine.connect() as conn:
-            # Get recent LLM call logs with answers
-            rows = (
-                conn.execute(
-                    _text("""
-                SELECT call_id, prompt_text, response_text,
-                       model_used, tokens_in, tokens_out
-                FROM telemetry.llm_call_log
-                WHERE created_at > now() - interval '24 hours'
-                  AND response_text IS NOT NULL
-                  AND response_text != ''
-                ORDER BY created_at DESC
-                LIMIT 50
-            """)
-                )
-                .mappings()
-                .all()
-            )
-
+            rows = _fetch_recent_llm_call_rows(conn)
             if not rows:
-                return {
-                    "samples_evaluated": 0,
-                    "precision": 0.0,
-                    "recall": 0.0,
-                    "f1": 0.0,
-                    "faithful_pct": 0.0,
-                }
-
-            evaluated = 0
-            faithful = 0
-            total_tokens = 0
-
-            for row in rows:
-                response = row["response_text"] or ""
-                prompt = row["prompt_text"] or ""
-                total_tokens += (row["tokens_in"] or 0) + (row["tokens_out"] or 0)
-
-                # Faithfulness heuristic: check if answer contains claims
-                # that can be grounded in the prompt context
-                if not response.strip():
-                    continue
-
-                evaluated += 1
-
-                if _is_faithful(prompt, response):
-                    faithful += 1
-
-            faithful_pct = (faithful / max(evaluated, 1)) * 100
-            # Precision = faithful / evaluated, Recall approximated
-            precision = faithful / max(evaluated, 1)
-            recall = min(precision * 1.1, 1.0)  # Approximate
-            f1 = 2 * precision * recall / max(precision + recall, 1e-9)
-
-            return {
-                "samples_evaluated": evaluated,
-                "precision": round(precision, 4),
-                "recall": round(recall, 4),
-                "f1": round(f1, 4),
-                "faithful_pct": round(faithful_pct, 2),
-                "total_tokens_reviewed": total_tokens,
-            }
+                return dict(_EMPTY_ACCURACY_RESULT)
+            return _evaluate_llm_accuracy_rows(rows)
 
     try:
         result = await asyncio.to_thread(_evaluate)

@@ -1,0 +1,259 @@
+# internalCMDB — production orchestrator stack (no .env file)
+#
+# Deploy:
+#   docker compose -f deploy/orchestrator/docker-compose.internalcmdb.prod.yml up -d
+#
+# Secrets:
+#   - AppRole: VAULT_ROLE_ID in environment, secret_id at /run/secrets/bao_secret_id
+#   - KV secrets (SECRET_KEY, JWT_SECRET_KEY, REDIS_PASSWORD) via SecretProvider
+#   - Postgres password via database/static-creds/internalcmdb (14-day auto-rotation)
+#
+# Prerequisites:
+#   - Run deploy/openbao/setup-internalcmdb.sh first
+#   - Copy AppRole secret_id to /run/secrets/bao_secret_id (mode 600)
+
+services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 64m
+    cpus: "0.10"
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 1
+      DELETE: 1
+      BUILD: 1
+      INFO: 1
+      SYSTEM: 1
+      NETWORKS: 0
+      VOLUMES: 0
+      EXEC: 0
+      SWARM: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  docker-socket-bridge:
+    image: alpine/socat:latest
+    container_name: docker-socket-bridge
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 32m
+    cpus: "0.05"
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+    command:
+      - UNIX-LISTEN:/run/internalcmdb/docker.sock,fork,mode=666,unlink-early
+      - TCP:127.0.0.1:2375
+    volumes:
+      - /run/internalcmdb:/run/internalcmdb
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  internalcmdb-api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.api
+    image: ghcr.io/alexneacsu/internalcmdb-api:latest
+    container_name: internalcmdb-api
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: "1.0"
+    user: "1001:1001"
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    environment:
+      - ENV=production
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - CORS_ORIGINS=https://infraq.app
+      - PYTHONPATH=/app/src
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - DEBUG_ENABLED=false
+      - POSTGRES_HOST=127.0.0.1
+      - POSTGRES_PORT=5433
+      - POSTGRES_DB=internalCMDB
+      - POSTGRES_USER=internalcmdb
+      - POSTGRES_SSLMODE=prefer
+      - VAULT_ADDR=http://127.0.0.1:8200
+      - VAULT_ROLE_ID=${VAULT_ROLE_ID}
+      - VAULT_SECRET_ID_FILE=/run/secrets/bao_secret_id
+      - VAULT_SECRET_MOUNT=secret
+      - VAULT_SECRET_PATH=internalcmdb
+      - VAULT_DB_STATIC_CREDS_PATH=internalcmdb
+      - OTLP_ENDPOINT=http://127.0.0.1:4317
+      - OTLP_PROTOCOL=grpc
+      - OTEL_SAMPLE_RATE=1.0
+    volumes:
+      - /run/secrets/bao_secret_id:/run/secrets/bao_secret_id:ro
+    command: >
+      uvicorn internalcmdb.api.main:app
+        --host 0.0.0.0
+        --port 4444
+        --log-level info
+        --workers 2
+        --proxy-headers
+        --forwarded-allow-ips *
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:4444/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  internalcmdb-worker:
+    image: ghcr.io/alexneacsu/internalcmdb-api:latest
+    container_name: internalcmdb-worker
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: "0.50"
+    user: "1001:1001"
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    environment:
+      - ENV=production
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - PYTHONPATH=/app/src
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_HOST=127.0.0.1
+      - POSTGRES_PORT=5433
+      - POSTGRES_DB=internalCMDB
+      - POSTGRES_USER=internalcmdb
+      - POSTGRES_SSLMODE=prefer
+      - VAULT_ADDR=http://127.0.0.1:8200
+      - VAULT_ROLE_ID=${VAULT_ROLE_ID}
+      - VAULT_SECRET_ID_FILE=/run/secrets/bao_secret_id
+      - VAULT_SECRET_MOUNT=secret
+      - VAULT_SECRET_PATH=internalcmdb
+      - VAULT_DB_STATIC_CREDS_PATH=internalcmdb
+    volumes:
+      - /run/secrets/bao_secret_id:/run/secrets/bao_secret_id:ro
+      - /run/internalcmdb/docker.sock:/var/run/docker.sock:ro
+    command: python3 -m internalcmdb.workers.run
+    depends_on:
+      internalcmdb-api:
+        condition: service_healthy
+      docker-socket-bridge:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os; os.kill(1, 0)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  internalcmdb-scheduler:
+    image: ghcr.io/alexneacsu/internalcmdb-api:latest
+    container_name: internalcmdb-scheduler
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: "0.25"
+    user: "1001:1001"
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    environment:
+      - ENV=production
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - PYTHONPATH=/app/src
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_HOST=127.0.0.1
+      - POSTGRES_PORT=5433
+      - POSTGRES_DB=internalCMDB
+      - POSTGRES_USER=internalcmdb
+      - POSTGRES_SSLMODE=prefer
+      - REDIS_HOST=127.0.0.1
+      - REDIS_PORT=6379
+      - VAULT_ADDR=http://127.0.0.1:8200
+      - VAULT_ROLE_ID=${VAULT_ROLE_ID}
+      - VAULT_SECRET_ID_FILE=/run/secrets/bao_secret_id
+      - VAULT_SECRET_MOUNT=secret
+      - VAULT_SECRET_PATH=internalcmdb
+      - VAULT_DB_STATIC_CREDS_PATH=internalcmdb
+    volumes:
+      - /run/secrets/bao_secret_id:/run/secrets/bao_secret_id:ro
+    command: python3 -m internalcmdb.workers.run_scheduler
+    depends_on:
+      internalcmdb-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os; os.kill(1, 0)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  internalcmdb-frontend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.frontend
+    image: ghcr.io/alexneacsu/internalcmdb-frontend:latest
+    container_name: internalcmdb-frontend
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: "0.50"
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    environment:
+      - NODE_ENV=production
+      - PORT=3333
+      - HOSTNAME=0.0.0.0
+      - BACKEND_URL=http://127.0.0.1:4444
+      - NEXT_TELEMETRY_DISABLED=1
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3333/').then((r)=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"

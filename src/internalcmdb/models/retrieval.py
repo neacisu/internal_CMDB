@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import Boolean, ForeignKey, Integer, Text
@@ -41,7 +42,7 @@ class DocumentChunk(Base):
     token_count: Mapped[int | None] = mapped_column(Integer)
     section_path_text: Mapped[str | None] = mapped_column(Text)
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
 
@@ -60,7 +61,7 @@ class ChunkEmbedding(Base):
     lexical_tsv: Mapped[str | None] = mapped_column(TSVECTOR)
     summary_text: Mapped[str | None] = mapped_column(Text)
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
 
@@ -76,7 +77,7 @@ class EvidencePack(Base):
     selection_rationale_text: Mapped[str | None] = mapped_column(Text)
     token_budget: Mapped[int | None] = mapped_column(Integer)
     created_by: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
 
@@ -102,6 +103,6 @@ class EvidencePackItem(Base):
     )
     inclusion_reason_text: Mapped[str | None] = mapped_column(Text)
     is_mandatory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )

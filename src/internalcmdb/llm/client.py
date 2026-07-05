@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -39,10 +40,10 @@ logger = logging.getLogger(__name__)
 #   • LLMClient constructor parameters
 # HTTP (not HTTPS) is used because traffic never leaves the internal LAN;
 # HAProxy terminates TLS at the public edge.  Reviewers: ACCEPTED.
-_DEFAULT_REASONING_URL = "http://10.0.1.10:49001"  # HAProxy VIP → vLLM QwQ-32B
-_DEFAULT_FAST_URL = "http://10.0.1.10:49002"  # HAProxy VIP → vLLM Qwen2.5-14B
-_DEFAULT_EMBED_URL = "http://10.0.1.10:49003"  # HAProxy VIP → Ollama Qwen3-Embed
-_DEFAULT_GUARD_URL = "http://10.0.1.115:8000"  # LXC-115 → LLM-Guard API
+_DEFAULT_REASONING_URL = "http://10.0.1.10:49001"  # NOSONAR S1313 — HAProxy VIP → vLLM QwQ-32B
+_DEFAULT_FAST_URL = "http://10.0.1.10:49002"  # NOSONAR S1313 — HAProxy VIP → vLLM Qwen2.5-14B
+_DEFAULT_EMBED_URL = "http://10.0.1.10:49003"  # NOSONAR S1313 — HAProxy VIP → Ollama Qwen3-Embed
+_DEFAULT_GUARD_URL = "http://10.0.1.115:8000"  # NOSONAR S1313 — LXC-115 → LLM-Guard API
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +281,56 @@ class LLMClient:
         url = f"{cfg.endpoint_url}/v1/chat/completions"
         logger.info("Fast request → %s", url)
         return await self._request_with_retry("POST", url, "fast", json_body=body)
+
+    async def stream_reason(
+        self,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncIterator[str]:
+        """Streaming chat completion stub (F5.4).
+
+        Yields token deltas from SSE chunks when the backend supports
+        ``stream=True``.  Falls back to a single-chunk response when
+        streaming is unavailable.
+        """
+        cfg = self.models["reasoning"]
+        body: dict[str, Any] = {
+            "model": cfg.model_id,
+            "messages": messages,
+            "stream": True,
+            **kwargs,
+        }
+        url = f"{cfg.endpoint_url}/v1/chat/completions"
+        logger.info("Streaming reasoning request → %s", url)
+
+        try:
+            async with self._client.stream("POST", url, json=body, timeout=cfg.timeout) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = (
+                        chunk.get("choices", [{}])[0]
+                        .get("delta", {})
+                        .get("content", "")
+                    )
+                    if delta:
+                        yield delta
+                return
+        except Exception:
+            logger.debug("Streaming unavailable — falling back to buffered response", exc_info=True)
+
+        result = await self.reason(messages, **{k: v for k, v in kwargs.items() if k != "stream"})
+        content = self._extract_response_content(result)
+        if content:
+            yield content
 
     async def reason_structured(
         self,
@@ -632,6 +683,18 @@ class LLMClient:
                 {},
                 f"error:{type(last_exc).__name__}",
             )
+            self._persist_llm_call_log(
+                _HttpRequest(
+                    method=method,
+                    url=url,
+                    model_name=model_name,
+                    effective_timeout=effective_timeout,
+                ),
+                0.0,
+                {},
+                status=f"error:{type(last_exc).__name__}",
+                error_detail=str(last_exc),
+            )
             self._log_retry(model_name, attempt, last_exc)  # type: ignore[arg-type]
             if attempt < _MAX_RETRIES:
                 await asyncio.sleep(_BACKOFF_BASE * (2**attempt))
@@ -662,6 +725,12 @@ class LLMClient:
             raise httpx.DecodingError(f"Invalid JSON from {req.model_name}: {exc}") from exc
         self._record_otel_span(req.model_name, result)
         self._record_prometheus(req.model_name, req.url, elapsed, result, "ok")
+        self._persist_llm_call_log(
+            req,
+            elapsed,
+            result,
+            status="ok",
+        )
         return result
 
     @staticmethod
@@ -681,12 +750,18 @@ class LLMClient:
             usage = result.get("usage", {})
             choices = cast(list[dict[str, Any]], result.get("choices", []))
             finish: list[str] = [str(c.get("finish_reason", "")) for c in choices]
+            total_tokens = usage.get("total_tokens")
+            if total_tokens is None:
+                total_tokens = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
             record_llm_span_attributes(
                 span,
                 LlmSpanAttrs(
                     model=result.get("model", model_name),
+                    operation_name="chat.completions",
                     input_tokens=usage.get("prompt_tokens", 0),
                     output_tokens=usage.get("completion_tokens", 0),
+                    total_tokens=int(total_tokens or 0),
+                    response_id=str(result.get("id", "")),
                     finish_reasons=finish or None,
                 ),
             )
@@ -723,6 +798,66 @@ class LLMClient:
                 LLM_TOKENS_TOTAL.labels(model=model_name, direction="output").inc(out_tok)
         except Exception:
             logger.debug("Prometheus LLM metrics unavailable", exc_info=True)
+
+    def _persist_llm_call_log(
+        self,
+        req: _HttpRequest,
+        elapsed: float,
+        result: dict[str, Any],
+        *,
+        status: str,
+        error_detail: str | None = None,
+    ) -> None:
+        """Best-effort INSERT into telemetry.llm_call_log."""
+        try:
+            import asyncio as _asyncio  # noqa: PLC0415
+
+            from sqlalchemy import create_engine, text  # noqa: PLC0415
+
+            from internalcmdb.api.config import get_settings  # noqa: PLC0415
+
+            cfg = self.models.get(req.model_name)
+            model_id = cfg.model_id if cfg else req.model_name
+            usage = result.get("usage", {})
+            in_tok = usage.get("prompt_tokens")
+            out_tok = usage.get("completion_tokens")
+            latency_ms = int(elapsed * 1000)
+
+            def _insert() -> None:
+                settings = get_settings()
+                engine = create_engine(str(settings.database_url), pool_pre_ping=True)
+                try:
+                    with engine.connect() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO telemetry.llm_call_log
+                                    (model_id, endpoint, input_tokens, output_tokens,
+                                     latency_ms, status, error_detail)
+                                VALUES
+                                    (:model_id, :endpoint, :in_tok, :out_tok,
+                                     :latency_ms, :status, :error_detail)
+                            """),
+                            {
+                                "model_id": model_id,
+                                "endpoint": req.url,
+                                "in_tok": in_tok,
+                                "out_tok": out_tok,
+                                "latency_ms": latency_ms,
+                                "status": status,
+                                "error_detail": error_detail,
+                            },
+                        )
+                        conn.commit()
+                finally:
+                    engine.dispose()
+
+            try:
+                loop = _asyncio.get_running_loop()
+                loop.run_in_executor(None, _insert)
+            except RuntimeError:
+                _insert()
+        except Exception:
+            logger.debug("telemetry.llm_call_log insert failed", exc_info=True)
 
     @staticmethod
     def _log_retry(model_name: str, attempt: int, exc: Exception) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import ClassVar
 
 from sqlalchemy import Integer, Text
@@ -23,15 +24,15 @@ class JobHistory(Base):
     status: Mapped[str] = mapped_column(
         Text, nullable=False, default="queued"
     )  # queued | running | completed | failed | cancelled
-    started_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
-    finished_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     exit_code: Mapped[int | None] = mapped_column(Integer)
     stdout: Mapped[str | None] = mapped_column(Text)
     stderr: Mapped[str | None] = mapped_column(Text)
     triggered_by: Mapped[str] = mapped_column(Text, nullable=False, default="manual")
     schedule_cron: Mapped[str | None] = mapped_column(Text)
     args_json: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default="now()"
     )
 
@@ -47,8 +48,8 @@ class WorkerSchedule(Base):
     cron_expression: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(default=True)
-    next_run_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
-    last_run_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
-    created_at: Mapped[str] = mapped_column(
+    next_run_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    last_run_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default="now()"
     )

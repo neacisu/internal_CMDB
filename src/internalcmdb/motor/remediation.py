@@ -47,6 +47,7 @@ _ACTION_RISK_MAP: dict[str, str] = {
     "alert_escalate": RC_2,
     "restart_container": RC_2,
     "clear_disk_space": RC_2,
+    "truncate_container_log": RC_2,
     "rotate_certificate": RC_3,
     "restart_llm_engine": RC_3,
     "rebalance_gpu_load": RC_3,

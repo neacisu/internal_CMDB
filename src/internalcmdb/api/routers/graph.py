@@ -8,9 +8,14 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from internalcmdb.graph.age_backend import get_graph_backend
 from internalcmdb.graph.knowledge_graph import InfrastructureKnowledgeGraph
 
 from ..deps import get_async_session
+
+
+def _knowledge_graph(session: AsyncSession) -> InfrastructureKnowledgeGraph:
+    return InfrastructureKnowledgeGraph(session)
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
@@ -31,10 +36,10 @@ _MAX_TOPOLOGY_NODES = 500
 @router.get("/topology")
 async def full_topology(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    limit: int = Query(_MAX_TOPOLOGY_NODES, ge=1, le=5000),
+    limit: Annotated[int, Query(ge=1, le=5000)] = _MAX_TOPOLOGY_NODES,
 ) -> dict[str, Any]:
     """Infrastructure graph as JSON (nodes + edges), capped at *limit* nodes."""
-    kg = InfrastructureKnowledgeGraph(session)
+    kg = _knowledge_graph(session)
     await kg.build_graph()
     data = kg.to_json()
     if len(data["nodes"]) > limit:
@@ -54,7 +59,7 @@ async def entity_dependencies(
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> dict[str, Any]:
     """Upstream and downstream dependencies for a single entity."""
-    kg = InfrastructureKnowledgeGraph(session)
+    kg = _knowledge_graph(session)
     g = await kg.build_graph()
 
     upstream: list[dict[str, Any]] = []
@@ -84,8 +89,26 @@ async def impact_analysis(
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> dict[str, Any]:
     """Impact analysis for a proposed action on an entity."""
-    kg = InfrastructureKnowledgeGraph(session)
+    backend = get_graph_backend(session)
+    if await backend.is_age_available():
+        return await backend.blast_radius(
+            body.entity_id,
+            action_type=body.action_type,
+        )
+    kg = _knowledge_graph(session)
     return await kg.impact_analysis(body.entity_id, body.action_type)
+
+
+@router.get("/entity/{entity_id}/blast-radius")
+async def blast_radius(
+    entity_id: str,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    depth: Annotated[int, Query(ge=1, le=10)] = 3,
+    action_type: Annotated[str, Query()] = "shutdown",
+) -> dict[str, Any]:
+    """Blast-radius query — prefers Apache AGE when available."""
+    backend = get_graph_backend(session)
+    return await backend.blast_radius(entity_id, depth=depth, action_type=action_type)
 
 
 @router.get("/critical-paths")
@@ -93,7 +116,7 @@ async def critical_paths(
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> dict[str, Any]:
     """Find critical dependency paths (nodes with highest in-degree + out-degree)."""
-    kg = InfrastructureKnowledgeGraph(session)
+    kg = _knowledge_graph(session)
     g = await kg.build_graph()
 
     critical: list[dict[str, Any]] = []
@@ -121,6 +144,6 @@ async def circular_dependencies(
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> dict[str, Any]:
     """Detect circular dependencies in the infrastructure graph."""
-    kg = InfrastructureKnowledgeGraph(session)
+    kg = _knowledge_graph(session)
     cycles = await kg.detect_circular_dependencies()
     return {"cycles": cycles, "count": len(cycles)}

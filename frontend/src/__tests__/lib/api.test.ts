@@ -12,12 +12,18 @@ import {
   runScript,
 } from "@/lib/api";
 
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
 describe("apiFetch-backed helpers", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const u = typeof input === "string" ? input : input.toString();
+        const u = requestUrl(input);
         if (u.includes("/dashboard/summary")) {
           return Promise.resolve({
             ok: true,
@@ -100,7 +106,7 @@ describe("apiFetch-backed helpers", () => {
       statusText: "Not Found",
       text: () => Promise.resolve("nf"),
     });
-      }) as unknown as typeof fetch,
+      }),
     );
   });
 
@@ -144,6 +150,6 @@ describe("apiFetch-backed helpers", () => {
     await expect(runScript("x", [])).resolves.toEqual({ job_id: "j1" });
     await expect(retryJob("u1")).resolves.toEqual({ ok: true });
     const del = await cancelJob("u1");
-    expect(del.ok).toBe(true);
+    expect(del).toBeUndefined();
   });
 });

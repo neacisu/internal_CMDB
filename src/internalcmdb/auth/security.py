@@ -1,12 +1,12 @@
 """JWT creation and verification for the local auth module.
 
-Uses PyJWT (HS256) with a module-level sync cache for the secret key so
+Uses PyJWT (HS256) with a module-level sync cache for the secret key ring so
 ``decode_access_token`` can be called from both sync and async paths without
 an active event loop.
 
-The secret is loaded from ``os.environ["JWT_SECRET_KEY"]`` which the
-lifespan hook populates from OpenBao / SecretProvider before any request is
-accepted.
+The ring is populated by the lifespan hook from OpenBao / SecretProvider
+before any request is accepted.  Signing always uses the first (current) key;
+verification tries every key in the ring for zero-downtime rotation.
 """
 
 from __future__ import annotations
@@ -25,36 +25,54 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Module-level sync secret cache — populated by lifespan from os.environ
+# Module-level sync secret ring — populated by lifespan from SecretProvider
 # ---------------------------------------------------------------------------
 
-_jwt_cache: list[str] = [""]
+_jwt_ring: list[str] = [""]
 _JWT_SECRET_MIN_LEN: int = 32
 
 
+def set_jwt_secret_ring(ring: list[str]) -> None:
+    """Install the JWT verification ring (current key first)."""
+    global _jwt_ring  # noqa: PLW0603
+    validated = [key for key in ring if key and len(key) >= _JWT_SECRET_MIN_LEN]
+    if not validated:
+        raise RuntimeError(
+            f"JWT secret ring must contain at least one key of "
+            f"\u2265{_JWT_SECRET_MIN_LEN} characters."
+        )
+    _jwt_ring = validated
+    os.environ["JWT_SECRET_KEY"] = validated[0]
+
+
 def get_jwt_secret() -> str:
-    """Return the JWT signing secret, loading from env on first call.
+    """Return the current JWT signing secret (first key in the ring).
 
     Raises RuntimeError if the secret is absent or shorter than 32 chars.
-    Must already be in ``os.environ["JWT_SECRET_KEY"]`` before any request
-    is handled (lifespan guarantees this).
+    Falls back to ``os.environ["JWT_SECRET_KEY"]`` when the ring is empty.
     """
-    if not _jwt_cache[0]:
-        _jwt_cache[0] = os.environ.get("JWT_SECRET_KEY") or ""
-    if len(_jwt_cache[0]) < _JWT_SECRET_MIN_LEN:
+    if not _jwt_ring or not _jwt_ring[0]:
+        env_secret = os.environ.get("JWT_SECRET_KEY") or ""
+        if env_secret:
+            set_jwt_secret_ring([env_secret])
+    if not _jwt_ring or len(_jwt_ring[0]) < _JWT_SECRET_MIN_LEN:
         raise RuntimeError(
             f"JWT_SECRET_KEY must be \u2265{_JWT_SECRET_MIN_LEN} characters. "
             "Check OpenBao provisioning or .env file."
         )
-    return _jwt_cache[0]
+    return _jwt_ring[0]
+
+
+def get_jwt_secret_ring() -> list[str]:
+    """Return a copy of the active JWT verification ring."""
+    get_jwt_secret()
+    return list(_jwt_ring)
 
 
 def invalidate_jwt_secret_cache() -> None:
-    """Force the next call to get_jwt_secret() to reload from os.environ.
-
-    Used by tests and key-rotation helpers.
-    """
-    _jwt_cache[0] = ""
+    """Clear the in-memory JWT ring so the next access reloads secrets."""
+    global _jwt_ring  # noqa: PLW0603
+    _jwt_ring = [""]
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +143,7 @@ def create_access_token(
 
 
 def decode_access_token(token: str) -> TokenPayload:
-    """Decode and verify a JWT.
+    """Decode and verify a JWT against every key in the ring.
 
     Raises HTTPException 401 on any failure — expired, tampered, malformed,
     missing secret.  Uses a 30-second leeway for clock skew tolerance.
@@ -136,24 +154,28 @@ def decode_access_token(token: str) -> TokenPayload:
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        secret = get_jwt_secret()
+        ring = get_jwt_secret_ring()
     except RuntimeError as exc:
         logger.critical("JWT_SECRET_KEY not configured — cannot decode tokens")
         raise _401 from exc
 
-    try:
-        payload = pyjwt.decode(
-            token,
-            secret,
-            algorithms=["HS256"],
-            leeway=30,  # seconds — tolerates minor clock skew
-        )
-    except pyjwt.ExpiredSignatureError as exc:
-        raise _401 from exc
-    except pyjwt.InvalidTokenError as exc:
-        raise _401 from exc
+    last_error: Exception | None = None
+    for secret in ring:
+        try:
+            payload = pyjwt.decode(
+                token,
+                secret,
+                algorithms=["HS256"],
+                leeway=30,
+            )
+            return TokenPayload(**payload)
+        except pyjwt.ExpiredSignatureError as exc:
+            raise _401 from exc
+        except pyjwt.InvalidTokenError as exc:
+            last_error = exc
+            continue
+        except Exception as exc:
+            last_error = exc
+            continue
 
-    try:
-        return TokenPayload(**payload)
-    except Exception as exc:
-        raise _401 from exc
+    raise _401 from last_error

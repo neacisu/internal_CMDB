@@ -141,7 +141,7 @@ class CronScheduler:
 
             logger.debug("Found %d due schedule(s).", len(schedules))
             for sched in schedules:
-                self._enqueue_sync(redis, sched, db, now)
+                self._enqueue_sync(sched, db, now)
         finally:
             db.close()
 
@@ -167,9 +167,30 @@ class CronScheduler:
         )
         return db.execute(stmt).scalars().first() is not None
 
+    def _enqueue_arq_job(self, task_name: str) -> None:
+        """Enqueue a cognitive task via ARQ (proper job format, not raw LPUSH)."""
+        import asyncio as _asyncio  # noqa: PLC0415
+
+        async def _enqueue() -> None:
+            from arq import create_pool as arq_create_pool  # noqa: PLC0415
+            from arq.connections import RedisSettings  # noqa: PLC0415
+
+            redis_settings = RedisSettings.from_dsn(self._redis_url)
+            pool = await arq_create_pool(redis_settings, default_queue_name=self._queue_name)
+            try:
+                await pool.enqueue_job(task_name)
+            finally:
+                await pool.close()
+
+        try:
+            loop = _asyncio.get_running_loop()
+            future = _asyncio.run_coroutine_threadsafe(_enqueue(), loop)
+            future.result(timeout=30)
+        except RuntimeError:
+            _asyncio.run(_enqueue())
+
     def _enqueue_sync(
         self,
-        redis: Redis,  # type: ignore[type-arg]
         sched: WorkerSchedule,
         db: Session,
         now: datetime,
@@ -215,28 +236,7 @@ class CronScheduler:
         )
         db.commit()
 
-        payload = json.dumps(
-            {
-                "job_id": job_id,
-                "task_name": sched.task_name,
-                "enqueue_time": now.isoformat(),
-                "args": [],
-            }
-        )
-
-        import asyncio as _asyncio  # noqa: PLC0415
-
-        try:
-            loop = _asyncio.get_running_loop()
-            loop.call_soon_threadsafe(
-                lambda: _asyncio.ensure_future(redis.lpush(self._queue_name, payload))
-            )
-        except RuntimeError:
-            import redis as _sync_redis  # noqa: PLC0415
-
-            sync_r = _sync_redis.from_url(self._redis_url, decode_responses=True)
-            sync_r.lpush(self._queue_name, payload)
-            sync_r.close()
+        self._enqueue_arq_job(sched.task_name)
 
         logger.info(
             "Enqueued task=%s job=%s next_run=%s",

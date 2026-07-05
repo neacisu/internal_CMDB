@@ -78,9 +78,8 @@ class PolicyEnforcer:
                 self._session.query(PolicyRecord).filter(PolicyRecord.is_active.is_(True)).all()
             )
         except Exception:
-            logger.error(
+            logger.exception(
                 "Policy lookup failed — FAIL-CLOSED: treating action as non-compliant",
-                exc_info=True,
             )
             return PolicyCheckResult(
                 compliant=False,
@@ -108,7 +107,28 @@ class PolicyEnforcer:
         for policy in policies:
             _check_policy_rules(policy=policy, req=req, violations=violations)
 
-        return PolicyCheckResult(compliant=(not violations), violations=violations)
+        result = PolicyCheckResult(compliant=(not violations), violations=violations)
+        self._record_audit(action, result, ctx)
+        return result
+
+    def _record_audit(
+        self,
+        action: dict[str, Any],
+        result: PolicyCheckResult,
+        context: dict[str, Any],
+    ) -> None:
+        """Append a signed hash-chain audit record (F5.3 governance-as-code)."""
+        try:
+            from internalcmdb.governance.policy_as_code import PolicyAuditChain  # noqa: PLC0415
+
+            PolicyAuditChain(self._session).record_decision(
+                action,
+                compliant=result.compliant,
+                policy_codes=[v.policy_code for v in result.violations],
+                context=context,
+            )
+        except Exception:
+            logger.debug("Policy audit chain recording skipped", exc_info=True)
 
 
 class _PolicyRequest(NamedTuple):

@@ -18,6 +18,13 @@ import { cn } from "@/lib/utils";
 
 // ── Inline markdown renderer ───────────────────────────────────────────────
 // Handles: **bold**, *italic*, `code`, [link](url)
+const _SAFE_LINK_RE = /^(https?:|mailto:)/i;
+
+function sanitizeMarkdownHref(href: string): string | null {
+  const trimmed = href.trim();
+  return _SAFE_LINK_RE.test(trimmed) ? trimmed : null;
+}
+
 function Inline({ text }: Readonly<{ text: string }>) {
   const parts = text.split(
     /(\*\*[^*\n]+?\*\*|\*[^*\n]+?\*|`[^`\n]+?`|\[[^\]\n]+?\]\([^)\n]+?\))/g,
@@ -43,11 +50,13 @@ function Inline({ text }: Readonly<{ text: string }>) {
             </code>
           );
         const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(p);
-        if (link)
+        if (link) {
+          const safeHref = sanitizeMarkdownHref(link[2]);
+          if (!safeHref) return <Fragment key={p}>{link[1]}</Fragment>;
           return (
             <a
               key={p}
-              href={link[2]}
+              href={safeHref}
               className="text-primary underline underline-offset-2 hover:opacity-80"
               target="_blank"
               rel="noopener noreferrer"
@@ -55,6 +64,7 @@ function Inline({ text }: Readonly<{ text: string }>) {
               {link[1]}
             </a>
           );
+        }
         return <Fragment key={p}>{p}</Fragment>;
       })}
     </>

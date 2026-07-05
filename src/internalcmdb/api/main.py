@@ -39,6 +39,9 @@ from .routers import (
     auth as auth_router,
 )
 from .routers import (
+    events as events_router,
+)
+from .routers import (
     integrations as integrations_router,
 )
 from .routers import (
@@ -115,20 +118,44 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         sample_rate=settings.otel_sample_rate,
     )
 
-    # Inject JWT_SECRET_KEY from SecretProvider into the process environment
-    # so that auth/security.py can read it synchronously via os.environ.
+    # Inject SECRET_KEY + JWT ring from SecretProvider into the process environment
+    # so that auth/security.py can read them synchronously.
     import os  # noqa: PLC0415
 
-    from internalcmdb.config.secrets import SecretProvider  # noqa: PLC0415
+    from internalcmdb.auth.security import set_jwt_secret_ring  # noqa: PLC0415
+    from internalcmdb.config.secrets import (  # noqa: PLC0415
+        SecretProvider,
+        is_placeholder_secret,
+    )
 
     _provider = SecretProvider()
-    _jwt_secret = await _provider.get("JWT_SECRET_KEY")
-    if not _jwt_secret or len(_jwt_secret) < 32:  # noqa: PLR2004
+
+    _secret_key = await _provider.get("SECRET_KEY")
+    if not _secret_key or is_placeholder_secret(_secret_key):
+        raise RuntimeError(
+            "SECRET_KEY must be set and must not be a placeholder. "
+            "Configure it in the secrets backend."
+        )
+    os.environ["SECRET_KEY"] = _secret_key
+
+    _jwt_ring = await _provider.get_jwt_secret_ring()
+    if not _jwt_ring or any(len(key) < 32 for key in _jwt_ring):  # noqa: PLR2004
         raise RuntimeError(
             "JWT_SECRET_KEY must be set and at least 32 characters long. "
             "Configure it in the secrets backend."
         )
-    os.environ["JWT_SECRET_KEY"] = _jwt_secret
+    if any(is_placeholder_secret(key) for key in _jwt_ring):
+        raise RuntimeError(
+            "JWT_SECRET_KEY must not be a placeholder. Configure it in the secrets backend."
+        )
+    set_jwt_secret_ring(_jwt_ring)
+
+    if os.getenv("AUTH_DEV_MODE", "false").lower() in ("true", "1", "yes"):
+        if os.getenv("ENV", "").strip().lower() == "production":
+            raise RuntimeError(
+                "AUTH_DEV_MODE must not be enabled when ENV=production. "
+                "Set AUTH_DEV_MODE=false for production deployments."
+            )
 
     staleness_task = asyncio.create_task(_staleness_loop())
     escalation_task = asyncio.create_task(_escalation_loop())
@@ -205,14 +232,11 @@ def create_app() -> FastAPI:
     fapp.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
-    fapp.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
     fapp.add_middleware(AuditMiddleware)
+
+    from .middleware.global_auth import GlobalAuthMiddleware  # noqa: PLC0415
+
+    fapp.add_middleware(GlobalAuthMiddleware)
 
     from starlette.middleware.base import BaseHTTPMiddleware  # noqa: PLC0415
 
@@ -225,6 +249,14 @@ def create_app() -> FastAPI:
             return response
 
     fapp.add_middleware(_SecurityHeadersMiddleware)
+    # CORS must be added last so it wraps the entire middleware stack (Starlette LIFO order).
+    fapp.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     prefix = "/api/v1"
     fapp.include_router(auth_router.router, prefix=prefix)
@@ -253,6 +285,7 @@ def create_app() -> FastAPI:
     fapp.include_router(slo.router, prefix=prefix)
     fapp.include_router(settings_router.router, prefix=prefix)
     fapp.include_router(integrations_router.router, prefix=prefix)
+    fapp.include_router(events_router.router, prefix=prefix)
 
     # Real-time WebSocket + SSE (mounted at /api/v1/ for consistency)
     fapp.include_router(realtime.router, prefix=prefix)

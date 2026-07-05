@@ -94,7 +94,7 @@ class GateDecision:
 # SONAR-HOTSPOT REVIEWED: S1075 / S5332 — RFC-1918 address, not publicly routable.
 # Configurable via LLM_GUARD_URL env variable or DB SettingsStore "llm.guard.url".
 # HTTP over internal LAN only (no external exposure).  ACCEPTED.
-_LLM_GUARD_URL = os.getenv("LLM_GUARD_URL", "http://10.0.1.115:8000")
+_LLM_GUARD_URL = os.getenv("LLM_GUARD_URL", "http://10.0.1.115:8000")  # NOSONAR S1313 — internal LAN VIP
 _LLM_GUARD_TIMEOUT = float(os.getenv("LLM_GUARD_TIMEOUT", "5"))
 
 
@@ -133,20 +133,28 @@ async def _llm_guard_scan(payload: dict[str, Any]) -> tuple[bool, str]:
         logger.warning("LLM Guard URL not configured — fail-open (set LLM_GUARD_FAIL_CLOSED=true)")
         return True, "llm-guard-not-configured"
 
+    import json as _json  # noqa: PLC0415
+
+    prompt_text = _json.dumps(payload, default=str)
     try:
         async with httpx.AsyncClient(timeout=guard_timeout) as client:
             resp = await client.post(
-                f"{guard_url}/scan",
-                json=payload,
+                f"{guard_url}/analyze/prompt",
+                json={"prompt": prompt_text},
             )
             resp.raise_for_status()
             body = resp.json()
-            safe: bool = body.get("safe", True)
-            detail: str = body.get("detail", "")
-            return safe, detail
+            is_valid: bool = bool(body.get("is_valid", False))
+            scanners: dict[str, float] = body.get("scanners", {})
+            detail = (
+                f"scanners={scanners}"
+                if scanners
+                else str(body.get("detail", "content-flagged"))
+            )
+            return is_valid, detail
     except Exception:
         if fail_closed:
-            logger.error("LLM Guard scan failed — FAIL-CLOSED: blocking action", exc_info=True)
+            logger.exception("LLM Guard scan failed — FAIL-CLOSED: blocking action")
             return False, "llm-guard-unavailable-fail-closed"
         logger.warning("LLM Guard scan failed — fail-open", exc_info=True)
         return True, "llm-guard-unavailable"

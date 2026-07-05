@@ -1,8 +1,7 @@
 """Redis-backed JWT token revocation.
 
 Stores revoked JTI values in Redis with TTL equal to the remaining token
-lifetime.  Fail-open: if Redis is unavailable, revocation is skipped and
-a WARNING is logged (availability preferred over security for internal tool).
+lifetime.  Fail-closed: if Redis is unavailable, tokens are treated as revoked.
 """
 
 from __future__ import annotations
@@ -55,15 +54,15 @@ def revoke_token(jti: str, expires_at: datetime) -> None:
 def is_revoked(jti: str) -> bool:
     """Return True if *jti* has been revoked.
 
-    Returns False (fail-open) if Redis is unavailable.
+    Returns True (fail-closed) if Redis is unavailable.
     """
     client = _redis_client()
     if client is None:
-        logger.warning("Redis unavailable — revocation check skipped for jti=%s", jti)
-        return False
+        logger.warning("Redis unavailable — treating jti=%s as revoked (fail-closed)", jti)
+        return True
 
     try:
         return bool(client.exists(f"{_PREFIX}{jti}"))
     except Exception:
-        logger.warning("Redis error — revocation check skipped for jti=%s", jti, exc_info=True)
-        return False
+        logger.warning("Redis error — treating jti=%s as revoked (fail-closed)", jti, exc_info=True)
+        return True

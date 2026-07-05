@@ -97,13 +97,21 @@ async def test_dispose_engines_calls_dispose():
 # ---------------------------------------------------------------------------
 
 
-def test_normalize_pg_url_strips_sslmode_require() -> None:
+def test_normalize_pg_url_preserves_sslmode_from_url() -> None:
     from internalcmdb.api.deps import _normalize_pg_url  # noqa: PLC0415
 
     url = "postgresql+psycopg://u:p@host:5432/db?sslmode=require"
     result = _normalize_pg_url(url)
-    assert "sslmode=require" not in result
+    assert "sslmode=require" in result
+
+
+def test_normalize_pg_url_applies_explicit_sslmode_override() -> None:
+    from internalcmdb.api.deps import _normalize_pg_url  # noqa: PLC0415
+
+    url = "postgresql+psycopg://u:p@host:5432/db?sslmode=require"
+    result = _normalize_pg_url(url, sslmode="disable")
     assert "sslmode=disable" in result
+    assert "sslmode=require" not in result
 
 
 def test_normalize_pg_url_switches_driver_to_asyncpg() -> None:

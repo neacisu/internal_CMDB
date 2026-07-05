@@ -18,6 +18,7 @@ class EnrollRequest(BaseModel):
     host_code: str
     agent_version: str
     capabilities: list[str] = []
+    bootstrap_token: str | None = None
 
 
 class EnrollResponse(BaseModel):

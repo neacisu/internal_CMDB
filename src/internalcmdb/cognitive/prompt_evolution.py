@@ -246,12 +246,15 @@ class PromptEvolutionEngine:
         }
 
     async def _guard_scan(self, prompt_text: str) -> dict[str, Any]:
-        """Scan the evolved prompt through LLM Guard for safety."""
-        try:
-            return await self._llm.guard_input(prompt_text)
-        except Exception:
-            logger.warning("LLM Guard unavailable — skipping scan", exc_info=True)
-            return {"is_valid": None, "skipped": True, "reason": "guard unavailable"}
+        """Scan the evolved prompt through LLM Guard (fail-closed)."""
+        from internalcmdb.llm.guard_pipeline import scan_prompt  # noqa: PLC0415
+
+        result = await scan_prompt(self._llm, prompt_text)
+        return {
+            "is_valid": result.is_valid,
+            "score": result.score,
+            "results": result.details,
+        }
 
     async def _submit_hitl_review(
         self,

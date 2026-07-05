@@ -93,6 +93,7 @@ class TestSettingsStructure:
 
     def test_settings_has_debug_field(self) -> None:
         assert "debug_enabled" in Settings.model_fields
+        assert Settings.model_fields["debug_enabled"].default is False
 
     def test_get_settings_cached(self) -> None:
         s1 = get_settings()

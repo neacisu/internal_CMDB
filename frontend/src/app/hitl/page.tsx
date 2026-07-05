@@ -39,6 +39,7 @@ import {
   Brain,
 } from "lucide-react";
 import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+import { getMe } from "@/lib/auth";
 import { timeAgo } from "@/lib/utils";
 
 const REFRESH_INTERVAL = 6_000;
@@ -127,22 +128,29 @@ export default function HITLPage() {
 
   const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, REFRESH_INTERVAL);
 
+  const { data: me } = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: getMe,
+    staleTime: 60_000,
+  });
+  const actorReady = Boolean(me?.username);
+
   const approveMut = useMutation({
-    mutationFn: (id: string) => approveHITLItem(id, "operator", "Approved via UI"),
+    mutationFn: (id: string) => approveHITLItem(id, "Approved via UI"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hitl"] });
     },
   });
 
   const rejectMut = useMutation({
-    mutationFn: (id: string) => rejectHITLItem(id, "operator", "Rejected via UI"),
+    mutationFn: (id: string) => rejectHITLItem(id, "Rejected via UI"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hitl"] });
     },
   });
 
   const bulkApproveMut = useMutation({
-    mutationFn: (ids: string[]) => bulkApproveHITL(ids, "operator", "Bulk approved via UI"),
+    mutationFn: (ids: string[]) => bulkApproveHITL(ids, "Bulk approved via UI"),
     onSuccess: () => {
       setSelectedItems(new Set());
       queryClient.invalidateQueries({ queryKey: ["hitl"] });
@@ -150,7 +158,7 @@ export default function HITLPage() {
   });
 
   const bulkRejectMut = useMutation({
-    mutationFn: (ids: string[]) => bulkRejectHITL(ids, "operator", "Bulk rejected via UI"),
+    mutationFn: (ids: string[]) => bulkRejectHITL(ids, "Bulk rejected via UI"),
     onSuccess: () => {
       setSelectedItems(new Set());
       queryClient.invalidateQueries({ queryKey: ["hitl"] });
@@ -190,7 +198,7 @@ export default function HITLPage() {
               variant="outline"
               className="h-7 text-xs border-(--ok)/40 text-(--ok) hover:bg-(--ok)/10"
               onClick={() => bulkApproveMut.mutate([...selectedItems])}
-              disabled={bulkApproveMut.isPending}
+              disabled={!actorReady || bulkApproveMut.isPending}
             >
               <CheckCircle size={12} className="mr-1" />
               Approve All
@@ -200,7 +208,7 @@ export default function HITLPage() {
               variant="outline"
               className="h-7 text-xs border-(--er)/40 text-(--er) hover:bg-(--er)/10"
               onClick={() => bulkRejectMut.mutate([...selectedItems])}
-              disabled={bulkRejectMut.isPending}
+              disabled={!actorReady || bulkRejectMut.isPending}
             >
               <XCircle size={12} className="mr-1" />
               Reject All
@@ -285,7 +293,7 @@ export default function HITLPage() {
                   variant="outline"
                   className="h-8 text-xs border-(--ok)/40 text-(--ok) hover:bg-(--ok)/10"
                   onClick={() => approveMut.mutate(item.item_id)}
-                  disabled={approveMut.isPending}
+                  disabled={!actorReady || approveMut.isPending}
                 >
                   <CheckCircle size={12} className="mr-1" />
                   Approve
@@ -295,7 +303,7 @@ export default function HITLPage() {
                   variant="outline"
                   className="h-8 text-xs border-(--er)/40 text-(--er) hover:bg-(--er)/10"
                   onClick={() => rejectMut.mutate(item.item_id)}
-                  disabled={rejectMut.isPending}
+                  disabled={!actorReady || rejectMut.isPending}
                 >
                   <XCircle size={12} className="mr-1" />
                   Reject

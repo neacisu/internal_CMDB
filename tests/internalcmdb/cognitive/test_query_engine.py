@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from internalcmdb.cognitive.query_engine import QueryEngine
+from internalcmdb.llm.guard_pipeline import GuardedResponse
 
 _EMBED_DIM = 4096
 
@@ -38,6 +39,24 @@ def _make_llm(
     return llm
 
 
+def _guarded_response(content: str = "The answer is 42.", *, blocked: bool = False) -> GuardedResponse:
+    return GuardedResponse(blocked=blocked, content=content)
+
+
+def _patch_guard_pipeline(
+    *,
+    content: str = "The answer is 42.",
+    blocked: bool = False,
+    side_effect: Exception | None = None,
+):
+    mock = AsyncMock()
+    if side_effect is not None:
+        mock.guarded_call = AsyncMock(side_effect=side_effect)
+    else:
+        mock.guarded_call = AsyncMock(return_value=_guarded_response(content, blocked=blocked))
+    return patch("internalcmdb.llm.guard_pipeline.GuardPipeline", return_value=mock)
+
+
 def _make_session(rows: list[Any] | None = None) -> MagicMock:
     session = MagicMock()
     result = MagicMock()
@@ -60,6 +79,7 @@ def _source_row(
         "document_chunk_id": chunk_id,
         "content_text": content,
         "section_path_text": section,
+        "metadata_jsonb": None,
         "token_count": token_count,
         "chunk_index": 0,
         "embedding_model_code": "qwen3-embed",
@@ -113,7 +133,8 @@ class TestQueryEdgeCases:
         session = _make_session(rows=rows)
         llm = _make_llm()
         engine = QueryEngine(llm, session, top_k=3)
-        result = await engine.query("Which hosts have the highest disk usage?")
+        with _patch_guard_pipeline():
+            result = await engine.query("Which hosts have the highest disk usage?")
         assert "42" in result.answer
         assert len(result.sources) == 3
         assert result.confidence > 0.0
@@ -124,9 +145,9 @@ class TestQueryEdgeCases:
         rows = [_source_row()]
         session = _make_session(rows=rows)
         llm = _make_llm()
-        llm.reason = AsyncMock(side_effect=RuntimeError("LLM timeout"))
         engine = QueryEngine(llm, session)
-        result = await engine.query("what is the status?")
+        with _patch_guard_pipeline(side_effect=RuntimeError("LLM timeout")):
+            result = await engine.query("what is the status?")
         assert "error" in result.answer.lower()
 
 

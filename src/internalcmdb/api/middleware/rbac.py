@@ -95,8 +95,8 @@ def require_role(*required_roles: str):
 
         required_lower = {r.lower() for r in required_roles}
         caller_role = payload.role.lower()
-        # 'admin' is a super-role that satisfies any role requirement
-        if caller_role != "admin" and caller_role not in required_lower:
+        # 'admin' and 'platform_admin' are super-roles that satisfy any requirement
+        if caller_role not in {"admin", "platform_admin"} and caller_role not in required_lower:
             raise HTTPException(
                 status_code=403,
                 detail=(

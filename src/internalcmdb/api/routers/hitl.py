@@ -13,11 +13,16 @@ from internalcmdb.governance.hitl_workflow import HITLWorkflow
 
 from ..deps import get_async_session
 from ..middleware.rate_limit import rate_limit
-from ..middleware.rbac import require_role
+from ..openapi_responses import RESP_400, RESP_403, RESP_404, merge_responses
+from internalcmdb.api.middleware.rbac import AUTH_DEV_MODE, require_role
 
 router = APIRouter(prefix="/hitl", tags=["hitl"])
 
 _HITL_ITEM_NOT_FOUND_OR_DECIDED = "Item not found or already decided"
+
+_HITL_NOT_FOUND_RESPONSES = merge_responses(RESP_404)
+_HITL_APPROVE_RESPONSES = merge_responses(RESP_404, RESP_403)
+_HITL_BULK_RESPONSES = merge_responses(RESP_400)
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +31,6 @@ _HITL_ITEM_NOT_FOUND_OR_DECIDED = "Item not found or already decided"
 
 
 class DecisionBody(BaseModel):
-    decided_by: str
     reason: str
 
 
@@ -37,7 +41,6 @@ class ModifyBody(DecisionBody):
 class BulkDecideBody(BaseModel):
     item_ids: list[str]
     decision: str = Field(pattern=r"^(approved|rejected)$")
-    decided_by: str
     reason: str
 
 
@@ -62,6 +65,7 @@ class HITLItemOut(BaseModel):
     decided_at: str | None = None
     escalated_to: str | None = None
     escalation_count: int = 0
+    approvals_jsonb: list[dict[str, Any]] | None = None
 
 
 class HITLStatsOut(BaseModel):
@@ -96,9 +100,9 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 )
 async def list_queue(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    status: str = Query("pending", description="Filter by status"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    status: Annotated[str, Query(description="Filter by status")] = "pending",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[dict[str, Any]]:
     """List pending HITL items (paginated)."""
     offset = (page - 1) * page_size
@@ -125,6 +129,7 @@ async def list_queue(
 @router.get(
     "/queue/{item_id}",
     response_model=HITLItemOut,
+    responses=_HITL_NOT_FOUND_RESPONSES,
     dependencies=[Depends(require_role("hitl_reviewer", "platform_admin", "operator"))],
 )
 async def get_item(
@@ -144,19 +149,39 @@ async def get_item(
 
 @router.post(
     "/queue/{item_id}/approve",
+    responses=_HITL_APPROVE_RESPONSES,
     dependencies=[Depends(require_role("hitl_reviewer", "platform_admin"))],
 )
 async def approve_item(
     item_id: str,
     body: DecisionBody,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> dict[str, Any]:
     """Approve a pending HITL item.
 
-    RC-3/RC-4 items require ``platform_admin`` role (enforced at RBAC level).
+    RC-3 items require ``platform_admin`` role and two distinct approvers.
     """
+    risk_row = await session.execute(
+        text("SELECT risk_class FROM governance.hitl_item WHERE item_id = :item_id"),
+        {"item_id": item_id},
+    )
+    risk_item = risk_row.fetchone()
+    if risk_item is None:
+        raise HTTPException(status_code=404, detail="HITL item not found")
+
+    risk_class = str(risk_item[0] or "")
+    if risk_class == "RC-3":
+        caller_role = getattr(request.state, "rbac_role", None)
+        if caller_role != "platform_admin" and not AUTH_DEV_MODE:
+            raise HTTPException(
+                status_code=403,
+                detail="RC-3 items require platform_admin role",
+            )
+
     wf = HITLWorkflow(session)
-    ok = await wf.approve(item_id, body.decided_by, body.reason)
+    decided_by = getattr(request.state, "rbac_sub", "unknown")
+    ok = await wf.approve(item_id, decided_by, body.reason)
     if not ok:
         raise HTTPException(status_code=404, detail=_HITL_ITEM_NOT_FOUND_OR_DECIDED)
     return {"item_id": item_id, "decision": "approved"}
@@ -164,16 +189,19 @@ async def approve_item(
 
 @router.post(
     "/queue/{item_id}/reject",
+    responses=_HITL_NOT_FOUND_RESPONSES,
     dependencies=[Depends(require_role("hitl_reviewer", "platform_admin"))],
 )
 async def reject_item(
     item_id: str,
     body: DecisionBody,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> dict[str, Any]:
     """Reject a pending HITL item."""
+    decided_by = getattr(request.state, "rbac_sub", "unknown")
     wf = HITLWorkflow(session)
-    ok = await wf.reject(item_id, body.decided_by, body.reason)
+    ok = await wf.reject(item_id, decided_by, body.reason)
     if not ok:
         raise HTTPException(status_code=404, detail=_HITL_ITEM_NOT_FOUND_OR_DECIDED)
     return {"item_id": item_id, "decision": "rejected"}
@@ -181,16 +209,19 @@ async def reject_item(
 
 @router.post(
     "/queue/{item_id}/modify",
+    responses=_HITL_NOT_FOUND_RESPONSES,
     dependencies=[Depends(require_role("hitl_reviewer", "platform_admin"))],
 )
 async def modify_item(
     item_id: str,
     body: ModifyBody,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> dict[str, Any]:
     """Approve a HITL item with modifications."""
+    decided_by = getattr(request.state, "rbac_sub", "unknown")
     wf = HITLWorkflow(session)
-    ok = await wf.modify(item_id, body.decided_by, body.reason, body.modifications)
+    ok = await wf.modify(item_id, decided_by, body.reason, body.modifications)
     if not ok:
         raise HTTPException(status_code=404, detail=_HITL_ITEM_NOT_FOUND_OR_DECIDED)
     return {"item_id": item_id, "decision": "approved_with_modifications"}
@@ -198,6 +229,7 @@ async def modify_item(
 
 @router.post(
     "/queue/{item_id}/escalate",
+    responses=_HITL_NOT_FOUND_RESPONSES,
     dependencies=[Depends(require_role("hitl_reviewer", "platform_admin", "operator"))],
 )
 async def escalate_item(
@@ -262,8 +294,8 @@ async def hitl_stats(
 )
 async def hitl_history(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[dict[str, Any]]:
     """Decision history (paginated) — items that have been decided."""
     offset = (page - 1) * page_size
@@ -318,6 +350,7 @@ async def hitl_accuracy(
 
 @router.post(
     "/bulk-decide",
+    responses=_HITL_BULK_RESPONSES,
     dependencies=[Depends(require_role("platform_admin"))],
 )
 @rate_limit("5/minute")
@@ -347,12 +380,13 @@ async def bulk_decide(
     wf = HITLWorkflow(session)
     succeeded: list[str] = []
     failed: list[str] = []
+    decided_by = getattr(request.state, "rbac_sub", "unknown")
 
     for iid in valid_ids:
         if body.decision == "approved":
-            ok = await wf.approve(iid, body.decided_by, body.reason)
+            ok = await wf.approve(iid, decided_by, body.reason)
         else:
-            ok = await wf.reject(iid, body.decided_by, body.reason)
+            ok = await wf.reject(iid, decided_by, body.reason)
         (succeeded if ok else failed).append(iid)
 
     return {

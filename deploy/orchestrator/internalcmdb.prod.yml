@@ -1,0 +1,64 @@
+# ============================================================================
+# InternalCMDB — Traefik dynamic routing (production)
+# Target on orchestrator: /opt/traefik/dynamic/internalcmdb.yml
+#
+# Production Next.js (`next start`) serves /_next/static via the main UI router.
+# Dev-only routers (HMR, __nextjs overlay, Turbopack dev assets) are omitted.
+# ============================================================================
+http:
+  routers:
+    internalcmdb-api:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/api`)"
+      priority: 200
+      service: internalcmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-api
+      tls:
+        certResolver: cloudflare
+
+    internalcmdb-health:
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && Path(`/health`)"
+      priority: 300
+      service: internalcmdb-api-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+      tls:
+        certResolver: cloudflare
+
+    internalcmdb-ui:
+      rule: "Host(`infraq.app`) || Host(`www.infraq.app`)"
+      priority: 100
+      service: internalcmdb-ui-svc
+      entryPoints:
+        - websecure
+      middlewares:
+        - chain-ui
+      tls:
+        certResolver: cloudflare
+        domains:
+          - main: "infraq.app"
+            sans:
+              - "*.infraq.app"
+
+  services:
+    internalcmdb-api-svc:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:4444
+        healthCheck:
+          path: /health
+          interval: 30s
+          timeout: 10s
+
+    internalcmdb-ui-svc:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:3333
+        healthCheck:
+          path: /
+          interval: 30s
+          timeout: 30s

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -223,9 +223,15 @@ function EventsTab() {
   const [page, setPage] = useState(1);
   const pageSize = 50;
 
-  const params = [`page=${page}`, `page_size=${pageSize}`].join("&");
+  const params = [
+    `page=${page}`,
+    `page_size=${pageSize}`,
+    search.trim() ? `search=${encodeURIComponent(search.trim())}` : "",
+  ]
+    .filter(Boolean)
+    .join("&");
   const { data, isLoading, dataUpdatedAt } = useQuery<AuditEventsResponse>({
-    queryKey: ["audit", "events", page],
+    queryKey: ["audit", "events", page, search],
     queryFn: () => fetchEvents(params),
     refetchInterval: REFRESH_INTERVAL,
     staleTime: 10_000,
@@ -241,15 +247,12 @@ function EventsTab() {
       if (statusFilter === "success" && (code < 200 || code >= 300)) return false;
       if (statusFilter === "error" && code < 400) return false;
     }
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      (e.actor ?? "").toLowerCase().includes(q) ||
-      (e.action ?? "").toLowerCase().includes(q) ||
-      (e.target_entity ?? "").toLowerCase().includes(q) ||
-      (e.ip_address ?? "").toLowerCase().includes(q)
-    );
+    return true;
   });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   return (
     <div className="flex flex-col gap-3">

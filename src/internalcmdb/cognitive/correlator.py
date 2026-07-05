@@ -187,11 +187,12 @@ class IncidentCorrelator:
 
         try:
             from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
+            from internalcmdb.llm.guard_pipeline import scan_output, scan_prompt  # noqa: PLC0415
 
             llm = await LLMClient.from_settings()
             try:
                 for incident in enrichable[:5]:  # Limit to 5 to conserve tokens
-                    enrichment = await self._enrich_incident(llm, incident)
+                    enrichment = await self._enrich_incident(llm, incident, scan_prompt, scan_output)
                     incident["llm_analysis"] = enrichment
             finally:
                 await llm.close()
@@ -204,6 +205,8 @@ class IncidentCorrelator:
     async def _enrich_incident(
         llm: Any,
         incident: dict[str, Any],
+        scan_prompt_fn: Any,
+        scan_output_fn: Any,
     ) -> dict[str, Any]:
         """Ask LLM to analyze an incident cluster and identify root cause."""
         # Prepare a concise event summary for the LLM
@@ -220,6 +223,12 @@ class IncidentCorrelator:
                 }
             )
 
+        user_content = (
+            f"Incident cluster ({incident['event_count']} events, "
+            f"severity {incident['severity']}, "
+            f"span {incident['time_span_seconds']:.0f}s):\n\n"
+            f"```json\n{json.dumps(event_summaries, indent=2, default=str)}\n```"
+        )
         messages = [
             {
                 "role": "system",
@@ -234,18 +243,20 @@ class IncidentCorrelator:
             },
             {
                 "role": "user",
-                "content": (
-                    f"Incident cluster ({incident['event_count']} events, "
-                    f"severity {incident['severity']}, "
-                    f"span {incident['time_span_seconds']:.0f}s):\n\n"
-                    f"```json\n{json.dumps(event_summaries, indent=2, default=str)}\n```"
-                ),
+                "content": user_content,
             },
         ]
 
         try:
+            input_scan = await scan_prompt_fn(llm, user_content)
+            if not input_scan.is_valid:
+                return {"root_cause": "", "blocked": True, "guard_score": input_scan.score}
+
             response = await llm.fast(messages, max_tokens=300)
             content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+            output_scan = await scan_output_fn(llm, user_content, content)
+            if not output_scan.is_valid:
+                return {"root_cause": "", "blocked": True, "guard_score": output_scan.score}
             return {
                 "root_cause": content,
                 "model_used": "fast",

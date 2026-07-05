@@ -76,3 +76,17 @@ Research/
 
 # Semgrep IDE auto-generated rules
 .semgrep/registry-ide/
+
+# Accidental terminal paste / mistyped shell redirects (repository root only)
+# Fragments from broken "source .env", package installs, or pager output
+/ource .env
+/ource .env.*
+/yncio
+/ycopg2
+/e\(\)/
+/psycopg2
+/asyncio
+# Single-character junk filenames at repo root
+/[0-9]
+/[a-z]
+/[A-Z]

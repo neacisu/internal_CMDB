@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, Text, UniqueConstraint
@@ -30,13 +31,14 @@ class CollectorAgent(Base):
     )
     host_code: Mapped[str] = mapped_column(Text, nullable=False)
     agent_version: Mapped[str] = mapped_column(Text, nullable=False)
-    enrolled_at: Mapped[str] = mapped_column(
+    enrolled_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
-    last_heartbeat_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     agent_config_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="online")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    token_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class CollectorSnapshot(Base):
@@ -66,8 +68,8 @@ class CollectorSnapshot(Base):
     snapshot_kind: Mapped[str] = mapped_column(Text, nullable=False)
     payload_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     payload_hash: Mapped[str] = mapped_column(Text, nullable=False)
-    collected_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
-    received_at: Mapped[str] = mapped_column(
+    collected_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
     tier_code: Mapped[str] = mapped_column(Text, nullable=False)
@@ -91,6 +93,6 @@ class SnapshotDiff(Base):
     )
     diff_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     change_summary: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )

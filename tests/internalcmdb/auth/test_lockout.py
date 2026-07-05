@@ -103,11 +103,11 @@ def test_is_locked_out_false_when_key_absent() -> None:
         assert is_locked_out(_TEST_CLIENT_IP, "alice@example.com") is False
 
 
-def test_is_locked_out_fail_open_when_redis_unavailable() -> None:
+def test_is_locked_out_fail_closed_when_redis_unavailable() -> None:
     with patch("internalcmdb.auth.lockout._redis_client", return_value=None):
         from internalcmdb.auth.lockout import is_locked_out  # noqa: PLC0415
 
-        assert is_locked_out(_TEST_CLIENT_IP, "alice@example.com") is False
+        assert is_locked_out(_TEST_CLIENT_IP, "alice@example.com") is True
 
 
 # ---------------------------------------------------------------------------

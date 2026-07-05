@@ -8,10 +8,11 @@ import logging
 import time
 from collections import deque
 from collections.abc import Sequence
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
+from starlette.responses import Response
 from sqlalchemy import text
 
 from internalcmdb.auth.revocation import is_revoked
@@ -126,7 +127,7 @@ async def ws_metrics(ws: WebSocket) -> None:
                             COUNT(*) FILTER (WHERE ca.status = 'degraded') AS degraded,
                             COUNT(*) FILTER (WHERE ca.status = 'offline') AS offline,
                             COUNT(*) AS total
-                        FROM collectors.collector_agent ca
+                        FROM discovery.collector_agent ca
                         WHERE ca.is_active = true
                     """)
                     )
@@ -333,7 +334,7 @@ async def ws_hitl(ws: WebSocket) -> None:
 @rate_limit("10/minute")
 async def chat_stream(
     request: Request,
-    question: str = Query(..., min_length=1, max_length=2000),
+    question: Annotated[str, Query(min_length=1, max_length=2000)],
 ) -> StreamingResponse:
     """Server-Sent Events stream for cognitive chat responses."""
 
@@ -522,8 +523,8 @@ async def _sse_vitals_initial_snapshot() -> list[dict]:
         return []
 
 
-@router.get("/sse/vitals")
-async def sse_vitals(request: Request) -> StreamingResponse:
+@router.get("/sse/vitals", response_model=None)
+async def sse_vitals(request: Request) -> Response:
     """Server-Sent Events stream for real-time fleet vitals.
 
     Protocol:
@@ -532,9 +533,7 @@ async def sse_vitals(request: Request) -> StreamingResponse:
     - ``event: ping``     — keepalive every 15 s (no data payload)
     """
     if not _auth_sse(request):
-        from fastapi.responses import PlainTextResponse  # noqa: PLC0415
-
-        return PlainTextResponse("Unauthorized", status_code=401)  # type: ignore[return-value]
+        return PlainTextResponse("Unauthorized", status_code=401)
 
     async def event_generator():
         yield f"retry: {_SSE_RECONNECT_MS}\n\n"

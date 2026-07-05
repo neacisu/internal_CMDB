@@ -3,6 +3,11 @@ import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DashboardPage from "@/app/page";
 
+vi.mock("@/lib/fleet-vitals-context", () => ({
+  FleetVitalsProvider: ({ children }: Readonly<{ children: React.ReactNode }>) => children,
+  useFleetVitalsContext: () => ({ vitals: [], isLive: false }),
+}));
+
 function createWrapper() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
@@ -44,7 +49,7 @@ describe("DashboardPage", () => {
 
   it("renders LIVE badge", () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText("LIVE")).toBeInTheDocument();
+    expect(screen.getByText("POLL")).toBeInTheDocument();
   });
 
   it("renders Refresh button", () => {

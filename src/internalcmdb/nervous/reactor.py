@@ -260,7 +260,38 @@ class ReactiveLoop:
         return None
 
     async def _route_rc1_auto_execute(self, event: Event, ts: str) -> None:
-        """RC-1: auto-execute — log and publish to ``motor:action``."""
+        """RC-1: policy check then auto-execute — publish to ``motor:action``."""
+        action = {
+            "type": event.payload.get("action_type", "auto_execute"),
+            "target": str(event.payload.get("target", event.payload.get("host", "unknown"))),
+            "risk_class": RiskClass.RC1_READ_ONLY.value,
+        }
+        policy_block = await self._check_policy(action)
+        if policy_block:
+            logger.warning(
+                "reactor.rc1.policy_blocked | ts=%s event_id=%s reason=%s",
+                ts,
+                event.event_id,
+                policy_block,
+            )
+            blocked_event = Event(
+                event_id=f"{event.event_id}-blocked",
+                event_type="alert",
+                correlation_id=event.correlation_id,
+                payload={
+                    **event.payload,
+                    "risk_class": RiskClass.RC1_READ_ONLY.value,
+                    "decision": "policy_blocked",
+                    "blocked_reason": policy_block,
+                    "decided_at": ts,
+                },
+                risk_class=RiskClass.RC1_READ_ONLY.value,
+                timestamp=ts,
+                source=f"reactor/{CONSUMER_NAME}",
+            )
+            await self._bus.publish(STREAM_CONSCIOUSNESS_ALERT, blocked_event)
+            return
+
         action_event = Event(
             event_id=f"{event.event_id}-action",
             event_type="action",
@@ -341,6 +372,36 @@ class ReactiveLoop:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _check_policy(action: dict[str, object]) -> str | None:
+        """Run PolicyEnforcer.check; return block reason or None (fail-closed)."""
+        import asyncio  # noqa: PLC0415
+
+        from sqlalchemy import create_engine  # noqa: PLC0415
+        from sqlalchemy.orm import Session  # noqa: PLC0415
+
+        from internalcmdb.api.config import get_settings  # noqa: PLC0415
+        from internalcmdb.governance.policy_enforcer import PolicyEnforcer  # noqa: PLC0415
+
+        def _evaluate() -> str | None:
+            settings = get_settings()
+            engine = create_engine(str(settings.database_url), pool_pre_ping=True)
+            try:
+                with Session(engine) as session:
+                    result = PolicyEnforcer(session).check(
+                        {k: str(v) for k, v in action.items()},
+                    )
+                    if not result.compliant:
+                        return "; ".join(v.reason for v in result.violations)
+            except Exception:
+                logger.exception("reactor policy check failed — FAIL-CLOSED")
+                return "Policy database unavailable; action blocked (fail-closed)"
+            finally:
+                engine.dispose()
+            return None
+
+        return await asyncio.to_thread(_evaluate)
 
     async def _sleep_or_shutdown(self, seconds: float) -> None:
         """Sleep for *seconds* unless shutdown is requested sooner."""

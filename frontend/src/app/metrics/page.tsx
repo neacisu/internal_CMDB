@@ -16,7 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { useRefreshCountdown, fmtTime, useFleetVitalsSSE } from "@/lib/hooks";
+import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+import { useFleetVitalsContext } from "@/lib/fleet-vitals-context";
 import {
   Activity,
   RefreshCw,
@@ -105,7 +106,7 @@ export default function MetricsPage() {
     staleTime: 10_000,
   });
 
-  const { vitals, isLive: vitalsLive } = useFleetVitalsSSE();
+  const { vitals, isLive: vitalsLive } = useFleetVitalsContext();
 
   const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, REFRESH_INTERVAL);
 

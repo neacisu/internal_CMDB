@@ -10,7 +10,7 @@ concurrency:
 
 env:
   DEPLOY_DIR: /opt/stacks/internalcmdb
-  COMPOSE_FILE: /opt/stacks/internalcmdb/deploy/orchestrator/docker-compose.internalcmdb.yml
+  COMPOSE_FILE: /opt/stacks/internalcmdb/deploy/orchestrator/docker-compose.internalcmdb.prod.yml
   DEPLOY_HOST: orchestrator
 
 jobs:
@@ -55,8 +55,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # API image is built on GH Actions and pushed to GHCR.
-      # The orchestrator pulls it at deploy time.
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build API image
         run: |
           DOCKER_BUILDKIT=1 docker build \
@@ -65,21 +70,42 @@ jobs:
             -t ghcr.io/alexneacsu/internalcmdb-api:latest \
             .
 
-      # Frontend runs as next dev (hot-reload) on the orchestrator.
-      # The dev image (node_modules pre-installed, source bind-mounted) is built
-      # locally on the orchestrator — no GHCR push needed for frontend.
+      - name: Build frontend image
+        run: |
+          DOCKER_BUILDKIT=1 docker build \
+            -f Dockerfile.frontend \
+            -t ghcr.io/alexneacsu/internalcmdb-frontend:${{ github.sha }} \
+            -t ghcr.io/alexneacsu/internalcmdb-frontend:latest \
+            .
 
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push API image
+      - name: Push images
         run: |
           docker push ghcr.io/alexneacsu/internalcmdb-api:${{ github.sha }}
           docker push ghcr.io/alexneacsu/internalcmdb-api:latest
+          docker push ghcr.io/alexneacsu/internalcmdb-frontend:${{ github.sha }}
+          docker push ghcr.io/alexneacsu/internalcmdb-frontend:latest
+
+      # Supply-chain verification (F5.5) — enable after cosign key setup:
+      # - name: Install cosign
+      #   uses: sigstore/cosign-installer@v3
+      #
+      # - name: Verify signed API image
+      #   env:
+      #     COSIGN_EXPERIMENTAL: "false"
+      #   run: |
+      #     cosign verify \
+      #       --certificate-identity-regexp='https://github.com/${{ github.repository }}/.+' \
+      #       --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+      #       ghcr.io/alexneacsu/internalcmdb-api@${{ steps.digest.outputs.api_digest }}
+      #
+      # - name: Verify signed frontend image
+      #   run: |
+      #     cosign verify \
+      #       --certificate-identity-regexp='https://github.com/${{ github.repository }}/.+' \
+      #       --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+      #       ghcr.io/alexneacsu/internalcmdb-frontend@${{ steps.digest.outputs.frontend_digest }}
+      #
+      # Pin by digest in production compose — see deploy/orchestrator/README.md
 
       - name: Deploy to orchestrator
         uses: appleboy/ssh-action@v1
@@ -92,25 +118,20 @@ jobs:
             cd ${{ env.DEPLOY_DIR }}
             git pull origin main
 
-            # Run migration safety check, then apply
             make migrate-check
             alembic -c alembic.ini upgrade head
 
-            # Pull latest API image
+            cp deploy/orchestrator/internalcmdb.prod.yml /opt/traefik/dynamic/internalcmdb.yml
+            cp deploy/orchestrator/llm-api.yml /opt/traefik/dynamic/llm-api.yml
+            cp deploy/orchestrator/cmdb-api.yml /opt/traefik/dynamic/cmdb-api.yml
+
             docker pull ghcr.io/alexneacsu/internalcmdb-api:latest
+            docker pull ghcr.io/alexneacsu/internalcmdb-frontend:latest
 
-            # Rebuild frontend dev image locally (only deps layer; source is bind-mounted)
-            DOCKER_BUILDKIT=1 docker build \
-              -f Dockerfile.frontend.dev \
-              -t internalcmdb-frontend:dev \
-              .
-
-            # Deploy with rollback capability
             PREV_API=$(docker inspect --format='{{.Image}}' internalcmdb-api 2>/dev/null || echo "none")
 
             docker compose -f ${{ env.COMPOSE_FILE }} up -d
 
-            # Health check (30s timeout)
             for i in $(seq 1 30); do
               if curl -sf http://localhost:4444/health > /dev/null 2>&1; then
                 echo "Health check passed after ${i}s"
@@ -119,16 +140,11 @@ jobs:
               sleep 1
             done
 
-            # Rollback on failure
-            echo "ERROR: Health check failed — rolling back"
-            alembic -c alembic.ini downgrade -1 || echo "WARNING: migration downgrade failed"
+            echo "ERROR: Health check failed — rolling back API image only"
             if [ "$PREV_API" != "none" ]; then
               docker tag "$PREV_API" ghcr.io/alexneacsu/internalcmdb-api:latest
-              docker compose -f ${{ env.COMPOSE_FILE }} up -d --no-deps internalcmdb-api internalcmdb-worker
+              docker compose -f ${{ env.COMPOSE_FILE }} up -d --no-deps internalcmdb-api internalcmdb-worker internalcmdb-scheduler
             fi
-            # Frontend rollback: git reset to previous commit restores source on bind-mount;
-            # next dev picks up changes immediately without container restart.
-            git reset --hard HEAD~1
             exit 1
 
       - name: Post-deploy health verification

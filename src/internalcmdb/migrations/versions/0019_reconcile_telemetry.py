@@ -1,17 +1,32 @@
-"""Restore telemetry tables and cognitive materialized views if missing.
+"""Reconcile telemetry schema drift (idempotent restore).
 
 Revision ID: 0019
 Revises: 0018
 Created: 2026-07-05
 
-Production lost the telemetry schema and two cognitive materialized views
-(manually dropped after migrations 0007/0008/0010 had run). This migration
-recreates them idempotently so a healthy database is a no-op.
+Investigation notes (2026-07-05)
+--------------------------------
+Production DB on hz.118 lost the ``telemetry`` schema and two cognitive
+materialized views after migrations 0007/0008/0010 had already run.
+Symptoms observed in prod:
 
-DDL is copied verbatim from:
+  - ``accuracy_eval`` worker failing: relation ``telemetry.llm_call_log`` does not exist
+  - SLO dashboard empty: ``telemetry.slo_definition`` / ``slo_measurement`` missing
+  - ``cognitive.mv_fleet_health_live`` and ``mv_llm_accuracy_daily`` dropped manually
+    during an emergency disk cleanup (operator assumed they were disposable caches)
+
+Root cause: manual ``DROP SCHEMA telemetry CASCADE`` on a live database whose
+Alembic head was already past 0010. Alembic will not re-run 0007/0010 on upgrade
+because those revisions are recorded in ``governance.alembic_version``.
+
+This migration idempotently recreates missing objects via ``CREATE … IF NOT EXISTS``
+so healthy databases are a no-op. DDL is copied from:
+
   - 0007_hitl_and_telemetry_schema.py (metric_point, llm_call_log)
   - 0010_slo_framework.py (slo_definition, slo_measurement)
   - 0008_indexes_and_views.py (mv_fleet_health_live, mv_llm_accuracy_daily)
+
+Downgrade is intentionally a no-op — objects remain owned by the original migrations.
 """
 
 from __future__ import annotations
@@ -241,7 +256,7 @@ def upgrade() -> None:
                     DATE(f.created_at)                             AS day,
                     COUNT(*)                                       AS total_feedback,
                     COUNT(*) FILTER (WHERE f.agreement = true)     AS agreed,
-                    COUNT(*) FILTER (WHERE f.agreement = false)    AS disagreed,
+                    COUNT(*) FILTER (WHERE f.agreement = false)     AS disagreed,
                     CASE
                         WHEN COUNT(*) FILTER (WHERE f.agreement IS NOT NULL) > 0
                         THEN ROUND(

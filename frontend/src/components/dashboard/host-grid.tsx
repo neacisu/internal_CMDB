@@ -1,23 +1,21 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getHosts, type Host, type Page } from "@/lib/api";
+import { getHosts, type Host, type Page, type FleetVital } from "@/lib/api";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Cpu, Container, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useRefreshCountdown, fmtTime, useFleetVitalsSSE } from "@/lib/hooks";
+import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
 
 const HOSTS_INTERVAL = 60_000;
 
-export function HostGrid() {
+export function HostGrid({ vitals = [] }: Readonly<{ vitals?: FleetVital[] }>) {
   const { data, isLoading, dataUpdatedAt } = useQuery<Page<Host>>({
     queryKey: ["hosts", "all"],
     queryFn: () => getHosts("page_size=48"),
     refetchInterval: HOSTS_INTERVAL,
   });
-  // Real-time vitals shared with Dashboard via SSE hook
-  const { vitals } = useFleetVitalsSSE();
   const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, HOSTS_INTERVAL);
 
   if (isLoading)

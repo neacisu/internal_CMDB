@@ -374,53 +374,33 @@ class ReportGenerator:
     # ------------------------------------------------------------------
 
     async def _llm_analyze(self, instruction: str, data: str) -> str:
-        """Send data + instruction to the reasoning LLM and return the response text.
+        """Send data + instruction to the reasoning LLM (fail-closed guard pipeline)."""
+        system_prompt = (
+            "You are the InternalCMDB cognitive brain generating an infrastructure report. "
+            "Be precise, data-driven, and actionable. Use markdown formatting. "
+            "NEVER include credentials, tokens, passwords, or private keys in the output."
+        )
+        user_prompt = f"{instruction}\n\n--- DATA ---\n{data}\n--- END DATA ---"
 
-        Performs LLM Guard output scanning when available to redact sensitive
-        information before including the analysis in the report.
-        """
-        messages: list[dict[str, Any]] = [
-            {
-                "role": "system",
-                "content": (
-                    "You are the InternalCMDB cognitive brain generating an infrastructure report. "
-                    "Be precise, data-driven, and actionable. Use markdown formatting. "
-                    "NEVER include credentials, tokens, passwords, or private keys in the output."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"{instruction}\n\n--- DATA ---\n{data}\n--- END DATA ---",
-            },
-        ]
+        from internalcmdb.llm.guard_pipeline import GuardPipeline  # noqa: PLC0415
 
         try:
-            response = await self._llm.reason(messages, temperature=0.2, max_tokens=1500)
-            choices = response.get("choices", [])
-            if not choices:
-                return "_The model returned an empty response._"
-            content = choices[0].get("message", {}).get("content", "")
-            if not content:
-                return "_Analysis unavailable._"
+            guarded = await GuardPipeline(self._llm).guarded_call(
+                user_prompt,
+                model="reasoning",
+                system_prompt=system_prompt,
+                temperature=0.2,
+                max_tokens=1500,
+            )
         except Exception:
             logger.exception("LLM analysis call failed")
             return "_LLM analysis unavailable due to a backend error._"
 
-        try:
-            guard_result = await self._llm.guard_output(
-                prompt=instruction,
-                output=content,
-            )
-            if guard_result.get("is_valid") is False:
-                sanitized = guard_result.get("sanitized_output", "")
-                if sanitized:
-                    logger.warning("Guard redacted sensitive content from report section")
-                    return sanitized
-                return "_Analysis redacted — contained sensitive information._"
-        except Exception:
-            logger.debug("Guard output scan unavailable — returning raw analysis")
+        if guarded.blocked:
+            logger.warning("Guard blocked report section generation")
+            return "_Analysis redacted — failed security guard (fail-closed)._"
 
-        return content
+        return guarded.content or "_Analysis unavailable._"
 
 
 def _truncate_value(val: Any, max_len: int = 120) -> str:

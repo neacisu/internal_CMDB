@@ -33,6 +33,11 @@ from internalcmdb.api.routers.agent_commands import (
 from internalcmdb.api.routers.agent_commands import (
     router as agent_commands_router,
 )
+from internalcmdb.api.routers.collectors import verify_agent_token
+
+_AGENT_UUID = "00000000-0000-0000-0000-000000000001"
+_AGENT_UUID_2 = "00000000-0000-0000-0000-000000000002"
+_AGENT_URL = f"/api/v1/agent-commands/{_AGENT_UUID}"
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -93,8 +98,8 @@ def _make_app(session_factory: Any = None) -> FastAPI:
     """Build a minimal FastAPI app with the agent_commands router and mocked deps."""
     app = FastAPI()
     app.dependency_overrides[get_async_session] = session_factory or _empty_session
-    # Bypass rate-limiting in unit tests — it requires app.state.limiter to be configured.
     app.dependency_overrides[_rate_limit] = lambda: None
+    app.dependency_overrides[verify_agent_token] = lambda: uuid.UUID(_AGENT_UUID)
     app.include_router(agent_commands_router, prefix="/api/v1")
     return app
 
@@ -263,7 +268,7 @@ def test_send_command_invalid_type_returns_400_before_db() -> None:
     """Validation runs before any DB access; 400 emitted immediately."""
     client = TestClient(_make_app())
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands",
         json={"command_type": "exec_shell", "payload": {}},
     )
     assert r.status_code == 400
@@ -272,7 +277,7 @@ def test_send_command_invalid_type_returns_400_before_db() -> None:
 def test_send_command_blocked_diagnostic_returns_403() -> None:
     client = TestClient(_make_app())
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands",
         json={"command_type": "run_diagnostic", "payload": {"command": "rm -rf /"}},
     )
     assert r.status_code == 403
@@ -281,7 +286,7 @@ def test_send_command_blocked_diagnostic_returns_403() -> None:
 def test_send_command_blocked_read_file_path_returns_403() -> None:
     client = TestClient(_make_app())
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands",
         json={"command_type": "read_file", "payload": {"path": "/root/.ssh/id_rsa"}},
     )
     assert r.status_code == 403
@@ -291,19 +296,19 @@ def test_send_command_agent_not_found_returns_404() -> None:
     result = _result_one(None)
     client = TestClient(_make_app(_make_session(result)))
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands",
         json={"command_type": "service_status", "payload": {"service": "nginx"}},
     )
     assert r.status_code == 404
-    assert "agent-001" in r.json()["detail"]
+    assert _AGENT_UUID in r.json()["detail"]
 
 
 def test_send_command_agent_offline_returns_409() -> None:
-    agent_row = _Row(agent_id="agent-001", api_token="tok", status="offline")
+    agent_row = _Row(agent_id=_AGENT_UUID, status="offline")
     result = _result_one(agent_row)
     client = TestClient(_make_app(_make_session(result)))
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands",
         json={"command_type": "docker_inspect", "payload": {"container": "myapp"}},
     )
     assert r.status_code == 409
@@ -311,11 +316,11 @@ def test_send_command_agent_offline_returns_409() -> None:
 
 
 def test_send_command_agent_degraded_returns_409() -> None:
-    agent_row = _Row(agent_id="agent-001", api_token="tok", status="degraded")
+    agent_row = _Row(agent_id=_AGENT_UUID, status="degraded")
     result = _result_one(agent_row)
     client = TestClient(_make_app(_make_session(result)))
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands",
         json={"command_type": "service_status", "payload": {}},
     )
     assert r.status_code == 409
@@ -323,20 +328,26 @@ def test_send_command_agent_degraded_returns_409() -> None:
 
 def test_send_command_success_redis_unavailable_still_returns_pending() -> None:
     """Command is persisted in DB even when Redis publish raises an exception."""
-    agent_row = _Row(agent_id="agent-001", api_token="secret-token", status="online")
+    agent_row = _Row(agent_id=_AGENT_UUID, status="online")
     agent_result = _result_one(agent_row)
     insert_result = MagicMock()
 
-    with patch("redis.asyncio.from_url", side_effect=Exception("Connection refused")):
+    with (
+        patch(
+            "internalcmdb.collectors.agent_auth.get_cached_agent_token",
+            return_value="secret-token",
+        ),
+        patch("redis.asyncio.from_url", side_effect=Exception("Connection refused")),
+    ):
         client = TestClient(_make_app(_make_session(agent_result, insert_result)))
         r = client.post(
-            "/api/v1/agent-commands/agent-001/commands",
+            "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands",
             json={"command_type": "service_status", "payload": {"service": "nginx"}},
         )
 
     assert r.status_code == 200
     data = r.json()
-    assert data["agent_id"] == "agent-001"
+    assert data["agent_id"] == _AGENT_UUID
     assert data["command_type"] == "service_status"
     assert data["status"] == "pending"
     assert "command_id" in data
@@ -344,14 +355,20 @@ def test_send_command_success_redis_unavailable_still_returns_pending() -> None:
 
 
 def test_send_command_response_contains_valid_uuid_command_id() -> None:
-    agent_row = _Row(agent_id="agent-002", api_token="tok2", status="online")
+    agent_row = _Row(agent_id=_AGENT_UUID_2, status="online")
     agent_result = _result_one(agent_row)
     insert_result = MagicMock()
 
-    with patch("redis.asyncio.from_url", side_effect=Exception("no redis")):
+    with (
+        patch(
+            "internalcmdb.collectors.agent_auth.get_cached_agent_token",
+            return_value="tok2",
+        ),
+        patch("redis.asyncio.from_url", side_effect=Exception("no redis")),
+    ):
         client = TestClient(_make_app(_make_session(agent_result, insert_result)))
         r = client.post(
-            "/api/v1/agent-commands/agent-002/commands",
+            f"/api/v1/agent-commands/{_AGENT_UUID_2}/commands",
             json={"command_type": "run_diagnostic", "payload": {"command": "uptime"}},
         )
 
@@ -359,6 +376,34 @@ def test_send_command_response_contains_valid_uuid_command_id() -> None:
     command_id = r.json()["command_id"]
     parsed = uuid.UUID(command_id)  # raises ValueError if not valid UUID
     assert str(parsed) == command_id
+
+
+def test_send_command_missing_signing_token_returns_503() -> None:
+    agent_row = _Row(agent_id=_AGENT_UUID, status="online")
+    agent_result = _result_one(agent_row)
+    with patch(
+        "internalcmdb.collectors.agent_auth.get_cached_agent_token",
+        return_value=None,
+    ):
+        client = TestClient(_make_app(_make_session(agent_result)))
+        r = client.post(
+            "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands",
+            json={"command_type": "service_status", "payload": {}},
+        )
+    assert r.status_code == 503
+
+
+def test_receive_result_requires_agent_hmac() -> None:
+    app = FastAPI()
+    app.dependency_overrides[get_async_session] = _empty_session
+    app.dependency_overrides[_rate_limit] = lambda: None
+    app.include_router(agent_commands_router, prefix="/api/v1")
+    client = TestClient(app)
+    r = client.post(
+        f"{_AGENT_URL}/commands/cmd-abc/result",
+        json={"result": {"exit_code": 0}},
+    )
+    assert r.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +414,7 @@ def test_send_command_response_contains_valid_uuid_command_id() -> None:
 def test_get_command_result_not_found_returns_404() -> None:
     result = _result_one(None)
     client = TestClient(_make_app(_make_session(result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/nonexistent-cmd")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/nonexistent-cmd")
     assert r.status_code == 404
 
 
@@ -377,7 +422,7 @@ def test_get_command_result_completed_returns_200() -> None:
     now = datetime.now(tz=UTC)
     cmd_row = _Row(
         command_id="cmd-abc",
-        agent_id="agent-001",
+        agent_id=_AGENT_UUID,
         command_type="service_status",
         status="completed",
         result={"exit_code": 0, "stdout": "active"},
@@ -388,11 +433,11 @@ def test_get_command_result_completed_returns_200() -> None:
     )
     result = _result_one(cmd_row)
     client = TestClient(_make_app(_make_session(result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/cmd-abc")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-abc")
     assert r.status_code == 200
     data = r.json()
     assert data["command_id"] == "cmd-abc"
-    assert data["agent_id"] == "agent-001"
+    assert data["agent_id"] == _AGENT_UUID
     assert data["status"] == "completed"
     assert data["duration_ms"] == 250
     assert data["completed_at"] is not None
@@ -402,7 +447,7 @@ def test_get_command_result_pending_has_null_completed_at() -> None:
     now = datetime.now(tz=UTC)
     cmd_row = _Row(
         command_id="cmd-xyz",
-        agent_id="agent-001",
+        agent_id=_AGENT_UUID,
         command_type="docker_inspect",
         status="pending",
         result=None,
@@ -413,7 +458,7 @@ def test_get_command_result_pending_has_null_completed_at() -> None:
     )
     result = _result_one(cmd_row)
     client = TestClient(_make_app(_make_session(result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/cmd-xyz")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-xyz")
     assert r.status_code == 200
     data = r.json()
     assert data["status"] == "pending"
@@ -425,7 +470,7 @@ def test_get_command_result_failed_includes_error_field() -> None:
     now = datetime.now(tz=UTC)
     cmd_row = _Row(
         command_id="cmd-fail",
-        agent_id="agent-001",
+        agent_id=_AGENT_UUID,
         command_type="run_diagnostic",
         status="failed",
         result=None,
@@ -436,7 +481,7 @@ def test_get_command_result_failed_includes_error_field() -> None:
     )
     result = _result_one(cmd_row)
     client = TestClient(_make_app(_make_session(result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/cmd-fail")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-fail")
     assert r.status_code == 200
     data = r.json()
     assert data["status"] == "failed"
@@ -451,7 +496,7 @@ def test_get_command_result_failed_includes_error_field() -> None:
 def test_list_commands_empty_returns_empty_list() -> None:
     rows_result = _result_many([])
     client = TestClient(_make_app(_make_session(rows_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands")
     assert r.status_code == 200
     assert r.json() == []
 
@@ -460,7 +505,7 @@ def test_list_commands_single_item() -> None:
     now = datetime.now(tz=UTC)
     row = _Row(
         command_id="cmd-xyz",
-        agent_id="agent-001",
+        agent_id=_AGENT_UUID,
         command_type="docker_inspect",
         status="pending",
         result=None,
@@ -471,7 +516,7 @@ def test_list_commands_single_item() -> None:
     )
     rows_result = _result_many([row])
     client = TestClient(_make_app(_make_session(rows_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands")
     assert r.status_code == 200
     data = r.json()
     assert len(data) == 1
@@ -484,7 +529,7 @@ def test_list_commands_multiple_items() -> None:
     rows = [
         _Row(
             command_id=f"cmd-{i:03d}",
-            agent_id="agent-001",
+            agent_id=_AGENT_UUID,
             command_type="service_status",
             status="completed",
             result={"exit_code": 0},
@@ -497,7 +542,7 @@ def test_list_commands_multiple_items() -> None:
     ]
     rows_result = _result_many(rows)
     client = TestClient(_make_app(_make_session(rows_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands")
     assert r.status_code == 200
     data = r.json()
     assert len(data) == 5
@@ -507,14 +552,14 @@ def test_list_commands_multiple_items() -> None:
 def test_list_commands_accepts_status_query_param() -> None:
     rows_result = _result_many([])
     client = TestClient(_make_app(_make_session(rows_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands", params={"status": "completed"})
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands", params={"status": "completed"})
     assert r.status_code == 200
 
 
 def test_list_commands_accepts_limit_query_param() -> None:
     rows_result = _result_many([])
     client = TestClient(_make_app(_make_session(rows_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands", params={"limit": 5})
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands", params={"limit": 5})
     assert r.status_code == 200
 
 
@@ -535,7 +580,7 @@ def test_stream_returns_sse_content_type_for_completed_command() -> None:
     )
     stream_result = _result_one(stream_row)
     client = TestClient(_make_app(_make_session(stream_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/cmd-abc/stream")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-abc/stream")
     assert r.status_code == 200
     assert "event-stream" in r.headers.get("content-type", "")
 
@@ -551,7 +596,7 @@ def test_stream_body_starts_with_sse_data_frame() -> None:
     )
     stream_result = _result_one(stream_row)
     client = TestClient(_make_app(_make_session(stream_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/cmd-abc/stream")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-abc/stream")
     assert r.text.startswith("data: ")
 
 
@@ -566,7 +611,7 @@ def test_stream_sse_payload_contains_status_completed() -> None:
     )
     stream_result = _result_one(stream_row)
     client = TestClient(_make_app(_make_session(stream_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/cmd-abc/stream")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-abc/stream")
     first_event = r.text.split("data: ")[1].split("\n\n")[0]
     payload = json.loads(first_event)
     assert payload["status"] == "completed"
@@ -583,7 +628,7 @@ def test_stream_sse_payload_contains_status_failed() -> None:
     )
     stream_result = _result_one(stream_row)
     client = TestClient(_make_app(_make_session(stream_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/cmd-fail/stream")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-fail/stream")
     first_event = r.text.split("data: ")[1].split("\n\n")[0]
     payload = json.loads(first_event)
     assert payload["status"] == "failed"
@@ -593,7 +638,7 @@ def test_stream_not_found_yields_error_event() -> None:
     """When the command is not in DB, the stream yields a JSON error event."""
     not_found_result = _result_one(None)
     client = TestClient(_make_app(_make_session(not_found_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/missing/stream")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/missing/stream")
     assert r.status_code == 200
     assert "data: " in r.text
     first_event = r.text.split("data: ")[1].split("\n\n")[0]
@@ -608,7 +653,7 @@ def test_stream_cache_control_header_is_no_cache() -> None:
     )
     stream_result = _result_one(stream_row)
     client = TestClient(_make_app(_make_session(stream_result)))
-    r = client.get("/api/v1/agent-commands/agent-001/commands/cmd-abc/stream")
+    r = client.get("/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-abc/stream")
     assert r.headers.get("cache-control") == "no-cache"
 
 
@@ -622,7 +667,7 @@ def test_receive_result_command_not_found_returns_404() -> None:
     not_found_result.first.return_value = None
     client = TestClient(_make_app(_make_session(not_found_result)))
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands/no-such-cmd/result",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/no-such-cmd/result",
         json={"result": {"exit_code": 0}, "duration_ms": 100},
     )
     assert r.status_code == 404
@@ -634,7 +679,7 @@ def test_receive_result_accepted_returns_status() -> None:
     update_result = MagicMock()
     client = TestClient(_make_app(_make_session(found_result, update_result)))
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands/cmd-abc/result",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-abc/result",
         json={"result": {"exit_code": 0, "stdout": "OK"}, "duration_ms": 150},
     )
     assert r.status_code == 200
@@ -647,7 +692,7 @@ def test_receive_result_with_error_field_accepted() -> None:
     update_result = MagicMock()
     client = TestClient(_make_app(_make_session(found_result, update_result)))
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands/cmd-abc/result",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-abc/result",
         json={"error": "connection timed out", "duration_ms": 30000},
     )
     assert r.status_code == 200
@@ -661,7 +706,7 @@ def test_receive_result_empty_payload_accepted() -> None:
     update_result = MagicMock()
     client = TestClient(_make_app(_make_session(found_result, update_result)))
     r = client.post(
-        "/api/v1/agent-commands/agent-001/commands/cmd-abc/result",
+        "/api/v1/agent-commands/00000000-0000-0000-0000-000000000001/commands/cmd-abc/result",
         json={},
     )
     assert r.status_code == 200

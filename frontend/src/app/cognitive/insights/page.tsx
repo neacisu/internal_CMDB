@@ -31,6 +31,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useRefreshCountdown, fmtTime } from "@/lib/hooks";
+import { getMe } from "@/lib/auth";
 
 const REFRESH_INTERVAL = 15_000;
 
@@ -74,13 +75,20 @@ export default function InsightsPage() {
 
   const { secsLeft, progress, lastRefreshed } = useRefreshCountdown(dataUpdatedAt, REFRESH_INTERVAL);
 
+  const { data: me } = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: getMe,
+    staleTime: 60_000,
+  });
+  const actorReady = Boolean(me?.username);
+
   const ackMutation = useMutation({
-    mutationFn: (id: string) => ackInsight(id, "operator"),
+    mutationFn: (id: string) => ackInsight(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cognitive", "insights"] }),
   });
 
   const dismissMutation = useMutation({
-    mutationFn: (id: string) => dismissInsight(id, "operator", "Manually dismissed"),
+    mutationFn: (id: string) => dismissInsight(id, "Manually dismissed"),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cognitive", "insights"] }),
   });
 
@@ -225,6 +233,7 @@ export default function InsightsPage() {
                           e.stopPropagation();
                           ackMutation.mutate(ins.insight_id);
                         }}
+                        disabled={!actorReady || ackMutation.isPending}
                       >
                         <CheckCircle size={10} className="mr-0.5" />
                         Ack
@@ -237,6 +246,7 @@ export default function InsightsPage() {
                           e.stopPropagation();
                           dismissMutation.mutate(ins.insight_id);
                         }}
+                        disabled={!actorReady || dismissMutation.isPending}
                       >
                         <XCircle size={10} className="mr-0.5" />
                         Dismiss

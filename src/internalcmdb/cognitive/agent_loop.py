@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from redis.asyncio import Redis as _AioRedis
 
+    from internalcmdb.llm.budget import TokenBudgetManager
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -40,6 +42,7 @@ _SESSION_TIMEOUT_S = 300  # 5 minutes
 _MAX_TOKENS_PER_SESSION = 50_000
 _FINAL_ANSWER_MARKER = "FINAL_ANSWER"
 _LLM_CONSECUTIVE_FAILURES = 3  # circuit breaker threshold
+_ESTIMATED_TOKENS_PER_CALL = 4_000
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +141,7 @@ class AgentLoop:
         timeout_s: int = _SESSION_TIMEOUT_S,
         max_tokens: int = _MAX_TOKENS_PER_SESSION,
         model_name: str | None = None,
+        budget_manager: TokenBudgetManager | None = None,
     ) -> None:
         self._max_iterations = max_iterations
         self._timeout_s = timeout_s
@@ -145,6 +149,8 @@ class AgentLoop:
         self._explicit_model = model_name
         self._model_name = model_name or "reasoning"
         self._consecutive_llm_failures = 0
+        self._budget_manager = budget_manager
+        self._budget_caller = "agent-loop"
 
     def _route_model(self, goal: str) -> str:
         """Select optimal model based on goal intent analysis.
@@ -182,10 +188,14 @@ class AgentLoop:
         """
         from internalcmdb.cognitive.tool_executor import ToolExecutor  # noqa: PLC0415
         from internalcmdb.cognitive.tool_registry import get_registry  # noqa: PLC0415
+        from internalcmdb.llm.budget import TokenBudgetManager  # noqa: PLC0415
         from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
 
         # Auto-select model based on goal intent
         self._model_name = self._route_model(goal)
+        self._budget_caller = triggered_by if triggered_by else "agent-loop"
+        if self._budget_manager is None:
+            self._budget_manager = TokenBudgetManager()
 
         session = AgentSession(
             session_id=getattr(self, "_session_id_override", None) or str(uuid.uuid4()),
@@ -331,6 +341,17 @@ class AgentLoop:
             return True
         return False
 
+    async def _check_hourly_budget(self, session: AgentSession, tokens: int) -> bool:
+        """Return ``True`` if hourly TokenBudgetManager denies the request."""
+        if self._budget_manager is None:
+            return False
+        allowed = await self._budget_manager.check_budget(self._budget_caller, tokens)
+        if not allowed:
+            session.status = "budget_exceeded"
+            session.error = f"Hourly token budget exceeded for caller '{self._budget_caller}'"
+            return True
+        return False
+
     async def _call_llm(
         self,
         session: AgentSession,
@@ -358,7 +379,19 @@ class AgentLoop:
             )
             return None
 
+        if await self._check_hourly_budget(session, _ESTIMATED_TOKENS_PER_CALL):
+            return None
+
         try:
+            # Pre-scan latest user message before LLM call (fail-closed)
+            user_content = messages[-1].get("content", "") if messages else ""
+            if user_content:
+                input_block = await self._guard_scan_input(user_content)
+                if input_block:
+                    session.status = "failed"
+                    session.error = input_block
+                    return None
+
             if tools_schema:
                 response = await llm.tool_call(
                     messages,
@@ -404,6 +437,8 @@ class AgentLoop:
         usage = response.get("usage", {})
         step_tokens = usage.get("total_tokens", 0)
         session.tokens_used += step_tokens
+        if self._budget_manager is not None and step_tokens:
+            await self._budget_manager.record_usage(self._budget_caller, step_tokens)
 
         choices = response.get("choices", [])
         if not choices:
@@ -426,9 +461,9 @@ class AgentLoop:
         session.steps.append(think_step)
         await self._stream_step(session.session_id, think_step)
 
-        # Guard pipeline scan on LLM output (OWASP LLM01)
+        # Guard pipeline scan on LLM output (fail-closed via LLM Guard)
         if content:
-            guard_block = self._guard_scan_output(content)
+            guard_block = await self._guard_scan_output(content)
             if guard_block:
                 logger.warning("Guard blocked LLM output: %s", guard_block)
                 content = "[Guard blocked: potentially unsafe LLM output]"
@@ -455,17 +490,35 @@ class AgentLoop:
         return False
 
     @staticmethod
-    def _guard_scan_output(content: str) -> str:
-        """Scan LLM output for prompt injection or unsafe patterns. Returns block reason or ''."""
-        try:
-            from internalcmdb.llm.security import LLMSecurityLayer  # noqa: PLC0415
+    async def _guard_scan_input(content: str) -> str:
+        """Fail-closed input scan via LLM Guard ``/analyze/prompt``."""
+        from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
+        from internalcmdb.llm.guard_pipeline import scan_prompt  # noqa: PLC0415
 
-            layer = LLMSecurityLayer()
-            findings = layer.scan_rag_content([content])
-            if findings:
-                return findings[0].get("pattern", "suspicious pattern")[:100]
+        try:
+            async with LLMClient() as llm:
+                result = await scan_prompt(llm, content)
+            if not result.is_valid:
+                return f"Guard blocked LLM input (score={result.score:.3f})"
         except Exception:
-            logger.debug("Guard scan unavailable for LLM output", exc_info=True)
+            logger.exception("Guard input scan failed — FAIL-CLOSED")
+            return "Guard service unavailable; LLM input blocked (fail-closed)"
+        return ""
+
+    @staticmethod
+    async def _guard_scan_output(content: str) -> str:
+        """Fail-closed output scan via LLM Guard ``/analyze/output``."""
+        from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
+        from internalcmdb.llm.guard_pipeline import scan_output  # noqa: PLC0415
+
+        try:
+            async with LLMClient() as llm:
+                result = await scan_output(llm, content, content)
+            if not result.is_valid:
+                return f"Guard blocked LLM output (score={result.score:.3f})"
+        except Exception:
+            logger.exception("Guard output scan failed — FAIL-CLOSED")
+            return "Guard service unavailable; LLM output blocked (fail-closed)"
         return ""
 
     async def _execute_tool_calls(

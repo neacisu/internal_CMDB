@@ -147,13 +147,29 @@ class AgentPlanner:
         ]
 
         try:
+            from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
+            from internalcmdb.llm.guard_pipeline import scan_output, scan_prompt  # noqa: PLC0415
+
             llm = await LLMClient.from_settings()
             try:
+                user_prompt = self._build_decompose_prompt(goal, context)
+                input_scan = await scan_prompt(llm, user_prompt)
+                if not input_scan.is_valid:
+                    raise ValueError("Guard blocked plan decomposition input")
+
                 response = await llm.reason_structured(
                     messages,
                     _PLAN_JSON_SCHEMA,
                     model_name="reasoning",
                 )
+                output_scan = await scan_output(
+                    llm,
+                    user_prompt,
+                    json.dumps(response.get("_parsed", {})),
+                )
+                if not output_scan.is_valid:
+                    raise ValueError("Guard blocked plan decomposition output")
+
                 parsed = response.get("_parsed", {})
                 raw_tasks = parsed.get("tasks", [])
                 plan.summary = parsed.get("summary", "")

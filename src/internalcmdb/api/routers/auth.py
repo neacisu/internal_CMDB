@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-if TYPE_CHECKING:
-    from internalcmdb.auth.models import User
-
+from internalcmdb.auth.models import User
 from internalcmdb.auth.lockout import (
     MAX_ATTEMPTS,
     clear_lockout,
@@ -20,8 +18,15 @@ from internalcmdb.auth.lockout import (
     record_failed_attempt,
 )
 from internalcmdb.auth.revocation import revoke_token
-from internalcmdb.auth.security import TokenClaims, create_access_token, decode_access_token
+from internalcmdb.auth.security import (
+    TokenClaims,
+    create_access_token,
+    decode_access_token,
+    invalidate_jwt_secret_cache,
+    set_jwt_secret_ring,
+)
 from internalcmdb.auth.service import AuthService
+from internalcmdb.config.secrets import SecretProvider, is_placeholder_secret
 from internalcmdb.observability.metrics import (
     LOCKOUT_TRIGGERED,
     LOGIN_FAILURE,
@@ -32,6 +37,7 @@ from internalcmdb.observability.metrics import (
 from ..config import get_settings
 from ..deps import get_current_user, get_db
 from ..middleware.rate_limit import rate_limit
+from ..middleware.rbac import require_role
 from ..schemas.auth import LoginRequest, PasswordResetRequest, UserOut
 
 logger = logging.getLogger(__name__)
@@ -50,7 +56,7 @@ async def login(
     request: Request,
     body: LoginRequest,
     response: Response,
-    db: Session = Depends(get_db),  # noqa: B008
+    db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     """Authenticate with email + password; set httpOnly session cookie."""
     settings = get_settings()
@@ -143,13 +149,45 @@ async def logout(request: Request, response: Response) -> None:
 
 
 # ---------------------------------------------------------------------------
+# GET /auth/verify
+# ---------------------------------------------------------------------------
+
+
+@router.get("/verify")
+async def verify_session(request: Request) -> dict[str, Any]:
+    """Validate the session cookie and return claims for frontend middleware."""
+    from internalcmdb.auth.revocation import is_revoked  # noqa: PLC0415
+
+    settings = get_settings()
+    cookie_val = request.cookies.get(settings.jwt_cookie_name)
+    if not cookie_val:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated.",
+        )
+
+    payload = decode_access_token(cookie_val)
+    if is_revoked(payload.jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked.",
+        )
+
+    return {
+        "sub": payload.sub,
+        "role": payload.role,
+        "force_password_change": payload.force_password_change,
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /auth/me
 # ---------------------------------------------------------------------------
 
 
-@router.get("/me", response_model=UserOut)
+@router.get("/me")
 async def me(
-    current_user: User = Depends(get_current_user),  # noqa: B008
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> UserOut:
     """Return the authenticated user's profile."""
     return UserOut.model_validate(current_user)
@@ -165,8 +203,8 @@ async def password_reset(
     request: Request,
     body: PasswordResetRequest,
     response: Response,
-    current_user: User = Depends(get_current_user),  # noqa: B008
-    db: Session = Depends(get_db),  # noqa: B008
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> None:
     """Reset the authenticated user's password."""
     settings = get_settings()
@@ -200,3 +238,54 @@ async def password_reset(
         secure=settings.jwt_cookie_secure,
         samesite=settings.jwt_cookie_samesite,
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/secrets/reload  (admin only)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/secrets/reload",
+    dependencies=[Depends(require_role("admin"))],
+)
+async def reload_secrets() -> dict[str, str]:
+    """Reload JWT and database credential caches from OpenBao without restart."""
+    provider = SecretProvider()
+    provider.invalidate_cache()
+
+    secret_key = await provider.get("SECRET_KEY")
+    if not secret_key or is_placeholder_secret(secret_key):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SECRET_KEY missing or placeholder in secrets backend.",
+        )
+
+    jwt_ring = await provider.get_jwt_secret_ring()
+    if not jwt_ring or any(len(key) < 32 for key in jwt_ring):  # noqa: PLR2004
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT secret ring missing or invalid in secrets backend.",
+        )
+    if any(is_placeholder_secret(key) for key in jwt_ring):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT secret ring contains placeholder values.",
+        )
+
+    import os  # noqa: PLC0415
+
+    os.environ["SECRET_KEY"] = secret_key
+    invalidate_jwt_secret_cache()
+    set_jwt_secret_ring(jwt_ring)
+
+    from internalcmdb.api.deps import reset_db_engine_cache  # noqa: PLC0415
+    from internalcmdb.config.db_credentials import (
+        invalidate_cache as invalidate_db_cache,
+    )
+
+    invalidate_db_cache()
+    reset_db_engine_cache()
+
+    logger.info("Secrets reloaded from OpenBao (JWT ring size=%d)", len(jwt_ring))
+    return {"status": "reloaded", "jwt_ring_size": str(len(jwt_ring))}

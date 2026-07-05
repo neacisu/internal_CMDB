@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, Text, UniqueConstraint
@@ -35,7 +36,7 @@ class AuditEvent(Base):
     status: Mapped[str | None] = mapped_column(Text)
     ip_address: Mapped[str | None] = mapped_column(Text)
     risk_level: Mapped[str | None] = mapped_column(Text, default="low")
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
 
@@ -53,10 +54,10 @@ class PolicyRecord(Base):
         ForeignKey("docs.document_version.document_version_id"), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
 
@@ -76,10 +77,10 @@ class ApprovalRecord(Base):
     approved_by: Mapped[str | None] = mapped_column(Text)
     status_text: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     expires_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )
 
@@ -119,7 +120,7 @@ class ChangeLog(Base):
     after_state_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     rollback_reference_text: Mapped[str | None] = mapped_column(Text)
     changed_by: Mapped[str] = mapped_column(Text, nullable=False)
-    changed_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
-    created_at: Mapped[str] = mapped_column(
+    changed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_SERVER_NOW
     )

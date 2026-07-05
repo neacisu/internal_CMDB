@@ -1,0 +1,43 @@
+name: SBOM
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  generate-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate Python SBOM
+        run: |
+          syft dir:. \
+            --output cyclonedx-json=sbom-python.json \
+            --scope all-layers
+
+      - name: Generate container SBOM (API image)
+        run: |
+          docker build -f Dockerfile.api -t internalcmdb-api:sbom .
+          syft internalcmdb-api:sbom \
+            --output cyclonedx-json=sbom-api-image.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-reports
+          path: |
+            sbom-python.json
+            sbom-api-image.json
+          retention-days: 90

@@ -6,6 +6,11 @@ import GpuPage from "@/app/gpu/page";
 import DocumentsPage from "@/app/documents/page";
 import MetricsPage from "@/app/metrics/page";
 
+vi.mock("@/lib/fleet-vitals-context", () => ({
+  FleetVitalsProvider: ({ children }: Readonly<{ children: React.ReactNode }>) => children,
+  useFleetVitalsContext: () => ({ vitals: [], isLive: false }),
+}));
+
 function createWrapper() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0 } },

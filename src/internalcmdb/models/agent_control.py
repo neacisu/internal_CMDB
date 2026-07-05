@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import Boolean, ForeignKey, Numeric, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 
+from ._sql_constants import FK_TAXONOMY_TERM, SERVER_DEFAULT_NOW
 from .base import Base
 
 
@@ -35,11 +37,11 @@ class PromptTemplateRegistry(Base):
         ForeignKey("docs.document_version.document_version_id"), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -63,10 +65,10 @@ class AgentRun(Base):
     )
     requested_scope_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     status_text: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
-    started_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
-    finished_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -79,7 +81,7 @@ class AgentEvidence(Base):
         ForeignKey("agent_control.agent_run.agent_run_id"), nullable=False
     )
     entity_kind_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     entity_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     document_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -90,8 +92,8 @@ class AgentEvidence(Base):
     )
     evidence_role_text: Mapped[str | None] = mapped_column(Text)
     confidence_score: Mapped[float | None] = mapped_column(Numeric(5, 4))
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -114,7 +116,7 @@ class ActionRequest(Base):
     target_scope_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     requested_change_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     status_text: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
-    executed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    executed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )

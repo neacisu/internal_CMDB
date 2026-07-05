@@ -125,12 +125,13 @@ class HITLWorkflow:
                 "INSERT INTO governance.hitl_item"
                 "    (item_id, item_type, risk_class, priority, status,"
                 "     source_event_id, correlation_id, context_jsonb,"
-                "     llm_suggestion, llm_confidence, llm_model_used, expires_at)"
+                "     llm_suggestion, llm_confidence, llm_model_used, expires_at,"
+                "     approvals_jsonb)"
                 " VALUES"
                 "    (:item_id, :item_type, :risk_class, :priority, 'pending',"
                 "     :source_event_id, :correlation_id, :context_jsonb::jsonb,"
                 "     :llm_suggestion::jsonb, :llm_confidence, :llm_model_used,"
-                "     :expires_at)"
+                "     :expires_at, '[]'::jsonb)"
             ),
             {
                 "item_id": item_id,
@@ -172,7 +173,86 @@ class HITLWorkflow:
     # ── approve ─────────────────────────────────────────────────────────
 
     async def approve(self, item_id: str, decided_by: str, reason: str) -> bool:
-        """Approve a pending HITL item."""
+        """Approve a pending HITL item.
+
+        RC-3 items require two distinct approvers before final approval.
+        """
+        row = await self._session.execute(
+            text("""
+                SELECT risk_class, status, approvals_jsonb
+                  FROM governance.hitl_item
+                 WHERE item_id = :item_id
+            """),
+            {"item_id": item_id},
+        )
+        item = row.fetchone()
+        if item is None:
+            return False
+
+        risk_class = str(item[0] or "")
+        status = str(item[1] or "")
+        approvals: list[dict[str, Any]] = list(item[2] or [])
+
+        if risk_class == "RC-3":
+            return await self._approve_rc3(item_id, decided_by, reason, status, approvals)
+
+        return await self._decide(item_id, "approved", decided_by, reason)
+
+    async def _approve_rc3(
+        self,
+        item_id: str,
+        decided_by: str,
+        reason: str,
+        status: str,
+        approvals: list[dict[str, Any]],
+    ) -> bool:
+        """Record partial or final approval for RC-3 dual-sign-off items."""
+        if status not in ("pending", "escalated"):
+            return False
+
+        existing = {str(a.get("decided_by", "")) for a in approvals}
+        if decided_by in existing:
+            logger.warning(
+                "RC-3 duplicate approver rejected",
+                extra={"item_id": _sanitize_log(item_id), "actor": _sanitize_log(decided_by)},
+            )
+            return False
+
+        import json as _json  # noqa: PLC0415
+
+        new_entry = {
+            "decided_by": decided_by,
+            "reason": reason,
+            "decided_at": datetime.now(tz=UTC).isoformat(),
+        }
+        updated = [*approvals, new_entry]
+
+        if len(updated) < 2:  # noqa: PLR2004
+            await self._session.execute(
+                text("""
+                    UPDATE governance.hitl_item
+                       SET approvals_jsonb = :approvals::jsonb
+                     WHERE item_id = :item_id
+                       AND status IN ('pending', 'escalated')
+                """),
+                {"item_id": item_id, "approvals": _json.dumps(updated, default=str)},
+            )
+            await self._session.commit()
+            logger.info(
+                "RC-3 partial approval recorded (%d/2)",
+                len(updated),
+                extra={"item_id": _sanitize_log(item_id), "actor": _sanitize_log(decided_by)},
+            )
+            return True
+
+        await self._session.execute(
+            text("""
+                UPDATE governance.hitl_item
+                   SET approvals_jsonb = :approvals::jsonb
+                 WHERE item_id = :item_id
+            """),
+            {"item_id": item_id, "approvals": _json.dumps(updated, default=str)},
+        )
         return await self._decide(item_id, "approved", decided_by, reason)
 
     # ── reject ──────────────────────────────────────────────────────────
@@ -347,10 +427,9 @@ class HITLWorkflow:
         try:
             await self._record_feedback(s_item_id, s_decided_by, s_decision)
         except Exception:
-            logger.error(
+            logger.exception(
                 "Failed to record feedback — decision still saved",
                 extra={"item_id": s_item_id},
-                exc_info=True,
             )
         await self._session.commit()
         # Log with static format; sanitized decision metadata goes into extra= (S5145).

@@ -1,0 +1,60 @@
+# SPIRE 1.15.1 — SPIFFE workload identity for internalCMDB agent mTLS
+#
+# Deploy (alongside internalcmdb stack):
+#   docker compose -f deploy/spire/docker-compose.spire.yml up -d
+#
+# Prerequisites:
+#   - Shared Docker network ``internalcmdb`` (or adjust network name below)
+#   - SPIRE agent nodes need access to the server on :8081 (bundle) and :8080 (registration)
+#
+# Integration: see docs/architecture/F5-zero-trust-spiffe.md
+
+services:
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:1.15.1
+    container_name: spire-server
+    restart: unless-stopped
+    hostname: spire-server
+    volumes:
+      - spire-server-data:/opt/spire/data/server
+      - ./server.conf:/opt/spire/conf/server/server.conf:ro
+    command: ["-config", "/opt/spire/conf/server/server.conf"]
+    ports:
+      - "8080:8080"   # SPIRE Server API (registration)
+      - "8081:8081"   # SPIRE Bundle endpoint
+    networks:
+      - spire
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-server", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  spire-agent:
+    image: ghcr.io/spiffe/spire-agent:1.15.1
+    container_name: spire-agent
+    restart: unless-stopped
+    depends_on:
+      spire-server:
+        condition: service_healthy
+    volumes:
+      - spire-agent-socket:/tmp/spire-agent/public
+      - ./agent.conf:/opt/spire/conf/agent/agent.conf:ro
+    command: ["-config", "/opt/spire/conf/agent/agent.conf"]
+    networks:
+      - spire
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-agent", "healthcheck", "-socketPath", "/tmp/spire-agent/public/api.sock"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  spire-server-data:
+  spire-agent-socket:
+
+networks:
+  spire:
+    driver: bridge

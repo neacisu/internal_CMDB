@@ -173,8 +173,15 @@ def test_graph_impact_analysis():
         "affected": [],
         "count": 0,
     }
-    with mock.patch(
-        "internalcmdb.api.routers.graph.InfrastructureKnowledgeGraph", return_value=mock_kg
+    with (
+        mock.patch(
+            "internalcmdb.api.routers.graph.InfrastructureKnowledgeGraph",
+            return_value=mock_kg,
+        ),
+        mock.patch(
+            "internalcmdb.graph.age_backend.AgeGraphBackend.is_age_available",
+            new=mock.AsyncMock(return_value=False),
+        ),
     ):
         r = TestClient(app).post(
             "/api/v1/graph/impact-analysis",

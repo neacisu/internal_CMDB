@@ -42,6 +42,14 @@ interface ChatMessage {
 
 type SetMessages = React.Dispatch<React.SetStateAction<ChatMessage[]>>;
 
+function sseFieldString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function sseFieldNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
 /** Split <think>…</think> from the rest of the answer. */
 function parseThinkBlock(content: string): { thinking: string | null; answer: string } {
   const match = /^<think>([\s\S]*?)<\/think>\s*/i.exec(content);
@@ -98,10 +106,10 @@ function attachAgentStream(
     if (data.ping) return;
 
     const step: AgentStreamStep = {
-      phase: String(data.phase ?? ""),
-      content: String(data.content ?? ""),
-      iteration: Number(data.iteration ?? 0),
-      timestamp: String(data.timestamp ?? new Date().toISOString()),
+      phase: sseFieldString(data.phase),
+      content: sseFieldString(data.content),
+      iteration: sseFieldNumber(data.iteration),
+      timestamp: sseFieldString(data.timestamp, new Date().toISOString()),
       tool_call: (data.tool_call as AgentStreamStep["tool_call"]) ?? null,
     };
 
@@ -154,6 +162,14 @@ export default function CognitiveChatPage() {
   const [agentMode, setAgentMode] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const agentStreamRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    return () => {
+      agentStreamRef.current?.close();
+      agentStreamRef.current = null;
+    };
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => {
@@ -200,6 +216,8 @@ export default function CognitiveChatPage() {
         ]);
 
         const es = streamAgentSession(sessionId);
+        agentStreamRef.current?.close();
+        agentStreamRef.current = es;
         attachAgentStream(es, placeholderId, setMessages, setLoading, () => inputRef.current?.focus());
       } catch (err) {
         setLoading(false);

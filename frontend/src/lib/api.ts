@@ -21,6 +21,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`API ${res.status}: ${text}`);
   }
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return res.json() as Promise<T>;
 }
 
@@ -283,12 +286,12 @@ export const runScript = (taskName: string, args?: string[]) =>
 export const retryJob = (id: string) =>
   apiFetch<{ job_id: string; status: string }>(`/workers/jobs/${id}/retry`, { method: "POST" });
 export const cancelJob = (id: string) =>
-  fetch(`${BASE}/workers/jobs/${id}`, { method: "DELETE" });
+  apiFetch<void>(`/workers/jobs/${id}`, { method: "DELETE" });
 export const getSchedules = () => apiFetch<WorkerSchedule[]>("/workers/schedules");
 export const createSchedule = (data: { task_name: string; cron_expression: string; description?: string }) =>
   apiFetch<WorkerSchedule>("/workers/schedules", { method: "POST", body: JSON.stringify(data) });
 export const deleteSchedule = (id: string) =>
-  fetch(`${BASE}/workers/schedules/${id}`, { method: "DELETE" });
+  apiFetch<void>(`/workers/schedules/${id}`, { method: "DELETE" });
 
 // Cognitive tasks (ARQ)
 export interface CognitiveTask {
@@ -441,16 +444,16 @@ export const getInsights = (params?: string) =>
 export const getInsight = (id: string) =>
   apiFetch<InsightOut>(`/cognitive/insights/${id}`);
 
-export const ackInsight = (id: string, by: string) =>
+export const ackInsight = (id: string) =>
   apiFetch<{ insight_id: string; status: string }>(`/cognitive/insights/${id}/ack`, {
     method: "POST",
-    body: JSON.stringify({ acknowledged_by: by }),
+    body: JSON.stringify({}),
   });
 
-export const dismissInsight = (id: string, by: string, reason: string) =>
+export const dismissInsight = (id: string, reason: string) =>
   apiFetch<{ insight_id: string; status: string }>(`/cognitive/insights/${id}/dismiss`, {
     method: "POST",
-    body: JSON.stringify({ dismissed_by: by, reason }),
+    body: JSON.stringify({ reason }),
   });
 
 export const getHealthScores = () =>
@@ -493,16 +496,16 @@ export const getHITLStats = () =>
 export const getHITLHistory = (params?: string) =>
   apiFetch<HITLItem[]>(withQuerySuffix("/hitl/history", params));
 
-export const approveHITLItem = (id: string, by: string, reason: string) =>
+export const approveHITLItem = (id: string, reason: string) =>
   apiFetch<{ item_id: string; decision: string }>(`/hitl/queue/${id}/approve`, {
     method: "POST",
-    body: JSON.stringify({ decided_by: by, reason }),
+    body: JSON.stringify({ reason }),
   });
 
-export const rejectHITLItem = (id: string, by: string, reason: string) =>
+export const rejectHITLItem = (id: string, reason: string) =>
   apiFetch<{ item_id: string; decision: string }>(`/hitl/queue/${id}/reject`, {
     method: "POST",
-    body: JSON.stringify({ decided_by: by, reason }),
+    body: JSON.stringify({ reason }),
   });
 
 // Fleet health dashboard
@@ -877,11 +880,11 @@ export function streamCommandResult(agentId: string, commandId: string): EventSo
 /*  HITL bulk actions                                                 */
 /* ------------------------------------------------------------------ */
 
-export const bulkApproveHITL = (itemIds: string[], decidedBy: string, reason: string) =>
-  Promise.all(itemIds.map((id) => approveHITLItem(id, decidedBy, reason)));
+export const bulkApproveHITL = (itemIds: string[], reason: string) =>
+  Promise.all(itemIds.map((id) => approveHITLItem(id, reason)));
 
-export const bulkRejectHITL = (itemIds: string[], decidedBy: string, reason: string) =>
-  Promise.all(itemIds.map((id) => rejectHITLItem(id, decidedBy, reason)));
+export const bulkRejectHITL = (itemIds: string[], reason: string) =>
+  Promise.all(itemIds.map((id) => rejectHITLItem(id, reason)));
 
 /* ------------------------------------------------------------------ */
 /*  Auto-remediation trigger                                          */

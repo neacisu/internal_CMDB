@@ -22,3 +22,8 @@ def _auth_dev_mode(monkeypatch: pytest.MonkeyPatch) -> None:
         True,
         raising=False,
     )
+    monkeypatch.setattr(
+        "internalcmdb.api.middleware.global_auth.AUTH_DEV_MODE",
+        True,
+        raising=False,
+    )

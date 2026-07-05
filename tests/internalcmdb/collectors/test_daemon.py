@@ -492,6 +492,17 @@ class TestCmdRunDiagnostic:
         assert "allowlist" in result["error"]
         assert result["exit_code"] == -1
 
+    def test_systemctl_restart_not_allowlisted(self):
+        import asyncio  # noqa: PLC0415
+
+        daemon = _make_daemon()
+        result = asyncio.run(
+            daemon._cmd_run_diagnostic({"command": "systemctl restart nginx"})
+        )
+        assert "error" in result
+        assert "allowlist" in result["error"]
+        assert result["exit_code"] == -1
+
     def test_empty_command_rejected(self):
         import asyncio  # noqa: PLC0415
 

@@ -20,6 +20,7 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -122,6 +123,38 @@ class QueryEngine:
                 sources=[],
                 confidence=0.1,
             )
+
+        # Step 2.5 — RAG content integrity check before prompt injection
+        chunk_texts = [str(s.get("content", "")) for s in sources]
+        integrity_findings = await asyncio.to_thread(
+            self._scan_chunk_integrity, chunk_texts
+        )
+        if integrity_findings:
+            critical = [f for f in integrity_findings if f.get("severity") == "critical"]
+            if critical:
+                logger.warning(
+                    "RAG integrity blocked query: %d critical findings",
+                    len(critical),
+                )
+                return QueryResult(
+                    answer=(
+                        "Query blocked: retrieved content failed integrity check "
+                        "(possible injection in knowledge base)."
+                    ),
+                    sources=[],
+                    confidence=0.0,
+                )
+            sources = [
+                s
+                for i, s in enumerate(sources)
+                if not any(f["chunk_index"] == i for f in integrity_findings)
+            ]
+            if not sources:
+                return QueryResult(
+                    answer="Query blocked: all retrieved chunks failed integrity screening.",
+                    sources=[],
+                    confidence=0.0,
+                )
 
         # Step 3 — Assemble evidence context (with token budget)
         context_text = self._assemble_context(sources, max_tokens=_MAX_CONTEXT_TOKENS)
@@ -322,10 +355,7 @@ class QueryEngine:
         question: str,
         context: str,
     ) -> tuple[str, int]:
-        """Send the question + evidence context to the reasoning LLM.
-
-        Returns (answer_text, approximate_tokens_used).
-        """
+        """Send the question + evidence context to the reasoning LLM (fail-closed guard)."""
         system_prompt = (
             "You are the InternalCMDB cognitive brain. Answer the user's question "
             "based ONLY on the evidence provided below. If the evidence is insufficient, "
@@ -333,31 +363,38 @@ class QueryEngine:
             f"--- EVIDENCE ---\n{context}\n--- END EVIDENCE ---"
         )
 
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question},
-        ]
+        user_prompt = question
+
+        from internalcmdb.llm.guard_pipeline import GuardPipeline  # noqa: PLC0415
 
         try:
-            response = await self._llm.reason(messages, temperature=0.1, max_tokens=2048)
+            guarded = await GuardPipeline(self._llm).guarded_call(
+                user_prompt,
+                model="reasoning",
+                system_prompt=system_prompt,
+                temperature=0.1,
+                max_tokens=2048,
+            )
         except Exception:
             logger.exception("Reasoning LLM call failed")
             return "An error occurred while generating the answer.", 0
 
-        choices = response.get("choices", [])
-        if not choices:
-            return "The model returned an empty response.", 0
+        if guarded.blocked:
+            logger.warning("Guard blocked RAG answer generation")
+            return "Answer blocked by security guard (fail-closed).", 0
 
-        answer = choices[0].get("message", {}).get("content", "")
-        usage = response.get("usage", {})
-        tokens_used = usage.get("total_tokens", 0)
-
-        if not tokens_used:
-            prompt_tokens = len(system_prompt + question) // _CHARS_PER_TOKEN
-            completion_tokens = len(answer) // _CHARS_PER_TOKEN
-            tokens_used = prompt_tokens + completion_tokens
-
+        answer = guarded.content or ""
+        prompt_tokens = len(system_prompt + question) // _CHARS_PER_TOKEN
+        completion_tokens = len(answer) // _CHARS_PER_TOKEN
+        tokens_used = prompt_tokens + completion_tokens
         return answer, tokens_used
+
+    @staticmethod
+    def _scan_chunk_integrity(chunks: list[str]) -> list[dict[str, object]]:
+        """Run RAGContentIntegrityChecker on retrieved chunk texts."""
+        from internalcmdb.retrieval.integrity import RAGContentIntegrityChecker  # noqa: PLC0415
+
+        return RAGContentIntegrityChecker().scan_chunks(chunks)
 
     @staticmethod
     def _estimate_confidence(

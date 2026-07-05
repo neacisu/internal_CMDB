@@ -50,7 +50,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all models so autogenerate can detect schema drift.
+from internalcmdb.auth.models import AuthBase, User  # noqa: E402, F401
 from internalcmdb.models import metadata as target_metadata  # noqa: E402
+
+for _auth_table in AuthBase.metadata.sorted_tables:
+    _auth_table.to_metadata(target_metadata)
 
 _url = _build_url()
 config.set_main_option("sqlalchemy.url", _url)
@@ -78,6 +82,7 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         # Ensure all schemas exist before Alembic touches the version table.
         for schema in (
+            "auth",
             "taxonomy",
             "docs",
             "discovery",

@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from internalcmdb.api.deps import get_db
 from internalcmdb.api.middleware.rate_limit import limiter
 from internalcmdb.api.routers.collectors import (
+    _compute_payload_hash,
     _get_heartbeat_snapshot_interval_seconds,
     _should_store_heartbeat_snapshot,
     verify_agent_token,
@@ -68,13 +69,14 @@ def _make_ingest_app() -> tuple[FastAPI, MagicMock]:
     return app, mock_db
 
 
-def _heartbeat_item(payload_hash: str = "hash-1") -> dict:
+def _heartbeat_item() -> dict:
+    payload = {"uptime_seconds": 123.4, "load_avg": [0.1], "memory_pct": 40.0}
     return {
         "snapshot_kind": "heartbeat",
         "tier_code": "5s",
-        "payload": {"uptime_seconds": 123.4, "load_avg": [0.1], "memory_pct": 40.0},
+        "payload": payload,
         "collected_at": datetime.now(UTC).isoformat(),
-        "payload_hash": payload_hash,
+        "payload_hash": _compute_payload_hash(payload),
     }
 
 

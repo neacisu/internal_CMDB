@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, Numeric, Text
 from sqlalchemy.dialects.postgresql import CIDR, INET, JSONB, MACADDR, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 
+from ._sql_constants import (
+    FK_COLLECTION_RUN,
+    FK_DOCUMENT,
+    FK_HOST,
+    FK_NETWORK_SEGMENT,
+    FK_SERVICE_INSTANCE,
+    FK_TAXONOMY_TERM,
+    SERVER_DEFAULT_NOW,
+)
 from .base import Base
 
 
@@ -20,29 +30,29 @@ class Cluster(Base):
     cluster_code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     entity_kind_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     environment_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     lifecycle_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     description: Mapped[str | None] = mapped_column(Text)
     canonical_document_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(
-            "docs.document.document_id",
+            FK_DOCUMENT,
             use_alter=True,
             name="fk_cluster_canonical_document",
         ),
         nullable=True,
     )
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -59,19 +69,19 @@ class Host(Base):
     ssh_alias: Mapped[str | None] = mapped_column(Text)
     fqdn: Mapped[str | None] = mapped_column(Text)
     entity_kind_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     primary_host_role_term_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=True
+        ForeignKey(FK_TAXONOMY_TERM), nullable=True
     )
     environment_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     lifecycle_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     os_family_term_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=True
+        ForeignKey(FK_TAXONOMY_TERM), nullable=True
     )
     os_version_text: Mapped[str | None] = mapped_column(Text)
     kernel_version_text: Mapped[str | None] = mapped_column(Text)
@@ -84,11 +94,11 @@ class Host(Base):
     observed_hostname: Mapped[str | None] = mapped_column(Text)
     confidence_score: Mapped[float | None] = mapped_column(Numeric(5, 4))
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -97,21 +107,21 @@ class HostRoleAssignment(Base):
     __table_args__: ClassVar[dict[str, str]] = {"schema": "registry"}
 
     host_role_assignment_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("registry.host.host_id"), nullable=False)
+    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(FK_HOST), nullable=False)
     host_role_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     assignment_source_text: Mapped[str | None] = mapped_column(Text)
     collection_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=True
+        ForeignKey(FK_COLLECTION_RUN), nullable=True
     )
-    observed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    observed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -123,23 +133,23 @@ class ClusterMembership(Base):
     cluster_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("registry.cluster.cluster_id"), nullable=False
     )
-    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("registry.host.host_id"), nullable=False)
+    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(FK_HOST), nullable=False)
     membership_role_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     member_node_name_text: Mapped[str | None] = mapped_column(Text)
     member_node_id_text: Mapped[str | None] = mapped_column(Text)
     membership_source_text: Mapped[str | None] = mapped_column(Text)
     is_quorate_member: Mapped[bool | None] = mapped_column(Boolean)
     collection_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=True
+        ForeignKey(FK_COLLECTION_RUN), nullable=True
     )
-    observed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    observed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -150,9 +160,9 @@ class HostHardwareSnapshot(Base):
     host_hardware_snapshot_id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, default=uuid.uuid4
     )
-    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("registry.host.host_id"), nullable=False)
+    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(FK_HOST), nullable=False)
     collection_run_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=False
+        ForeignKey(FK_COLLECTION_RUN), nullable=False
     )
     cpu_model: Mapped[str | None] = mapped_column(Text)
     cpu_socket_count: Mapped[int | None] = mapped_column(Integer)
@@ -164,7 +174,7 @@ class HostHardwareSnapshot(Base):
     swap_used_bytes: Mapped[int | None] = mapped_column(BigInteger)
     gpu_count: Mapped[int | None] = mapped_column(Integer)
     hardware_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    observed_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class GpuDevice(Base):
@@ -172,7 +182,7 @@ class GpuDevice(Base):
     __table_args__: ClassVar[dict[str, str]] = {"schema": "registry"}
 
     gpu_device_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("registry.host.host_id"), nullable=False)
+    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(FK_HOST), nullable=False)
     gpu_index: Mapped[int] = mapped_column(Integer, nullable=False)
     vendor_name: Mapped[str | None] = mapped_column(Text)
     model_name: Mapped[str | None] = mapped_column(Text)
@@ -189,9 +199,9 @@ class GpuDevice(Base):
     fan_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
     compute_capability: Mapped[str | None] = mapped_column(Text)
     collection_run_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=False
+        ForeignKey(FK_COLLECTION_RUN), nullable=False
     )
-    observed_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class NetworkSegment(Base):
@@ -202,21 +212,21 @@ class NetworkSegment(Base):
     segment_code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     segment_kind_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     environment_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     cidr: Mapped[str | None] = mapped_column(CIDR)
     vlan_id_text: Mapped[str | None] = mapped_column(Text)
     mtu: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str | None] = mapped_column(Text)
     source_of_truth: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -225,25 +235,25 @@ class NetworkInterface(Base):
     __table_args__: ClassVar[dict[str, str]] = {"schema": "registry"}
 
     network_interface_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("registry.host.host_id"), nullable=False)
+    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(FK_HOST), nullable=False)
     network_segment_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("registry.network_segment.network_segment_id"), nullable=True
+        ForeignKey(FK_NETWORK_SEGMENT), nullable=True
     )
     interface_name: Mapped[str] = mapped_column(Text, nullable=False)
     parent_interface_name: Mapped[str | None] = mapped_column(Text)
     interface_kind_term_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=True
+        ForeignKey(FK_TAXONOMY_TERM), nullable=True
     )
     state_text: Mapped[str | None] = mapped_column(Text)
     mac_address: Mapped[str | None] = mapped_column(MACADDR)
     mtu: Mapped[int | None] = mapped_column(Integer)
     is_virtual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -258,18 +268,18 @@ class IpAddressAssignment(Base):
         ForeignKey("registry.network_interface.network_interface_id"), nullable=False
     )
     network_segment_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("registry.network_segment.network_segment_id"), nullable=True
+        ForeignKey(FK_NETWORK_SEGMENT), nullable=True
     )
     address: Mapped[str] = mapped_column(INET, nullable=False)
     prefix_length: Mapped[int | None] = mapped_column(Integer)
     address_scope_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    observed_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     collection_run_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=False
+        ForeignKey(FK_COLLECTION_RUN), nullable=False
     )
 
 
@@ -278,9 +288,9 @@ class RouteEntry(Base):
     __table_args__: ClassVar[dict[str, str]] = {"schema": "registry"}
 
     route_entry_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("registry.host.host_id"), nullable=False)
+    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(FK_HOST), nullable=False)
     network_segment_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("registry.network_segment.network_segment_id"), nullable=True
+        ForeignKey(FK_NETWORK_SEGMENT), nullable=True
     )
     destination_cidr: Mapped[str | None] = mapped_column(CIDR)
     gateway_ip: Mapped[str | None] = mapped_column(INET)
@@ -289,9 +299,9 @@ class RouteEntry(Base):
     is_default_route: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     raw_route_text: Mapped[str | None] = mapped_column(Text)
     collection_run_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=False
+        ForeignKey(FK_COLLECTION_RUN), nullable=False
     )
-    observed_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class DnsResolverState(Base):
@@ -299,13 +309,13 @@ class DnsResolverState(Base):
     __table_args__: ClassVar[dict[str, str]] = {"schema": "registry"}
 
     dns_resolver_state_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("registry.host.host_id"), nullable=False)
+    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(FK_HOST), nullable=False)
     resolver_list_text: Mapped[str | None] = mapped_column(Text)
     resolver_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     collection_run_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=False
+        ForeignKey(FK_COLLECTION_RUN), nullable=False
     )
-    observed_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class StorageAsset(Base):
@@ -313,9 +323,9 @@ class StorageAsset(Base):
     __table_args__: ClassVar[dict[str, str]] = {"schema": "registry"}
 
     storage_asset_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("registry.host.host_id"), nullable=False)
+    host_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(FK_HOST), nullable=False)
     storage_kind_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     device_name: Mapped[str] = mapped_column(Text, nullable=False)
     model_text: Mapped[str | None] = mapped_column(Text)
@@ -326,9 +336,9 @@ class StorageAsset(Base):
     backing_device_text: Mapped[str | None] = mapped_column(Text)
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     collection_run_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=False
+        ForeignKey(FK_COLLECTION_RUN), nullable=False
     )
-    observed_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class SharedService(Base):
@@ -339,30 +349,30 @@ class SharedService(Base):
     service_code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     service_kind_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     environment_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     lifecycle_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     description: Mapped[str | None] = mapped_column(Text)
     canonical_document_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(
-            "docs.document.document_id",
+            FK_DOCUMENT,
             use_alter=True,
             name="fk_shared_service_canonical_document",
         ),
         nullable=True,
     )
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=SERVER_DEFAULT_NOW
     )
 
 
@@ -375,10 +385,10 @@ class ServiceInstance(Base):
         ForeignKey("registry.shared_service.shared_service_id"), nullable=False
     )
     host_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("registry.host.host_id"), nullable=True
+        ForeignKey(FK_HOST), nullable=True
     )
     runtime_kind_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     instance_name: Mapped[str] = mapped_column(Text, nullable=False)
     container_name: Mapped[str | None] = mapped_column(Text)
@@ -390,9 +400,9 @@ class ServiceInstance(Base):
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     collection_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=True
+        ForeignKey(FK_COLLECTION_RUN), nullable=True
     )
-    observed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    observed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
 
 
 class ServiceExposure(Base):
@@ -401,14 +411,14 @@ class ServiceExposure(Base):
 
     service_exposure_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     service_instance_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("registry.service_instance.service_instance_id"), nullable=False
+        ForeignKey(FK_SERVICE_INSTANCE), nullable=False
     )
     exposure_method_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     design_source_document_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(
-            "docs.document.document_id",
+            FK_DOCUMENT,
             use_alter=True,
             name="fk_service_exposure_design_doc",
         ),
@@ -427,16 +437,16 @@ class ServiceExposure(Base):
     is_tls_terminated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_live_probe_success: Mapped[bool | None] = mapped_column(Boolean)
     observed_health_term_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=True
+        ForeignKey(FK_TAXONOMY_TERM), nullable=True
     )
     probe_confidence_score: Mapped[float | None] = mapped_column(Numeric(5, 4))
     last_probe_result_text: Mapped[str | None] = mapped_column(Text)
-    last_probe_checked_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    last_probe_checked_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     collection_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=True
+        ForeignKey(FK_COLLECTION_RUN), nullable=True
     )
-    observed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    observed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
 
 
 class ServiceDependency(Base):
@@ -445,24 +455,24 @@ class ServiceDependency(Base):
 
     service_dependency_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     source_service_instance_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("registry.service_instance.service_instance_id"), nullable=False
+        ForeignKey(FK_SERVICE_INSTANCE), nullable=False
     )
     target_service_instance_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("registry.service_instance.service_instance_id"), nullable=True
+        ForeignKey(FK_SERVICE_INSTANCE), nullable=True
     )
     target_shared_service_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("registry.shared_service.shared_service_id"), nullable=True
     )
     relationship_kind_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     dependency_role_text: Mapped[str | None] = mapped_column(Text)
     is_hard_dependency: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     evidence_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4))
     collection_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("discovery.collection_run.collection_run_id"), nullable=True
+        ForeignKey(FK_COLLECTION_RUN), nullable=True
     )
-    observed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    observed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
 
 
 class OwnershipAssignment(Base):
@@ -471,14 +481,14 @@ class OwnershipAssignment(Base):
 
     ownership_assignment_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     entity_kind_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     entity_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     owner_type_term_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("taxonomy.taxonomy_term.taxonomy_term_id"), nullable=False
+        ForeignKey(FK_TAXONOMY_TERM), nullable=False
     )
     owner_code: Mapped[str] = mapped_column(Text, nullable=False)
     responsibility_text: Mapped[str | None] = mapped_column(Text)
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    valid_from: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
-    valid_to: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    valid_from: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    valid_to: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))

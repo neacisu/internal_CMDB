@@ -108,6 +108,27 @@ class ToolExecutor:
                     audit_id=audit_id,
                 )
 
+        # Policy gate — evaluated before HITL deferral and RC-1 execution (F3.1)
+        policy_block = await self._check_policy(tool, params, triggered_by)
+        if policy_block:
+            await self._persist_audit(
+                audit_id,
+                tool_id,
+                tool.risk_class.value,
+                params,
+                None,
+                False,
+                policy_block,
+                0,
+                triggered_by,
+            )
+            return ExecutionResult(
+                tool_id=tool_id,
+                success=False,
+                error=policy_block,
+                audit_id=audit_id,
+            )
+
         # RC-2 and RC-3: defer to HITL (unless skip_hitl is set — used by post-approval worker)
         if tool.risk_class in (RiskClass.RC2, RiskClass.RC3) and not self._skip_hitl:
             hitl_id = await self._create_hitl_item(tool, params, triggered_by)
@@ -137,8 +158,8 @@ class ToolExecutor:
                 audit_id=audit_id,
             )
 
-        # Guard scan on parameters (OWASP LLM01/LLM06)
-        guard_block = self._guard_scan_params(tool_id, params)
+        # Guard scan on parameters (fail-closed via LLM Guard)
+        guard_block = await self._guard_scan_params(tool_id, params)
         if guard_block:
             await self._persist_audit(
                 audit_id,
@@ -159,9 +180,17 @@ class ToolExecutor:
             )
 
         # RC-1: execute immediately
+        import asyncio as _asyncio  # noqa: PLC0415
+
         start = time.monotonic()
         try:
-            output: dict[str, Any] = await tool.execute(params)
+            timeout = tool.timeout_s if tool.timeout_s > 0 else None
+            coro = tool.execute(params)
+            output: dict[str, Any] = (
+                await _asyncio.wait_for(coro, timeout=timeout)
+                if timeout
+                else await coro
+            )
             elapsed_ms = int((time.monotonic() - start) * 1000)
             self._last_invoked[tool_id] = time.monotonic()
 
@@ -190,6 +219,28 @@ class ToolExecutor:
                 execution_time_ms=elapsed_ms,
                 audit_id=audit_id,
             )
+        except _asyncio.TimeoutError:
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            err = f"Tool {tool_id} timed out after {tool.timeout_s}s"
+            logger.warning("ToolExecutor: %s", err)
+            await self._persist_audit(
+                audit_id,
+                tool_id,
+                tool.risk_class.value,
+                params,
+                None,
+                False,
+                err,
+                elapsed_ms,
+                triggered_by,
+            )
+            return ExecutionResult(
+                tool_id=tool_id,
+                success=False,
+                error=err,
+                execution_time_ms=elapsed_ms,
+                audit_id=audit_id,
+            )
         except Exception as exc:
             elapsed_ms = int((time.monotonic() - start) * 1000)
             logger.exception("ToolExecutor: %s failed after %dms.", tool_id, elapsed_ms)
@@ -213,61 +264,83 @@ class ToolExecutor:
             )
 
     @staticmethod
-    def _guard_scan_params(tool_id: str, params: dict[str, Any]) -> str:
-        """Scan tool parameters for injection/PII patterns. Returns block reason or ''."""
+    async def _check_policy(tool: Any, params: dict[str, Any], triggered_by: str) -> str:
+        """Evaluate tool invocation against governance policies. Returns block reason or ''."""
+        import asyncio  # noqa: PLC0415
+
+        from sqlalchemy import create_engine  # noqa: PLC0415
+        from sqlalchemy.orm import Session  # noqa: PLC0415
+
+        from internalcmdb.api.config import get_settings  # noqa: PLC0415
+        from internalcmdb.governance.policy_enforcer import PolicyEnforcer  # noqa: PLC0415
+
+        action = {
+            "type": tool.tool_id,
+            "target": str(params.get("host_code") or params.get("host") or "unknown"),
+            "risk_class": tool.risk_class.value,
+        }
+        context = {"role": triggered_by.split(":")[0], "environment": params.get("environment", "")}
+
+        def _evaluate() -> str:
+            settings = get_settings()
+            engine = create_engine(str(settings.database_url), pool_pre_ping=True)
+            try:
+                with Session(engine) as session:
+                    result = PolicyEnforcer(session).check(action, context)
+                    if not result.compliant:
+                        return "; ".join(v.reason for v in result.violations)
+            except Exception:
+                logger.exception("Policy check failed — FAIL-CLOSED")
+                return "Policy database unavailable; action blocked (fail-closed)"
+            finally:
+                engine.dispose()
+            return ""
+
+        return await asyncio.to_thread(_evaluate)
+
+    @staticmethod
+    async def _guard_scan_params(tool_id: str, params: dict[str, Any]) -> str:
+        """Scan tool parameters via LLM Guard. Returns block reason or '' (fail-closed)."""
+        from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
+        from internalcmdb.llm.guard_pipeline import scan_prompt  # noqa: PLC0415
+
+        serialised = json.dumps(params, default=str)
         try:
-            from internalcmdb.llm.security import LLMSecurityLayer  # noqa: PLC0415
-
-            layer = LLMSecurityLayer()
-            serialised = json.dumps(params, default=str)
-
-            # Check for prompt injection in parameter values
-            findings = layer.scan_rag_content([serialised])
-            if findings:
+            async with LLMClient() as llm:
+                result = await scan_prompt(llm, serialised)
+            if not result.is_valid:
                 reason = (
-                    f"Guard blocked {tool_id}: injection pattern detected "
-                    f"in parameters — {findings[0].get('pattern', '')[:80]}"
+                    f"Guard blocked {tool_id}: parameter scan failed "
+                    f"(score={result.score:.3f}, details={result.details})"
                 )
                 logger.warning(reason)
                 return reason
-
-            # Check for PII leakage
-            pii = layer.scan_pii(serialised)
-            critical_pii = [f for f in pii if f.get("severity") == "critical"]
-            if critical_pii:
-                reason = (
-                    f"Guard blocked {tool_id}: critical PII detected "
-                    f"in parameters — {critical_pii[0].get('pii_type', 'unknown')}"
-                )
-                logger.warning(reason)
-                return reason
-
         except Exception:
-            logger.debug("Guard scan unavailable — allowing tool execution", exc_info=True)
+            logger.exception("Guard param scan failed — FAIL-CLOSED for %s", tool_id)
+            return f"Guard blocked {tool_id}: guard service unavailable (fail-closed)"
 
         return ""
 
     @staticmethod
-    def _guard_scan_output(tool_id: str, output: dict[str, Any]) -> str:
-        """Scan tool output for PII leakage. Returns block reason or ''."""
+    async def _guard_scan_output(tool_id: str, output: dict[str, Any]) -> str:
+        """Scan tool output via LLM Guard. Returns block reason or '' (fail-closed)."""
+        from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
+        from internalcmdb.llm.guard_pipeline import scan_output  # noqa: PLC0415
+
+        serialised = json.dumps(output, default=str)
         try:
-            from internalcmdb.llm.security import LLMSecurityLayer  # noqa: PLC0415
-
-            layer = LLMSecurityLayer()
-            serialised = json.dumps(output, default=str)
-
-            pii = layer.scan_pii(serialised)
-            critical_pii = [f for f in pii if f.get("severity") == "critical"]
-            if critical_pii:
+            async with LLMClient() as llm:
+                result = await scan_output(llm, serialised, serialised)
+            if not result.is_valid:
                 reason = (
-                    f"Post-exec guard blocked {tool_id}: critical PII in output "
-                    f"— {critical_pii[0].get('pii_type', 'unknown')}"
+                    f"Post-exec guard blocked {tool_id}: output scan failed "
+                    f"(score={result.score:.3f})"
                 )
                 logger.warning(reason)
                 return reason
-
         except Exception:
-            logger.debug("Post-exec guard scan unavailable", exc_info=True)
+            logger.exception("Guard output scan failed — FAIL-CLOSED for %s", tool_id)
+            return f"Post-exec guard blocked {tool_id}: guard service unavailable (fail-closed)"
 
         return ""
 
@@ -331,55 +404,38 @@ class ToolExecutor:
         params: dict[str, Any],
         triggered_by: str,
     ) -> str:
-        """Create a HITL governance item for RC-2/RC-3 tool approval."""
-        import asyncio  # noqa: PLC0415
-
-        from sqlalchemy import create_engine, text  # noqa: PLC0415
+        """Create a HITL governance item for RC-2/RC-3 tool approval via HITLWorkflow."""
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: PLC0415
 
         from internalcmdb.api.config import get_settings  # noqa: PLC0415
+        from internalcmdb.api.deps import _normalize_pg_url  # noqa: PLC0415
+        from internalcmdb.governance.hitl_workflow import HITLWorkflow  # noqa: PLC0415
 
-        item_id = str(uuid.uuid4())
-        priority = "high" if tool.risk_class.value == "RC-3" else "medium"
+        settings = get_settings()
+        async_url = _normalize_pg_url(str(settings.database_url), driver="asyncpg")
+        engine = create_async_engine(async_url, pool_pre_ping=True)
 
-        context = json.dumps(
-            {
-                "tool_id": tool.tool_id,
-                "tool_name": tool.name,
-                "risk_class": tool.risk_class.value,
-                "parameters": params,
-                "triggered_by": triggered_by,
-            }
-        )
-        suggestion = json.dumps({"action": tool.tool_id, "params": params})
+        context = {
+            "tool_id": tool.tool_id,
+            "tool_name": tool.name,
+            "risk_class": tool.risk_class.value,
+            "parameters": params,
+            "triggered_by": triggered_by,
+        }
+        suggestion = {"action": tool.tool_id, "params": params}
 
-        def _insert() -> None:
-            settings = get_settings()
-            engine = create_engine(str(settings.database_url), pool_pre_ping=True)
-            try:
-                with engine.connect() as conn:
-                    conn.execute(
-                        text("""
-                            INSERT INTO governance.hitl_item
-                                (item_id, item_type, risk_class, priority, status,
-                                 context_jsonb, llm_suggestion, llm_confidence,
-                                 llm_model_used, expires_at)
-                            VALUES
-                                (:item_id, :itype, :rc, :pri, 'pending',
-                                 :context::jsonb, :suggestion::jsonb, 0.85,
-                                 'cognitive_agent', now() + interval '4 hours')
-                        """),
-                        {
-                            "item_id": item_id,
-                            "itype": f"tool_approval_{tool.tool_id}",
-                            "rc": tool.risk_class.value,
-                            "pri": priority,
-                            "context": context,
-                            "suggestion": suggestion,
-                        },
-                    )
-                    conn.commit()
-            finally:
-                engine.dispose()
-
-        await asyncio.to_thread(_insert)
-        return item_id
+        try:
+            async with AsyncSession(engine) as session:
+                wf = HITLWorkflow(session)
+                return await wf.submit(
+                    {
+                        "item_type": f"tool_approval_{tool.tool_id}",
+                        "risk_class": tool.risk_class.value,
+                        "context": context,
+                        "llm_suggestion": suggestion,
+                        "llm_confidence": 0.85,
+                        "llm_model_used": "cognitive_agent",
+                    }
+                )
+        finally:
+            await engine.dispose()

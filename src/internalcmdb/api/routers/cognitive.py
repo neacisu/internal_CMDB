@@ -19,6 +19,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..deps import get_async_session
 from ..middleware.rate_limit import rate_limit
 from ..middleware.rbac import require_role
+from ..openapi_responses import RESP_404, RESP_422, RESP_500, merge_responses
+
+_INSIGHT_LIST_RESPONSES = merge_responses(RESP_422)
+_INSIGHT_GET_RESPONSES = merge_responses(RESP_404)
+_INSIGHT_ACTION_RESPONSES = merge_responses(RESP_404)
+_HEALTH_SCORE_RESPONSES = merge_responses(RESP_422, RESP_500)
+_REPORT_GET_RESPONSES = merge_responses(RESP_404)
+_AGENT_SESSION_RESPONSES = merge_responses(RESP_404)
+_REMEDIATE_RESPONSES = merge_responses(RESP_404)
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis as _AioRedis
@@ -121,11 +130,10 @@ class InsightOut(BaseModel):
 
 
 class AckBody(BaseModel):
-    acknowledged_by: str
+    pass
 
 
 class DismissBody(BaseModel):
-    dismissed_by: str
     reason: str
 
 
@@ -220,7 +228,6 @@ def _now_iso() -> str:
 
 @router.post(
     "/query",
-    response_model=NLQueryResponse,
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 @rate_limit("10/minute")
@@ -266,7 +273,6 @@ async def cognitive_query(
 
 @router.post(
     "/analyze/host/{host_id}",
-    response_model=AnalysisOut,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def analyze_host(
@@ -331,7 +337,6 @@ async def analyze_host(
 
 @router.post(
     "/analyze/service/{service_id}",
-    response_model=AnalysisOut,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def analyze_service(
@@ -389,14 +394,16 @@ _VALID_INSIGHT_STATUSES = {"active", "acknowledged", "dismissed"}
 
 @router.get(
     "/insights",
-    response_model=list[InsightOut],
+    responses=_INSIGHT_LIST_RESPONSES,
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 async def list_insights(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    status: str = Query("active", description="Filter: active, acknowledged, dismissed"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    status: Annotated[
+        str, Query(description="Filter: active, acknowledged, dismissed")
+    ] = "active",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[dict[str, Any]]:
     """List active cognitive insights (paginated)."""
     if status not in _VALID_INSIGHT_STATUSES:
@@ -432,7 +439,7 @@ async def list_insights(
 
 @router.get(
     "/insights/{insight_id}",
-    response_model=InsightOut,
+    responses=_INSIGHT_GET_RESPONSES,
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 async def get_insight(
@@ -467,15 +474,17 @@ class InsightActionResponse(BaseModel):
 
 @router.post(
     "/insights/{insight_id}/ack",
-    response_model=InsightActionResponse,
+    responses=_INSIGHT_ACTION_RESPONSES,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def acknowledge_insight(
     insight_id: str,
+    request: Request,
     body: AckBody,
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> InsightActionResponse:
     """Acknowledge an active insight."""
+    acknowledged_by = getattr(request.state, "rbac_sub", "unknown")
     result = cast(
         CursorResult[Any],
         await session.execute(
@@ -484,7 +493,7 @@ async def acknowledge_insight(
                 SET status = 'acknowledged', acknowledged_by = :by, updated_at = NOW()
                 WHERE insight_id = :iid AND status = 'active'
             """),
-            {"iid": insight_id, "by": body.acknowledged_by},
+            {"iid": insight_id, "by": acknowledged_by},
         ),
     )
     await session.commit()
@@ -495,7 +504,7 @@ async def acknowledge_insight(
 
 @router.post(
     "/insights/{insight_id}/dismiss",
-    response_model=InsightActionResponse,
+    responses=_INSIGHT_ACTION_RESPONSES,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def dismiss_insight(
@@ -641,13 +650,12 @@ def _score_single_host(m: Any, scorer: Any) -> HealthScoreOut:
 
 @router.get(
     "/health-scores",
-    response_model=list[HealthScoreOut],
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 async def list_health_scores(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[HealthScoreOut]:
     """Live health scores for all hosts using real system_vitals + disk_state snapshots."""
     offset = (page - 1) * page_size
@@ -667,7 +675,7 @@ _VALID_ENTITY_TYPES = {"host", "service", "cluster"}
 
 @router.get(
     "/health-scores/{entity_type}/{entity_id}",
-    response_model=HealthScoreOut,
+    responses=_HEALTH_SCORE_RESPONSES,
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 async def get_health_score(
@@ -717,13 +725,12 @@ async def get_health_score(
 
 @router.get(
     "/reports",
-    response_model=list[ReportOut],
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 async def list_reports(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
     """List generated cognitive reports (paginated)."""
     offset = (page - 1) * page_size
@@ -746,7 +753,7 @@ async def list_reports(
 
 @router.get(
     "/reports/{report_id}",
-    response_model=ReportOut,
+    responses=_REPORT_GET_RESPONSES,
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 async def get_report(
@@ -771,7 +778,6 @@ async def get_report(
 
 @router.post(
     "/reports/generate",
-    response_model=ReportOut,
     status_code=201,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
@@ -848,7 +854,6 @@ class DriftCheckResponse(BaseModel):
 
 @router.post(
     "/drift/check",
-    response_model=DriftCheckResponse,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def trigger_drift_check(
@@ -869,7 +874,6 @@ async def trigger_drift_check(
 
 @router.get(
     "/drift/results",
-    response_model=list[DriftResultOut],
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 async def list_drift_results(
@@ -897,13 +901,12 @@ async def list_drift_results(
 
 @router.get(
     "/self-heal/history",
-    response_model=list[SelfHealActionOut],
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 async def self_heal_history(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[SelfHealActionOut]:
     """Self-healing action history."""
     try:
@@ -923,7 +926,6 @@ async def self_heal_history(
 
 @router.get(
     "/self-heal/playbooks",
-    response_model=list[PlaybookOut],
     dependencies=[Depends(require_role("operator", "platform_admin", "viewer"))],
 )
 async def list_playbooks(
@@ -1046,13 +1048,12 @@ class StartAgentSessionRequest(BaseModel):
 
 @router.get(
     "/agent-sessions",
-    response_model=list[AgentSessionOut],
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def list_agent_sessions(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[AgentSessionOut]:
     """List ReAct agent sessions ordered by most recent."""
     try:
@@ -1077,7 +1078,7 @@ async def list_agent_sessions(
 
 @router.get(
     "/agent-sessions/{session_id}",
-    response_model=AgentSessionOut,
+    responses=_AGENT_SESSION_RESPONSES,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def get_agent_session(
@@ -1103,7 +1104,6 @@ async def get_agent_session(
 
 @router.post(
     "/agent-sessions",
-    response_model=AgentSessionOut,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def start_agent_session(
@@ -1250,7 +1250,7 @@ async def stream_agent_session(
 
 @router.post(
     "/agent-sessions/{session_id}/stop",
-    response_model=AgentSessionOut,
+    responses=_AGENT_SESSION_RESPONSES,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def stop_agent_session(
@@ -1310,7 +1310,7 @@ class RemediationResponse(BaseModel):
 
 @router.post(
     "/insights/{insight_id}/remediate",
-    response_model=RemediationResponse,
+    responses=_REMEDIATE_RESPONSES,
     dependencies=[Depends(require_role("operator", "platform_admin"))],
 )
 async def remediate_insight(
@@ -1380,7 +1380,6 @@ class KBIngestResponse(BaseModel):
 
 @router.post(
     "/knowledge-base/ingest",
-    response_model=KBIngestResponse,
     dependencies=[Depends(require_role("platform_admin"))],
 )
 async def trigger_kb_ingest(

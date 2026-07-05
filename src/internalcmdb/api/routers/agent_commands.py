@@ -24,6 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..deps import get_async_session
 from ..middleware.rate_limit import rate_limit
 from ..middleware.rbac import require_role
+from ..openapi_responses import RESP_400, RESP_403, RESP_404, RESP_409, RESP_503, merge_responses
+from .collectors import verify_agent_token
 
 logger = logging.getLogger(__name__)
 
@@ -156,10 +158,16 @@ def _sign_command(agent_token: str, command_id: str, payload_json: str) -> str:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+_COMMAND_DISPATCH_RESPONSES = merge_responses(
+    RESP_400, RESP_403, RESP_404, RESP_409, RESP_503,
+)
+_COMMAND_NOT_FOUND_RESPONSES = merge_responses(RESP_404)
+_COMMAND_CALLBACK_RESPONSES = merge_responses(RESP_403, RESP_404)
+
 
 @router.post(
     "/{agent_id}/commands",
-    response_model=CommandResponse,
+    responses=_COMMAND_DISPATCH_RESPONSES,
     dependencies=[Depends(rate_limit), Depends(require_role("platform_admin", "operator"))],
 )
 async def send_command(
@@ -173,7 +181,7 @@ async def send_command(
     # Verify agent exists and is online
     row = await db.execute(
         text("""
-            SELECT a.agent_id, a.api_token, a.status
+            SELECT a.agent_id, a.status
             FROM discovery.collector_agent a
             WHERE a.agent_id = :agent_id
         """),
@@ -188,9 +196,23 @@ async def send_command(
             detail=f"Agent {agent_id} is {agent['status']}, cannot send commands",
         )
 
+    from internalcmdb.collectors.agent_auth import get_cached_agent_token  # noqa: PLC0415
+
+    try:
+        agent_uuid = uuid.UUID(str(agent_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid agent ID") from exc
+
+    signing_token = get_cached_agent_token(agent_uuid)
+    if signing_token is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Agent signing token unavailable — re-enroll the agent",
+        )
+
     command_id = str(uuid.uuid4())
     payload_json = json.dumps(cmd.payload, sort_keys=True)
-    signature = _sign_command(str(agent["api_token"]), command_id, payload_json)
+    signature = _sign_command(signing_token, command_id, payload_json)
     now = datetime.now(tz=UTC)
 
     # Persist command to DB
@@ -255,7 +277,7 @@ async def send_command(
 
 @router.get(
     "/{agent_id}/commands/{command_id}",
-    response_model=CommandResponse,
+    responses=_COMMAND_NOT_FOUND_RESPONSES,
     dependencies=[Depends(rate_limit), Depends(require_role("platform_admin", "operator"))],
 )
 async def get_command_result(
@@ -298,8 +320,8 @@ async def get_command_result(
 async def list_commands(
     agent_id: str,
     db: Annotated[AsyncSession, Depends(get_async_session)],
-    status: str = Query(default="", description="Filter by status"),
-    limit: int = Query(default=20, ge=1, le=100),
+    status: Annotated[str, Query(description="Filter by status")] = "",
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[CommandResponse]:
     """List recent commands for an agent."""
     sql = """
@@ -401,18 +423,19 @@ async def stream_command_result(
 
 @router.post(
     "/{agent_id}/commands/{command_id}/result",
-    dependencies=[
-        Depends(rate_limit),
-        Depends(require_role("platform_admin", "operator", "agent")),
-    ],
+    responses=_COMMAND_CALLBACK_RESPONSES,
+    dependencies=[Depends(rate_limit)],
 )
 async def receive_command_result(
     agent_id: str,
     command_id: str,
     result_payload: dict[str, Any],
     db: Annotated[AsyncSession, Depends(get_async_session)],
+    authenticated_agent_id: Annotated[uuid.UUID, Depends(verify_agent_token)],
 ) -> dict[str, str]:
     """Receive command execution result from an agent callback."""
+    if str(authenticated_agent_id) != agent_id:
+        raise HTTPException(status_code=403, detail="Token agent ID does not match URL agent_id")
     row = await db.execute(
         text("""
             SELECT command_id FROM agent_control.command_log

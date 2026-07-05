@@ -117,12 +117,17 @@ def _container_is_running(status: str) -> bool:
 
 def _build_url() -> str:
     load_dotenv()
-    host = os.environ["POSTGRES_HOST"]
-    port = os.environ.get("POSTGRES_PORT", "5432")
-    db = os.environ["POSTGRES_DB"]
-    user = os.environ["POSTGRES_USER"]
-    password = os.environ["POSTGRES_PASSWORD"]
-    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
+    from internalcmdb.api.config import Settings  # noqa: PLC0415
+    from internalcmdb.config.db_credentials import build_database_url_sync  # noqa: PLC0415
+
+    settings = Settings(
+        postgres_host=os.environ.get("POSTGRES_HOST", "localhost"),
+        postgres_port=int(os.environ.get("POSTGRES_PORT", "5432")),
+        postgres_db=os.environ.get("POSTGRES_DB", "internalCMDB"),
+        postgres_user=os.environ.get("POSTGRES_USER", "internalcmdb"),
+        postgres_sslmode=os.environ.get("POSTGRES_SSLMODE", "prefer"),
+    )
+    return build_database_url_sync(settings)
 
 
 def _load_term_map(conn: sa.engine.Connection) -> dict[tuple[str, str], uuid.UUID]:

@@ -92,7 +92,7 @@ async function fetchTraces(): Promise<TraceEntry[]> {
       trace_id: String(r.change_log_id ?? `trace-${i}`),
       span_name: String(r.change_description ?? r.action ?? "unknown"),
       service_name: "internalcmdb",
-      duration_ms: Math.floor(Math.random() * 500) + 10,
+      duration_ms: 0,
       status: "ok",
       timestamp: String(r.changed_at ?? new Date().toISOString()),
       attributes: r,

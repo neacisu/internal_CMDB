@@ -146,7 +146,6 @@ class AgentDaemon:
                 "ps aux --sort=-%mem | head -20",
                 "systemctl list-units --state=failed",
                 "systemctl status ",
-                "systemctl restart ",
                 "docker ps -a --format json",
                 "journalctl -p err --since '1 hour ago' --no-pager | tail -100",
                 "uptime",

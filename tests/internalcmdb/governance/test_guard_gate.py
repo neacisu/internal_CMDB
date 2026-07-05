@@ -137,54 +137,67 @@ class TestLLMGuardScan:
     async def test_llm_guard_returns_safe_on_200(self) -> None:
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"safe": True, "detail": "ok"}
+        mock_resp.json.return_value = {"is_valid": True, "scanners": {"Injection": 0.01}}
 
-        with patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient:  # noqa: N806
-            mock_client_instance = AsyncMock()
-            mock_client_instance.post = AsyncMock(return_value=mock_resp)
+        mock_client_instance = AsyncMock()
+        mock_client_instance.post = AsyncMock(return_value=mock_resp)
+
+        with (
+            patch(
+                "internalcmdb.governance.guard_gate._get_guard_runtime_config",
+                new=AsyncMock(return_value=("http://llm-guard:8000", 5.0, True)),
+            ),
+            patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient,  # noqa: N806
+        ):
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=None)
-
-            with patch(
-                "internalcmdb.governance.guard_gate._LLM_GUARD_URL", "http://llm-guard:8000"
-            ):
-                safe, _detail = await _llm_guard_scan({"action": "test"})
+            safe, _detail = await _llm_guard_scan({"action": "test"})
 
         assert safe is True
+        call_args = mock_client_instance.post.call_args
+        assert call_args[0][0] == "http://llm-guard:8000/analyze/prompt"
 
     @pytest.mark.asyncio
     async def test_llm_guard_unsafe_response(self) -> None:
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"safe": False, "detail": "prompt injection"}
+        mock_resp.json.return_value = {
+            "is_valid": False,
+            "scanners": {"Injection": 0.99},
+            "detail": "prompt injection",
+        }
 
-        with patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient:  # noqa: N806
-            mock_client_instance = AsyncMock()
-            mock_client_instance.post = AsyncMock(return_value=mock_resp)
+        mock_client_instance = AsyncMock()
+        mock_client_instance.post = AsyncMock(return_value=mock_resp)
+
+        with (
+            patch(
+                "internalcmdb.governance.guard_gate._get_guard_runtime_config",
+                new=AsyncMock(return_value=("http://llm-guard:8000", 5.0, True)),
+            ),
+            patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient,  # noqa: N806
+        ):
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=None)
-
-            with patch(
-                "internalcmdb.governance.guard_gate._LLM_GUARD_URL", "http://llm-guard:8000"
-            ):
-                safe, detail = await _llm_guard_scan({"action": "inject"})
+            safe, detail = await _llm_guard_scan({"action": "inject"})
 
         assert safe is False
-        assert "injection" in detail
+        assert "Injection" in detail or "injection" in detail.lower()
 
     @pytest.mark.asyncio
     async def test_llm_guard_connection_error_fail_closed(self) -> None:
-        with patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient:  # noqa: N806
+        with (
+            patch(
+                "internalcmdb.governance.guard_gate._get_guard_runtime_config",
+                new=AsyncMock(return_value=("http://llm-guard:8000", 5.0, True)),
+            ),
+            patch("internalcmdb.governance.guard_gate.httpx.AsyncClient") as MockClient,  # noqa: N806
+        ):
             MockClient.return_value.__aenter__ = AsyncMock(
                 side_effect=Exception("connection refused")
             )
             MockClient.return_value.__aexit__ = AsyncMock(return_value=None)
-
-            with (
-                patch("internalcmdb.governance.guard_gate._LLM_GUARD_URL", "http://llm-guard:8000"),
-                patch("internalcmdb.governance.guard_gate._LLM_GUARD_FAIL_CLOSED", True),
-            ):
-                safe, detail = await _llm_guard_scan({"action": "test"})
+            safe, detail = await _llm_guard_scan({"action": "test"})
 
         assert safe is False
         assert "fail-closed" in detail or "unavailable" in detail

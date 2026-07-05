@@ -26,8 +26,11 @@ class LlmSpanAttrs:
 
     model: str = ""
     system: str = "vllm"
+    operation_name: str = "chat.completions"
     input_tokens: int = 0
     output_tokens: int = 0
+    total_tokens: int = 0
+    response_id: str = ""
     finish_reasons: list[str] | None = None
 
 
@@ -130,12 +133,18 @@ def record_llm_span_attributes(
         attrs = LlmSpanAttrs()
     try:
         span.set_attribute("gen_ai.system", attrs.system)
+        if attrs.operation_name:
+            span.set_attribute("gen_ai.operation.name", attrs.operation_name)
         if attrs.model:
             span.set_attribute("gen_ai.request.model", attrs.model)
         if attrs.input_tokens:
             span.set_attribute("gen_ai.usage.input_tokens", attrs.input_tokens)
         if attrs.output_tokens:
             span.set_attribute("gen_ai.usage.output_tokens", attrs.output_tokens)
+        if attrs.total_tokens:
+            span.set_attribute("gen_ai.usage.total_tokens", attrs.total_tokens)
+        if attrs.response_id:
+            span.set_attribute("gen_ai.response.id", attrs.response_id)
         if attrs.finish_reasons:
             span.set_attribute("gen_ai.response.finish_reasons", attrs.finish_reasons)
     except Exception:

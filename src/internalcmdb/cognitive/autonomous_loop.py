@@ -268,16 +268,43 @@ class AutonomousLoop:
             },
         ]
 
+        user_content = (
+            "Current fleet state:\n"
+            f"```json\n{json.dumps(observations, indent=2, default=str)}\n```\n\n"
+            "What actions should be taken?"
+        )
+
+        from internalcmdb.llm.guard_pipeline import scan_output, scan_prompt  # noqa: PLC0415
+
         try:
             llm = await LLMClient.from_settings()
             try:
+                input_scan = await scan_prompt(llm, user_content)
+                if not input_scan.is_valid:
+                    logger.warning(
+                        "Autonomous loop: guard blocked reasoning input (score=%.3f)",
+                        input_scan.score,
+                    )
+                    return []
+
                 response = await llm.reason_structured(
                     messages,
                     _ACTION_DECISION_SCHEMA,
                     model_name="reasoning",
                 )
                 parsed = response.get("_parsed", {})
-                return parsed.get("actions", [])
+                actions = parsed.get("actions", [])
+
+                output_text = json.dumps(parsed, default=str)
+                output_scan = await scan_output(llm, user_content, output_text)
+                if not output_scan.is_valid:
+                    logger.warning(
+                        "Autonomous loop: guard blocked reasoning output (score=%.3f)",
+                        output_scan.score,
+                    )
+                    return []
+
+                return actions
             finally:
                 await llm.close()
         except Exception as exc:
@@ -298,21 +325,27 @@ class AutonomousLoop:
             }
 
         if action_type == "dismiss":
-            # Mark insight as dismissed
+            target = decision.get("target", "")
+            reason = decision.get("reason", "Dismissed by autonomous loop")
+            dismissed = await self._dismiss_insight(target, reason)
             return {
                 "action": "dismiss",
-                "target": decision.get("target", ""),
-                "reason": decision.get("reason", ""),
+                "target": target,
+                "reason": reason,
                 "requires_approval": False,
+                "insight_updated": dismissed,
             }
 
         if action_type == "escalate":
-            # Create a high-priority HITL item
+            target = decision.get("target", "")
+            reason = decision.get("reason", "")
+            hitl_id = await self._create_escalation_hitl(target, reason, decision)
             return {
                 "action": "escalate",
-                "target": decision.get("target", ""),
-                "reason": decision.get("reason", ""),
+                "target": target,
+                "reason": reason,
                 "requires_approval": True,
+                "hitl_item_id": hitl_id,
             }
 
         if action_type in ("investigate", "repair") and tool_id:
@@ -341,6 +374,99 @@ class AutonomousLoop:
             "reason": decision.get("reason", ""),
             "requires_approval": False,
         }
+
+    async def _dismiss_insight(self, target: str, reason: str) -> bool:
+        """Mark matching active insight(s) as dismissed."""
+        import asyncio as _aio  # noqa: PLC0415
+
+        from sqlalchemy import create_engine, text  # noqa: PLC0415
+
+        from internalcmdb.api.config import get_settings  # noqa: PLC0415
+
+        if not target:
+            return False
+
+        def _update() -> bool:
+            settings = get_settings()
+            engine = create_engine(str(settings.database_url), pool_pre_ping=True)
+            try:
+                with engine.connect() as conn:
+                    result = conn.execute(
+                        text("""
+                            UPDATE cognitive.insight
+                            SET status = 'dismissed',
+                                dismissed_reason = :reason,
+                                dismissed_at = NOW()
+                            WHERE status IN ('active', 'acknowledged')
+                              AND (
+                                  entity_id::text = :target
+                                  OR insight_id::text = :target
+                              )
+                        """),
+                        {"target": target, "reason": reason[:500]},
+                    )
+                    conn.commit()
+                    return (result.rowcount or 0) > 0
+            finally:
+                engine.dispose()
+
+        return await _aio.to_thread(_update)
+
+    async def _create_escalation_hitl(
+        self,
+        target: str,
+        reason: str,
+        decision: dict[str, Any],
+    ) -> str:
+        """Create a high-priority HITL item for human review."""
+        import asyncio as _aio  # noqa: PLC0415
+        import uuid as _uuid  # noqa: PLC0415
+
+        from sqlalchemy import create_engine, text  # noqa: PLC0415
+
+        from internalcmdb.api.config import get_settings  # noqa: PLC0415
+
+        item_id = str(_uuid.uuid4())
+        context = json.dumps(
+            {
+                "source": "autonomous_loop",
+                "target": target,
+                "reason": reason,
+                "confidence": decision.get("confidence"),
+                "decision": decision,
+            }
+        )
+        suggestion = json.dumps({"action": "review_escalation", "target": target})
+
+        def _insert() -> None:
+            settings = get_settings()
+            engine = create_engine(str(settings.database_url), pool_pre_ping=True)
+            try:
+                with engine.connect() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO governance.hitl_item
+                                (item_id, item_type, risk_class, priority, status,
+                                 context_jsonb, llm_suggestion, llm_confidence,
+                                 llm_model_used, expires_at)
+                            VALUES
+                                (:item_id, 'autonomous_escalation', 'RC-3', 'critical',
+                                 'pending', :context::jsonb, :suggestion::jsonb, :conf,
+                                 'autonomous_loop', now() + interval '4 hours')
+                        """),
+                        {
+                            "item_id": item_id,
+                            "context": context,
+                            "suggestion": suggestion,
+                            "conf": float(decision.get("confidence") or 0.85),
+                        },
+                    )
+                    conn.commit()
+            finally:
+                engine.dispose()
+
+        await _aio.to_thread(_insert)
+        return item_id
 
     async def _learn(self) -> dict[str, Any]:
         """Learn from recent HITL decisions to improve future reasoning.

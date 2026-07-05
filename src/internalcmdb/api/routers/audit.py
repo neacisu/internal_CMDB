@@ -28,14 +28,15 @@ class AuditFilterParams:
     actor: str | None = None
     status: str | None = None
     event_type: str | None = None
+    search: str | None = None
 
 
 @router.get("/events")
 def list_events(
     db: Annotated[Session, Depends(get_db)],
     filters: Annotated[AuditFilterParams, Depends()],
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict[str, object]:
     q = db.query(AuditEvent)
     if filters.actor is not None:
@@ -44,6 +45,14 @@ def list_events(
         q = q.filter(AuditEvent.status == filters.status)
     if filters.event_type is not None:
         q = q.filter(AuditEvent.event_type == filters.event_type)
+    if filters.search:
+        term = f"%{filters.search.strip()}%"
+        q = q.filter(
+            (AuditEvent.actor.ilike(term))
+            | (AuditEvent.action.ilike(term))
+            | (AuditEvent.target_entity.ilike(term))
+            | (AuditEvent.ip_address.ilike(term))
+        )
 
     total = q.count()
     items = (

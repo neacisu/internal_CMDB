@@ -258,7 +258,7 @@ class TestEnqueueSync:
         redis_mock = MagicMock()
         now = datetime.now(tz=UTC)
 
-        scheduler._enqueue_sync(redis_mock, sched, db, now)
+        scheduler._enqueue_sync(sched, db, now)
 
         db.add.assert_not_called()
         db.commit.assert_called_once()
@@ -273,18 +273,10 @@ class TestEnqueueSync:
         redis_mock = MagicMock()
         now = datetime.now(tz=UTC)
 
-        with (
-            patch(
-                "internalcmdb.workers.scheduler.asyncio.get_running_loop",
-                side_effect=RuntimeError("no loop"),
-            ),
-            patch("redis.from_url") as mock_sync_redis_from_url,
-        ):
-            mock_sync_conn = MagicMock()
-            mock_sync_redis_from_url.return_value = mock_sync_conn
+        with patch.object(scheduler, "_enqueue_arq_job") as mock_arq:
+            scheduler._enqueue_sync(sched, db, now)
 
-            scheduler._enqueue_sync(redis_mock, sched, db, now)
-
+        mock_arq.assert_called_once_with("my_task")
         db.add.assert_called_once()
         added_obj = db.add.call_args[0][0]
         assert isinstance(added_obj, JobHistory)

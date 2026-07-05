@@ -70,6 +70,15 @@
 
 http:
   middlewares:
+    llm-api-ip-allowlist:
+      ipAllowList:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "::1/128"
+          - "10.0.1.0/24"
+        ipStrategy:
+          depth: 0
+
     llm-api-strip-reasoning:
       stripPrefix:
         prefixes:
@@ -112,6 +121,7 @@ http:
       chain:
         middlewares:
           - security-headers
+          - llm-api-ip-allowlist
           - llm-api-rate-limit
           - llm-api-strip-reasoning
           - llm-api-add-v1
@@ -120,6 +130,7 @@ http:
       chain:
         middlewares:
           - security-headers
+          - llm-api-ip-allowlist
           - llm-api-rate-limit
           - llm-api-strip-fast
           - llm-api-add-v1
@@ -128,6 +139,7 @@ http:
       chain:
         middlewares:
           - security-headers
+          - llm-api-ip-allowlist
           - llm-api-rate-limit
           - llm-api-strip-embeddings
           - llm-api-add-v1
@@ -136,6 +148,7 @@ http:
       chain:
         middlewares:
           - security-headers
+          - llm-api-ip-allowlist
           - llm-api-guard-rate-limit
           - llm-api-strip-guard
 
@@ -144,6 +157,7 @@ http:
       chain:
         middlewares:
           - security-headers
+          - llm-api-ip-allowlist
           - llm-api-rate-limit
           - llm-api-strip-reasoning
 
@@ -151,6 +165,7 @@ http:
       chain:
         middlewares:
           - security-headers
+          - llm-api-ip-allowlist
           - llm-api-rate-limit
           - llm-api-strip-fast
 
@@ -159,6 +174,7 @@ http:
       chain:
         middlewares:
           - security-headers
+          - llm-api-ip-allowlist
           - llm-api-rate-limit
           - llm-api-strip-embeddings
 

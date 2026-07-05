@@ -5,7 +5,10 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from internalcmdb.config.secrets import is_placeholder_secret, is_production_env
 
 
 class Settings(BaseSettings):
@@ -45,7 +48,7 @@ class Settings(BaseSettings):
     otel_sample_rate: float = 1.0  # 0.0-1.0; 1.0 = trace everything
 
     # Debug endpoints
-    debug_enabled: bool = True
+    debug_enabled: bool = False
 
     # Auth / JWT (non-secret config only — JWT_SECRET_KEY is managed by SecretProvider)
     jwt_algorithm: str = "HS256"
@@ -55,13 +58,33 @@ class Settings(BaseSettings):
     jwt_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     jwt_cookie_httponly: bool = True
 
+    @model_validator(mode="after")
+    def reject_placeholder_secrets_in_production(self) -> Settings:
+        """Fail fast when bootstrap placeholders survive into production."""
+        if not is_production_env():
+            return self
+
+        if is_placeholder_secret(self.postgres_password):
+            msg = "POSTGRES_PASSWORD must not use bootstrap placeholder values in production."
+            raise ValueError(msg)
+        if is_placeholder_secret(self.secret_key):
+            msg = "SECRET_KEY must not use bootstrap placeholder values in production."
+            raise ValueError(msg)
+        return self
+
     @property
     def database_url(self) -> str:
-        return (
-            f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-            f"?sslmode={self.postgres_sslmode}"
-        )
+        """Build a PostgreSQL DSN, preferring OpenBao static credentials when available."""
+        try:
+            from internalcmdb.config.db_credentials import build_database_url_sync  # noqa: PLC0415
+
+            return build_database_url_sync(self)
+        except Exception:
+            return (
+                f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
+                f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+                f"?sslmode={self.postgres_sslmode}"
+            )
 
 
 @lru_cache

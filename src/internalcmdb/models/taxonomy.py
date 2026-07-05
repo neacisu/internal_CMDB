@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import Boolean, ForeignKey, Integer, Text, UniqueConstraint
@@ -27,10 +28,10 @@ class TaxonomyDomain(Base):
     description: Mapped[str | None] = mapped_column(Text)
     schema_version: Mapped[str] = mapped_column(Text, nullable=False, default="1.0")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_PG_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_PG_NOW
     )
 
@@ -59,10 +60,10 @@ class TaxonomyTerm(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_PG_NOW
     )
-    updated_at: Mapped[str] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=_PG_NOW
     )
 

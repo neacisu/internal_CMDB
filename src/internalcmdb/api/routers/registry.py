@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import cast, select
 from sqlalchemy.orm import Session
+from sqlalchemy.types import String
 
 from internalcmdb.models.registry import (
     Cluster,
@@ -22,6 +23,7 @@ from internalcmdb.models.registry import (
 )
 
 from ..deps import get_db
+from ..openapi_responses import RESP_404, merge_responses
 from ..schemas.common import Page, PageMeta, paginate
 from ..schemas.registry import (
     ClusterOut,
@@ -45,6 +47,7 @@ class HostFilterParams:
     cluster_id: uuid.UUID | None = None
     gpu_capable: bool | None = None
     docker_host: bool | None = None
+    search: str | None = None
 
 
 @router.get("/clusters", response_model=list[ClusterOut])
@@ -52,12 +55,12 @@ def list_clusters(db: Annotated[Session, Depends(get_db)]) -> list[Cluster]:
     return db.scalars(select(Cluster).order_by(Cluster.name)).all()  # type: ignore[return-value]
 
 
-@router.get("/hosts", response_model=Page[HostOut])
+@router.get("/hosts")
 def list_hosts(
     db: Annotated[Session, Depends(get_db)],
     filters: Annotated[HostFilterParams, Depends()],
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> Page[HostOut]:
     q = db.query(Host)
     if filters.cluster_id is not None:
@@ -66,12 +69,21 @@ def list_hosts(
         q = q.filter(Host.is_gpu_capable == filters.gpu_capable)
     if filters.docker_host is not None:
         q = q.filter(Host.is_docker_host == filters.docker_host)
+    if filters.search:
+        term = f"%{filters.search.strip()}%"
+        q = q.filter(
+            (Host.hostname.ilike(term))
+            | (Host.host_code.ilike(term))
+            | (Host.fqdn.ilike(term))
+            | (cast(Host.primary_private_ipv4, String).ilike(term))
+            | (cast(Host.primary_public_ipv4, String).ilike(term))
+        )
     q = q.order_by(Host.hostname)
     items, total = paginate(q, page, page_size)
     return Page(items=items, meta=PageMeta(page=page, page_size=page_size, total=total))
 
 
-@router.get("/hosts/{host_id}", response_model=HostDetailOut)
+@router.get("/hosts/{host_id}", responses=merge_responses(RESP_404))
 def get_host(host_id: uuid.UUID, db: Annotated[Session, Depends(get_db)]) -> HostDetailOut:
     host = db.get(Host, host_id)
     if host is None:
@@ -104,11 +116,11 @@ def get_host(host_id: uuid.UUID, db: Annotated[Session, Depends(get_db)]) -> Hos
     )
 
 
-@router.get("/gpu-devices", response_model=Page[GpuDeviceOut])
+@router.get("/gpu-devices")
 def list_gpu_devices(
     db: Annotated[Session, Depends(get_db)],
-    page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=500),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=500)] = 100,
     host_id: uuid.UUID | None = None,
 ) -> Page[GpuDeviceOut]:
     q = db.query(GpuDevice)
@@ -119,11 +131,11 @@ def list_gpu_devices(
     return Page(items=items, meta=PageMeta(page=page, page_size=page_size, total=total))
 
 
-@router.get("/network/interfaces", response_model=Page[NetworkInterfaceOut])
+@router.get("/network/interfaces")
 def list_network_interfaces(
     db: Annotated[Session, Depends(get_db)],
-    page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=500),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=500)] = 100,
     host_id: uuid.UUID | None = None,
 ) -> Page[NetworkInterfaceOut]:
     q = db.query(NetworkInterface)
@@ -151,11 +163,11 @@ def list_service_instances(
     ).all()
 
 
-@router.get("/storage", response_model=Page[StorageAssetOut])
+@router.get("/storage")
 def list_storage(
     db: Annotated[Session, Depends(get_db)],
-    page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=500),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=500)] = 100,
     host_id: uuid.UUID | None = None,
 ) -> Page[StorageAssetOut]:
     q = db.query(StorageAsset)

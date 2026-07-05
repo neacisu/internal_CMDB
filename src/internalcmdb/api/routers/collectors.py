@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import logging
 import re
@@ -18,12 +17,18 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from internalcmdb.collectors.agent_auth import (
+    cache_agent_token,
+    generate_agent_token,
+    hash_bootstrap_token,
+    verify_agent_token_hash,
+)
 from internalcmdb.collectors.fleet_health import (
     build_fleet_state,
     derive_agent_status,
     resolve_host,
 )
-from internalcmdb.collectors.schedule_tiers import DEFAULT_AGENT_CONFIG
+from internalcmdb.collectors.schedule_tiers import DEFAULT_AGENT_CONFIG, TIERS
 from internalcmdb.models.collectors import (
     CollectorAgent,
     CollectorSnapshot,
@@ -35,6 +40,7 @@ from ..config import get_settings
 from ..deps import get_db
 from ..middleware.rate_limit import rate_limit
 from ..middleware.rbac import require_role
+from ..openapi_responses import RESP_401, merge_responses
 from ..schemas.collectors import (
     AgentConfigUpdate,
     AgentOut,
@@ -50,6 +56,7 @@ from ..schemas.collectors import (
     ReportGenerateRequest,
     ReportOut,
     SnapshotDiffOut,
+    SnapshotItem,
     SnapshotOut,
 )
 
@@ -60,11 +67,17 @@ logger = logging.getLogger(__name__)
 _AGENT_NOT_FOUND_DETAIL = "Agent not found"
 _AGENT_ID_MISMATCH_DETAIL = "Token agent ID does not match request body agent_id"
 _DISK_HEAL_THRESHOLD_PCT = 85
+_MAX_SNAPSHOT_PAYLOAD_BYTES = 512 * 1024  # 512 KiB
+_ALLOWED_SNAPSHOT_KINDS: frozenset[str] = frozenset(
+    {collector for tier in TIERS.values() for collector in tier.collectors}
+    | {"heartbeat"}
+)
 
-_AGENT_AUTH_RESPONSES: dict[int, dict[str, str]] = {
-    403: {"description": _AGENT_ID_MISMATCH_DETAIL},
-    404: {"description": _AGENT_NOT_FOUND_DETAIL},
-}
+_AGENT_AUTH_RESPONSES = merge_responses(
+    RESP_401,
+    {403: {"description": _AGENT_ID_MISMATCH_DETAIL}},
+    {404: {"description": _AGENT_NOT_FOUND_DETAIL}},
+)
 _AGENT_NOT_FOUND_RESPONSES: dict[int, dict[str, str]] = {
     404: {"description": _AGENT_NOT_FOUND_DETAIL},
 }
@@ -74,6 +87,7 @@ _HOST_NOT_FOUND_RESPONSES: dict[int, dict[str, str]] = {
 _SNAPSHOT_NOT_FOUND_RESPONSES: dict[int, dict[str, str]] = {
     404: {"description": "Snapshot not found"},
 }
+_BOOTSTRAP_RESPONSES = merge_responses(RESP_401)
 
 
 @dataclass
@@ -168,30 +182,43 @@ def _inc_ingested_metric(count: int = 1) -> None:
         logger.debug("Ingest metrics counter unavailable", exc_info=True)
 
 
-def _generate_agent_token(agent_id: uuid.UUID, secret: str) -> str:
-    """HMAC-SHA256 token derived from agent_id and app secret."""
-    return hmac.new(
-        secret.encode(),
-        str(agent_id).encode(),
-        hashlib.sha256,
-    ).hexdigest()
+def _compute_payload_hash(payload: dict[str, Any]) -> str:
+    """Server-side SHA-256 of canonical JSON payload."""
+    payload_bytes = json.dumps(payload, sort_keys=True).encode()
+    return hashlib.sha256(payload_bytes).hexdigest()
+
+
+def _validate_bootstrap_token(db: Session, bootstrap_token: str | None) -> None:
+    """Ensure a valid, active bootstrap token is present for enrollment."""
+    if not bootstrap_token:
+        raise HTTPException(status_code=401, detail="Missing bootstrap token")
+
+    token_hash = hash_bootstrap_token(bootstrap_token)
+    row = db.execute(
+        text(
+            """
+            SELECT token_id FROM discovery.bootstrap_tokens
+             WHERE token_hash = :token_hash
+               AND is_active = true
+               AND (expires_at IS NULL OR expires_at > now())
+            """
+        ),
+        {"token_hash": token_hash},
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=401, detail="Invalid bootstrap token")
 
 
 def verify_agent_token(
     authorization: Annotated[str | None, Header()] = None,
     x_agent_id: Annotated[str | None, Header()] = None,
+    db: Annotated[Session, Depends(get_db)] = None,  # noqa: B008
 ) -> uuid.UUID:
-    """Validate HMAC bearer token sent by collector agents.
-
-    Recomputes the expected token from the agent_id and the application
-    secret, then performs a timing-safe comparison to prevent oracle attacks.
-    """
+    """Validate per-agent bearer token against the stored token hash."""
     if not x_agent_id:
         raise HTTPException(status_code=401, detail="Missing X-Agent-ID header")
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
-
-    settings = get_settings()
 
     try:
         agent_id = uuid.UUID(x_agent_id)
@@ -202,9 +229,10 @@ def verify_agent_token(
         raise HTTPException(status_code=401, detail="Missing bearer token")
 
     token = authorization.removeprefix("Bearer ")
-    expected = _generate_agent_token(agent_id, settings.secret_key)
-
-    if not hmac.compare_digest(token, expected):
+    agent = db.get(CollectorAgent, agent_id)
+    if agent is None or not agent.is_active:
+        raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
+    if not agent.token_hash or not verify_agent_token_hash(token, agent.token_hash):
         raise HTTPException(status_code=401, detail="Invalid agent token")
 
     return agent_id
@@ -267,17 +295,105 @@ def _insert_snapshot_safe(
     return None
 
 
+def _process_ingest_item(
+    item: SnapshotItem,
+    db: Session,
+    agent_id: uuid.UUID,
+    heartbeat_interval: int,
+) -> tuple[str, str | None]:
+    """Validate and ingest one snapshot item.
+
+    Returns ``("accepted"|"deduplicated"|"error", error_message)``.
+    """
+    if item.snapshot_kind not in _ALLOWED_SNAPSHOT_KINDS:
+        return "error", f"Invalid snapshot_kind: {item.snapshot_kind}"
+
+    payload_bytes = json.dumps(item.payload, sort_keys=True).encode()
+    if len(payload_bytes) > _MAX_SNAPSHOT_PAYLOAD_BYTES:
+        return (
+            "error",
+            f"Payload too large for kind={item.snapshot_kind}: "
+            f"{len(payload_bytes)} bytes (max {_MAX_SNAPSHOT_PAYLOAD_BYTES})",
+        )
+
+    server_hash = _compute_payload_hash(item.payload)
+    if server_hash != item.payload_hash:
+        return "error", f"payload_hash mismatch for kind={item.snapshot_kind}"
+
+    if item.snapshot_kind == "heartbeat" and not _should_store_heartbeat_snapshot(
+        db, agent_id, heartbeat_interval
+    ):
+        _inc_dedup_metric("throttle")
+        return "deduplicated", None
+
+    existing = db.execute(
+        select(CollectorSnapshot.snapshot_id)
+        .where(
+            CollectorSnapshot.agent_id == agent_id,
+            CollectorSnapshot.snapshot_kind == item.snapshot_kind,
+            CollectorSnapshot.payload_hash == server_hash,
+        )
+        .order_by(CollectorSnapshot.collected_at.desc())
+        .limit(1)
+    ).first()
+
+    if existing:
+        _inc_dedup_metric("hash")
+        return "deduplicated", None
+
+    snapshot = _insert_snapshot_safe(
+        db,
+        agent_id,
+        SnapshotData(
+            snapshot_kind=item.snapshot_kind,
+            payload_jsonb=item.payload,
+            payload_hash=server_hash,
+            collected_at=item.collected_at,
+            tier_code=item.tier_code,
+        ),
+    )
+    if snapshot is None:
+        return "error", f"Failed to insert snapshot kind={item.snapshot_kind}"
+
+    prev = db.execute(
+        select(CollectorSnapshot)
+        .where(
+            CollectorSnapshot.agent_id == agent_id,
+            CollectorSnapshot.snapshot_kind == item.snapshot_kind,
+            CollectorSnapshot.snapshot_id != snapshot.snapshot_id,
+        )
+        .order_by(CollectorSnapshot.collected_at.desc())
+        .limit(1)
+    ).first()
+
+    if prev:
+        prev_snap = prev[0]
+        diff = SnapshotDiff(
+            diff_id=uuid.uuid4(),
+            snapshot_id=snapshot.snapshot_id,
+            previous_snapshot_id=prev_snap.snapshot_id,
+            diff_jsonb={"note": "diff computation deferred"},
+            change_summary="Payload changed",
+        )
+        db.add(diff)
+
+    return "accepted", None
+
+
 # ---------------------------------------------------------------------------
 # Agent enrollment & management
 # ---------------------------------------------------------------------------
 
 
-@router.post("/enroll", status_code=201)
+@router.post("/enroll", status_code=201, responses=_BOOTSTRAP_RESPONSES)
 def enroll_agent(
     body: EnrollRequest,
     db: Annotated[Session, Depends(get_db)],
+    x_bootstrap_token: Annotated[str | None, Header(alias="X-Bootstrap-Token")] = None,
 ) -> EnrollResponse:
     """Agent self-registers and receives an ID, schedule config, and auth token."""
+    bootstrap_token = x_bootstrap_token or body.bootstrap_token
+    _validate_bootstrap_token(db, bootstrap_token)
     host = resolve_host(db, body.host_code)
     host_id = host.host_id if host else None
     effective_host_code = host.host_code if host else body.host_code
@@ -328,10 +444,11 @@ def enroll_agent(
         )
         db.add(agent)
 
-    db.commit()
+    plaintext_token, token_hash = generate_agent_token()
+    agent.token_hash = token_hash
+    cache_agent_token(agent.agent_id, plaintext_token)
 
-    settings = get_settings()
-    token = _generate_agent_token(agent.agent_id, settings.secret_key)
+    db.commit()
 
     tiers: dict[str, int] = DEFAULT_AGENT_CONFIG["tiers"]  # type: ignore[assignment]
     collectors: list[str] = DEFAULT_AGENT_CONFIG["enabled_collectors"]  # type: ignore[assignment]
@@ -340,7 +457,7 @@ def enroll_agent(
         agent_id=agent.agent_id,
         schedule_tiers=tiers,
         enabled_collectors=collectors,
-        api_token=token,
+        api_token=plaintext_token,
     )
 
 
@@ -707,71 +824,15 @@ def ingest_snapshots(
     heartbeat_interval = _get_heartbeat_snapshot_interval_seconds(db)
 
     for item in body.snapshots:
-        # Heartbeat snapshots are throttled server-side: payloads always differ
-        # (uptime/load), so hash dedup never applies. _insert_snapshot_safe
-        # flushes inserts, so a heartbeat stored earlier in this batch is
-        # visible to the EXISTS check and throttles the rest of the batch.
-        if item.snapshot_kind == "heartbeat" and not _should_store_heartbeat_snapshot(
-            db, body.agent_id, heartbeat_interval
-        ):
-            deduplicated += 1
-            _inc_dedup_metric("throttle")
-            continue
-
-        existing = db.execute(
-            select(CollectorSnapshot.snapshot_id)
-            .where(
-                CollectorSnapshot.agent_id == body.agent_id,
-                CollectorSnapshot.snapshot_kind == item.snapshot_kind,
-                CollectorSnapshot.payload_hash == item.payload_hash,
-            )
-            .order_by(CollectorSnapshot.collected_at.desc())
-            .limit(1)
-        ).first()
-
-        if existing:
-            deduplicated += 1
-            _inc_dedup_metric("hash")
-            continue
-
-        snapshot = _insert_snapshot_safe(
-            db,
-            body.agent_id,
-            SnapshotData(
-                snapshot_kind=item.snapshot_kind,
-                payload_jsonb=item.payload,
-                payload_hash=item.payload_hash,
-                collected_at=item.collected_at,
-                tier_code=item.tier_code,
-            ),
+        status, error_msg = _process_ingest_item(
+            item, db, body.agent_id, heartbeat_interval
         )
-        if snapshot is None:
-            errors.append(f"Failed to insert snapshot kind={item.snapshot_kind}")
-            continue
-
-        prev = db.execute(
-            select(CollectorSnapshot)
-            .where(
-                CollectorSnapshot.agent_id == body.agent_id,
-                CollectorSnapshot.snapshot_kind == item.snapshot_kind,
-                CollectorSnapshot.snapshot_id != snapshot.snapshot_id,
-            )
-            .order_by(CollectorSnapshot.collected_at.desc())
-            .limit(1)
-        ).first()
-
-        if prev:
-            prev_snap = prev[0]
-            diff = SnapshotDiff(
-                diff_id=uuid.uuid4(),
-                snapshot_id=snapshot.snapshot_id,
-                previous_snapshot_id=prev_snap.snapshot_id,
-                diff_jsonb={"note": "diff computation deferred"},
-                change_summary="Payload changed",
-            )
-            db.add(diff)
-
-        accepted += 1
+        if status == "error":
+            errors.append(error_msg or "Unknown ingest error")
+        elif status == "deduplicated":
+            deduplicated += 1
+        else:
+            accepted += 1
 
     agent.last_heartbeat_at = str(datetime.now(UTC))
     agent.status = "online"
