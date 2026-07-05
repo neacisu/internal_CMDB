@@ -245,7 +245,7 @@ export default function MetricsPage() {
               {fleetHosts.map((h) => {
                 const v = vitals?.find(vv => vv.host_code === h.host_code);
                 const memPct = v?.memory_pct;
-                const loadStr = v?.load_avg?.length ? v.load_avg.slice(0, 3).map(l => l.toFixed(1)).join("/") : "";
+                const loadStr = v?.load_avg?.length ? v.load_avg.slice(0, 3).map((l: number) => l.toFixed(1)).join("/") : "";
                 const ramPart = memPct == null ? "" : ` · RAM ${String(memPct)}%`;
                 const loadPart = loadStr ? ` · Load ${loadStr}` : "";
                 const tooltip = `${h.hostname} — ${h.status}${ramPart}${loadPart}`;

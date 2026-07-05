@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
-import { useFleetVitalsSSE, type FleetVital } from "@/lib/hooks";
+import { useFleetVitalsSSE } from "@/lib/hooks";
+import type { FleetVital } from "@/lib/api";
 
 interface FleetVitalsContextValue {
   vitals: FleetVital[];

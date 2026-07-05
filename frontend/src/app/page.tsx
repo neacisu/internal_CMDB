@@ -322,7 +322,7 @@ export default function DashboardPage() {
                           <PctBar value={v.gpu_pct} />
                         </td>
                         <td style={{ padding: "7px 10px", color: "var(--tx3)" }}>
-                          {v.load_avg.length > 0 ? v.load_avg.slice(0, 3).map(l => l.toFixed(1)).join(" / ") : "—"}
+                          {v.load_avg.length > 0 ? v.load_avg.slice(0, 3).map((l: number) => l.toFixed(1)).join(" / ") : "—"}
                         </td>
                         <td style={{ padding: "7px 10px" }}>
                           {v.containers_total > 0 ? (

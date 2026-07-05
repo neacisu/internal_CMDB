@@ -124,7 +124,7 @@ function VitalMetricsCard({ vital }: Readonly<{ vital: FleetVital }>) {
           <div>
             <p className="text-xs text-(--tx3) mb-1">Load Average</p>
             <p className="text-lg font-semibold" style={{ fontFamily: "var(--fM)" }}>
-              {vital.load_avg.length > 0 ? vital.load_avg.slice(0, 3).map(l => l.toFixed(2)).join(" / ") : "—"}
+              {vital.load_avg.length > 0 ? vital.load_avg.slice(0, 3).map((l: number) => l.toFixed(2)).join(" / ") : "—"}
             </p>
           </div>
           <div>
