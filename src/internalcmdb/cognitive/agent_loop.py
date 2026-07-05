@@ -496,7 +496,8 @@ class AgentLoop:
         from internalcmdb.llm.guard_pipeline import scan_prompt  # noqa: PLC0415
 
         try:
-            async with LLMClient() as llm:
+            llm = await LLMClient.from_settings()
+            async with llm:
                 result = await scan_prompt(llm, content)
             if not result.is_valid:
                 return f"Guard blocked LLM input (score={result.score:.3f})"
@@ -512,7 +513,8 @@ class AgentLoop:
         from internalcmdb.llm.guard_pipeline import scan_output  # noqa: PLC0415
 
         try:
-            async with LLMClient() as llm:
+            llm = await LLMClient.from_settings()
+            async with llm:
                 result = await scan_output(llm, content, content)
             if not result.is_valid:
                 return f"Guard blocked LLM output (score={result.score:.3f})"

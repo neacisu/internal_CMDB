@@ -17,4 +17,11 @@ enabled = [
     "docker_state",
     "service_health",
     "network_state",
+    "llm_endpoint_health",
+]
+
+[collectors.llm_endpoint_health]
+endpoints = [
+    { name = "litellm-gateway", url = "http://127.0.0.1:8001/health/liveness" },
+    { name = "llm-guard", url = "http://127.0.0.1:8000/healthz" },
 ]

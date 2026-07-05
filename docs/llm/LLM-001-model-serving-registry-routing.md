@@ -6,12 +6,14 @@ domain: llm-runtime
 version: "1.3"
 status: approved
 created: 2026-03-08
-updated: 2026-04-14
+updated: 2026-07-05
 owner: platform_architecture_lead
 tags: [model-registry, routing, vllm, ollama, embedding, tool-calling, wave-1, m12-1]
 ---
 
 ## internalCMDB — Model Serving Stack and Registry Contract
+
+> **OpenRouter migration (2026-07-05):** Production traffic no longer uses self-hosted vLLM/Ollama on hz.113/hz.62. All reasoning, fast, and embedding requests route through **LiteLLM** on **lxc-llm-guard (10.0.1.115:8001)** → **OpenRouter**. Public contract unchanged (`infraq.app/llm/v1/*`). Model aliases preserve legacy IDs (`Qwen/QwQ-32B-AWQ`, `Qwen/Qwen2.5-14B-Instruct-AWQ`, `qwen3-embedding-8b-q5km`). LLM Guard remains local on :8000. See `docs/rollout/llm-openrouter-status.md`.
 
 ## 1. Purpose
 

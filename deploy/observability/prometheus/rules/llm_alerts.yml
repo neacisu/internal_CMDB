@@ -2,7 +2,7 @@ groups:
   - name: llm_alerts
     rules:
       - alert: LLMEndpointDown
-        expr: probe_success{job="blackbox-http", service=~"vllm-.*|llm-.*|ollama-.*"} == 0
+        expr: probe_success{job="blackbox-http", service=~"litellm-.*|llm-.*"} == 0
         for: 1m
         labels:
           severity: critical
@@ -28,29 +28,15 @@ groups:
           summary: "Internal service unreachable: {{ $labels.service }}"
           description: "TCP probe for {{ $labels.service }} ({{ $labels.instance }}) has failed for more than 2 minutes."
 
-      - alert: LLMQueueDepth
-        expr: vllm:num_requests_waiting > 10
+      - alert: LiteLLMHighLatency
+        expr: histogram_quantile(0.99, rate(litellm_request_total_latency_bucket[5m])) > 30
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "LLM request queue depth high on {{ $labels.instance }}"
-          description: "vLLM instance {{ $labels.instance }} has {{ $value }} waiting requests (threshold: 10) for more than 5 minutes."
+          summary: "LiteLLM p99 latency high on {{ $labels.instance }}"
+          description: "LiteLLM instance {{ $labels.instance }} p99 latency exceeds 30s."
 
-      - alert: LLMHighLatency
-        expr: histogram_quantile(0.99, rate(vllm:e2e_request_latency_seconds_bucket[5m])) > 30
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "LLM p99 latency high on {{ $labels.instance }}"
-          description: "vLLM instance {{ $labels.instance }} p99 latency is {{ $value | printf \"%.1f\" }}s (threshold: 30s)."
-
-      - alert: LLMGPUCacheUtilizationHigh
-        expr: vllm:gpu_cache_usage_perc > 0.95
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "vLLM GPU KV cache near capacity on {{ $labels.instance }}"
-          description: "vLLM GPU KV cache utilization is at {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }}."
+      # Deprecated GPU alerts — hz.113/hz.62 decommissioned 2026-07-05
+      # - alert: LLMQueueDepth (vllm:num_requests_waiting)
+      # - alert: LLMGPUCacheUtilizationHigh (vllm:gpu_cache_usage_perc)

@@ -1,0 +1,33 @@
+model_list:
+  - model_name: Qwen/QwQ-32B-AWQ
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v4-pro
+      api_key: os.environ/OPENROUTER_INFRA_APP_KEY
+      timeout: 120
+      stream: true
+  - model_name: Qwen/Qwen2.5-14B-Instruct-AWQ
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v4-flash
+      api_key: os.environ/OPENROUTER_INFRA_APP_KEY
+      timeout: 60
+      stream: true
+  - model_name: qwen3-embedding-8b-q5km
+    litellm_params:
+      model: openrouter/qwen/qwen3-embedding-8b
+      api_key: os.environ/OPENROUTER_INFRA_APP_KEY
+      timeout: 30
+  - model_name: qwen3-embedding-8b-q5km:latest
+    litellm_params:
+      model: openrouter/qwen/qwen3-embedding-8b
+      api_key: os.environ/OPENROUTER_INFRA_APP_KEY
+      timeout: 30
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+
+router_settings:
+  routing_strategy: simple-shuffle

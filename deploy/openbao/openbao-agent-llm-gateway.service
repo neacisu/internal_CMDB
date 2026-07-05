@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenBao Agent — LLM Gateway secrets (OpenRouter)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+Environment=BAO_ADDR=https://s3cr3ts.neanelu.ro:8200
+ExecStart=/usr/local/bin/bao agent -config=/etc/openbao/agent-llm-gateway.hcl
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

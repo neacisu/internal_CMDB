@@ -1,0 +1,49 @@
+# LiteLLM OpenRouter gateway — single proxy (all models on :8001).
+# HAProxy VIP 49001/49002/49003 all route to this port; model selected by request body.
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm-gateway
+    restart: unless-stopped
+    ports:
+      - "8001:4000"
+    volumes:
+      - ./litellm/config-all.yaml:/app/config.yaml:ro
+    env_file:
+      - /var/run/openbao/llm-gateway.env
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-litellm-internal-gateway}
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveness', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    volumes:
+      - ./webui-data:/app/backend/data
+    environment:
+      - ENABLE_OLLAMA_API=false
+      - OPENAI_API_BASE_URLS=http://127.0.0.1:8001/v1
+      - OPENAI_API_KEYS=sk-litellm-internal-gateway
+    depends_on:
+      - litellm
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+networks:
+  default:
+    driver: bridge

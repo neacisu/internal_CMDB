@@ -347,7 +347,7 @@ async def chat_stream(
 
             from ..deps import _get_async_session_factory  # noqa: PLC0415
 
-            llm = LLMClient()
+            llm = await LLMClient.from_settings()
             factory = _get_async_session_factory()
             async with factory() as session:
                 engine = QueryEngine(llm, session)

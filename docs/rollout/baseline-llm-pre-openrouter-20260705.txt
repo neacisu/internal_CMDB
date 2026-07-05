@@ -1,0 +1,40 @@
+=== LLM baseline 2026-07-05T14:25:40+00:00 ===
+--- HAProxy hz.247 LLM backends ---
+# hz.113 (10.0.1.13) este nod dedicat Hetzner pe vSwitch 4000.
+# Orchestratorul (10.0.1.18/28) nu poate ajunge direct la 10.0.1.13
+#   10.0.1.10:49001 -> 10.0.1.13:8000  (vLLM QwQ-32B-AWQ  - reasoning)
+#   10.0.1.10:49002 -> 10.0.1.13:8001  (vLLM Qwen2.5-14B-AWQ - fast)
+#   10.0.1.10:49000 -> 10.0.1.13:3000  (Open WebUI)
+  server hz113-webui 10.0.1.13:3000 check inter 30s rise 2 fall 3
+  server hz113-vllm-primary 10.0.1.13:8001 check inter 30s rise 2 fall 3
+  server hz113-vllm-secondary 10.0.1.13:8002 check inter 30s rise 2 fall 3
+# 10.0.1.10:49003 -> 10.0.1.62:8003  (Ollama /v1/embeddings)
+  server hz62-embed 10.0.1.62:8003 check inter 30s rise 2 fall 3
+# hz.113 (10.0.1.13) - RTX 6000 Ada - node-exporter + nvidia-gpu-exporter + cadvisor
+  server hz113-nodeexp 10.0.1.13:9100 check inter 30s rise 2 fall 3
+  server hz113-gpuexp 10.0.1.13:9835 check inter 30s rise 2 fall 3
+  server hz113-cadvisor 10.0.1.13:8080 check inter 30s rise 2 fall 3
+  server hz-62-socks 10.0.1.62:1080 check inter 30s fall 3 rise 2
+  server hz-113-socks 10.0.1.13:1080 check inter 30s fall 3 rise 2
+--- hz.113 docker ---
+open-webui
+vllm-qwq-32b
+vllm-qwen-14b
+cadvisor
+node-exporter
+nvidia-gpu-exporter
+openbao-agent-llm
+--- hz.62 docker ---
+cadvisor
+node-exporter
+nvidia-gpu-exporter
+ollama-embed
+--- lxc-llm-guard ---
+               total        used        free      shared  buff/cache   available
+Mem:            20Gi        11Gi       786Mi       652Ki       8.1Gi       8.9Gi
+Swap:             0B          0B          0B
+litellm-embed
+litellm-reasoning
+litellm-fast
+open-webui
+llm-guard

@@ -10,12 +10,8 @@
 #
 # vSwitch IP mapping:
 #   orchestrator:      10.0.1.18  (77.42.76.185)
-#   hz.113:            10.0.1.13  (49.13.97.113)  — GPU inference
-#   hz.62:             10.0.1.62  (95.216.66.62)  — GPU embedding
-#   hz.215:            10.0.1.9   (95.216.36.215)
-#   hz.223:            10.0.1.8   (95.217.32.223)
-#   hz.247:            10.0.1.7   (95.216.68.247)
-#   lxc-llm-guard:     10.0.1.115 (LXC 115 on hz.215, LLM Guard)
+#   hz.113/hz.62:      DECOMMISSIONED 2026-07-05 — replaced by LiteLLM on lxc-llm-guard
+#   lxc-llm-guard:     10.0.1.115 — LLM Guard + LiteLLM OpenRouter gateway
 #   lxc-wapp-pro-app:  10.0.1.105 (LXC 105 on hz.215, WAPP Pro — eth0 internal)
 #                      95.216.36.226 (eth1 public, MAC 00:50:56:01:1F:F0, Hetzner dedicated)
 #   VIP:               10.0.1.10  (HAProxy LLM proxy)
@@ -102,18 +98,14 @@ scrape_configs:
   #         host: "hz.62"
   #         gpu_model: "GTX 1080"
 
-  # ── vLLM model servers (via HAProxy VIP) ────────────────────────────────
-  - job_name: "vllm"
+  # ── LiteLLM gateway (OpenRouter proxy on lxc-llm-guard via HAProxy VIP) ──
+  - job_name: "litellm"
     metrics_path: "/metrics"
     static_configs:
-      - targets: ["10.0.1.10:49001"]
+      - targets: ["10.0.1.115:8001"]
         labels:
-          model: "QwQ-32B-AWQ"
-          host: "hz.113"
-      - targets: ["10.0.1.10:49002"]
-        labels:
-          model: "Qwen2.5-14B-AWQ"
-          host: "hz.113"
+          model: "openrouter-gateway"
+          host: "lxc-llm-guard"
 
   # ── InternalCMDB FastAPI (host network, via gateway) ───────────────────
   # FastAPI application metrics via prometheus_client
@@ -153,11 +145,11 @@ scrape_configs:
       - targets:
           - "https://infraq.app/llm/v1/reasoning/health"
         labels:
-          service: "vllm-reasoning-32b"
+          service: "litellm-reasoning"
       - targets:
           - "https://infraq.app/llm/v1/fast/health"
         labels:
-          service: "vllm-fast-14b"
+          service: "litellm-fast"
       - targets:
           - "https://infraq.app/llm/v1/guard/healthz"
         labels:
@@ -187,15 +179,15 @@ scrape_configs:
       - targets:
           - "10.0.1.10:49001"
         labels:
-          service: "vllm-reasoning"
+          service: "litellm-reasoning"
       - targets:
           - "10.0.1.10:49002"
         labels:
-          service: "vllm-fast"
+          service: "litellm-fast"
       - targets:
           - "10.0.1.10:49003"
         labels:
-          service: "ollama-embed"
+          service: "litellm-embed"
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

@@ -6,12 +6,14 @@ domain: llm-runtime
 version: "1.0"
 status: active
 created: 2026-04-14
-updated: 2026-04-14
+updated: 2026-07-05
 owner: platform_architecture_lead
 tags: [llm, vllm, reasoning, qwq-32b, awq, tool-calling, qwen2.5, hz.113]
 ---
 
 # LLM-007 — QwQ-32B-AWQ (Model Reasoning)
+
+> **OpenRouter migration (2026-07-05):** Alias `Qwen/QwQ-32B-AWQ` routes to **deepseek/deepseek-v4-pro** via LiteLLM on 10.0.1.115:8001. hz.113 vLLM decommissioned. Public URL unchanged.
 
 | Câmp          | Valoare                                   |
 |---------------|-------------------------------------------|

@@ -157,6 +157,7 @@ class LLMClient:
         guard_url: str = _DEFAULT_GUARD_URL,
         *,
         guard_token: str = "",
+        embed_api_format: str = "ollama",
     ) -> None:
         self.models: dict[str, ModelConfig] = {
             "reasoning": ModelConfig(
@@ -186,6 +187,7 @@ class LLMClient:
         }
 
         self._guard_token = guard_token
+        self._embed_api_format = embed_api_format.lower()
         self._circuits: dict[str, _CircuitState] = {name: _CircuitState() for name in self.models}
 
         self._client = httpx.AsyncClient(
@@ -211,13 +213,25 @@ class LLMClient:
             from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
 
             store = get_settings_store()
-            return cls(
+            embed_format = await store.get("llm.embed.api_format") or "ollama"
+            client = cls(
                 reasoning_url=await store.get("llm.reasoning.url") or _DEFAULT_REASONING_URL,
                 fast_url=await store.get("llm.fast.url") or _DEFAULT_FAST_URL,
                 embed_url=await store.get("llm.embed.url") or _DEFAULT_EMBED_URL,
                 guard_url=await store.get("llm.guard.url") or _DEFAULT_GUARD_URL,
                 guard_token=await store.get_raw_secret("llm.guard.token") or "",
+                embed_api_format=str(embed_format),
             )
+            reasoning_model = await store.get("llm.reasoning.model_id")
+            if reasoning_model:
+                client.models["reasoning"].model_id = str(reasoning_model)
+            fast_model = await store.get("llm.fast.model_id")
+            if fast_model:
+                client.models["fast"].model_id = str(fast_model)
+            embed_model = await store.get("llm.embed.model_id")
+            if embed_model:
+                client.models["embed"].model_id = str(embed_model)
+            return client
         except Exception:
             logger.warning("from_settings: SettingsStore unavailable, using default URLs")
             return cls()
@@ -511,7 +525,7 @@ class LLMClient:
         return cast(dict[str, Any], parsed)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings via the Ollama ``/api/embed`` endpoint.
+        """Generate embeddings via Ollama ``/api/embed`` or OpenAI ``/v1/embeddings``.
 
         Returns a list of 4096-dimensional vectors (one per input text).
         Raises ``ValueError`` if the returned dimension does not match
@@ -521,14 +535,25 @@ class LLMClient:
             return []
 
         cfg = self.models["embed"]
-        body: dict[str, Any] = {
-            "model": cfg.model_id,
-            "input": texts,
-        }
-        url = f"{cfg.endpoint_url}/api/embed"
-        logger.info("Embed request → %s (%d texts)", url, len(texts))
-        resp = await self._request_with_retry("POST", url, "embed", json_body=body)
-        embeddings: list[list[float]] = resp.get("embeddings", [])
+        if self._embed_api_format == "openai":
+            body: dict[str, Any] = {
+                "model": cfg.model_id,
+                "input": texts,
+            }
+            url = f"{cfg.endpoint_url}/v1/embeddings"
+            logger.info("Embed request (openai) → %s (%d texts)", url, len(texts))
+            resp = await self._request_with_retry("POST", url, "embed", json_body=body)
+            data = resp.get("data") or []
+            embeddings = [item.get("embedding", []) for item in data]
+        else:
+            body = {
+                "model": cfg.model_id,
+                "input": texts,
+            }
+            url = f"{cfg.endpoint_url}/api/embed"
+            logger.info("Embed request (ollama) → %s (%d texts)", url, len(texts))
+            resp = await self._request_with_retry("POST", url, "embed", json_body=body)
+            embeddings = resp.get("embeddings", [])
 
         if embeddings:
             dim = len(embeddings[0])
@@ -540,24 +565,11 @@ class LLMClient:
         return embeddings
 
     async def tokenize(self, text: str, model: str = "") -> dict[str, Any]:
-        """Tokenize *text* via the vLLM ``/tokenize`` root endpoint.
-
-        *model* defaults to the reasoning model ID.  Pass the fast model's
-        ``model_id`` to tokenize against the 14B vocabulary.
-        """
-        if model == self.models["fast"].model_id:
-            cfg = self.models["fast"]
-            backend = "fast"
-        else:
-            cfg = self.models["reasoning"]
-            backend = "reasoning"
-            if not model:
-                model = cfg.model_id
-
-        body: dict[str, Any] = {"model": model, "prompt": text}
-        url = f"{cfg.endpoint_url}/tokenize"
-        logger.info("Tokenize request → %s", url)
-        return await self._request_with_retry("POST", url, backend, json_body=body)
+        """Deprecated — vLLM tokenize endpoints removed after OpenRouter migration."""
+        raise NotImplementedError(
+            "tokenize() is unavailable: self-hosted vLLM was decommissioned. "
+            "Use client-side token counting or OpenRouter metadata."
+        )
 
     async def guard_input(self, prompt: str) -> dict[str, Any]:
         """Scan a user prompt for injections, PII, toxicity."""
@@ -604,8 +616,21 @@ class LLMClient:
             if name == "guard":
                 url = f"{cfg.endpoint_url}/healthz"
             elif name == "embed":
-                url = f"{cfg.endpoint_url}/api/version"
+                url = (
+                    f"{cfg.endpoint_url}/health/liveness"
+                    if self._embed_api_format == "openai"
+                    else f"{cfg.endpoint_url}/api/version"
+                )
             else:
+                url = f"{cfg.endpoint_url}/health/liveness"
+                # fallback for legacy vLLM during rollback
+                try:
+                    resp = await self._client.get(url, timeout=5.0)
+                    if resp.status_code < 400:  # noqa: PLR2004
+                        results[name] = True
+                        continue
+                except httpx.RequestError:
+                    pass
                 url = f"{cfg.endpoint_url}/health"
             try:
                 resp = await self._client.get(url, timeout=5.0)

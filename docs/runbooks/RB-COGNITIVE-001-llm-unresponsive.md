@@ -3,10 +3,10 @@ id: RB-COGNITIVE-001
 title: LLM Backend Unresponsive Runbook Procedure
 doc_class: runbook
 domain: infrastructure
-version: "1.0"
+version: "1.1"
 status: draft
 created: 2026-03-22
-updated: 2026-03-23
+updated: 2026-07-05
 owner: sre_observability_owner
 binding:
   - entity_type: registry.service
@@ -21,6 +21,10 @@ binding:
 One or more LLM backends (reasoning, fast, embed, guard) are not responding
 to requests.  The LLMClient circuit breaker has tripped and marked the model
 as degraded.
+
+> **OpenRouter stack (2026-07-05):** Chat and embed backends are **LiteLLM** on
+> **lxc-llm-guard (10.0.1.115:8001)** behind HAProxy VIP **10.0.1.10:49001-49003**.
+> Guard remains on **10.0.1.115:8000**. GPU hosts hz.113/hz.62 are decommissioned.
 
 ## Symptoms
 
@@ -45,43 +49,45 @@ as degraded.
    curl -s https://infraq.app/api/v1/metrics/fleet/matrix | jq '.llm_backends'
    ```
 
-2. **Check vLLM / Ollama process on the GPU host:**
+2. **Check LiteLLM / LLM Guard on lxc-llm-guard:**
    ```bash
-   # For reasoning/fast (hz.113):
-   ssh hz.113 'docker ps | grep vllm'
-   ssh hz.113 'docker logs vllm-reasoning --tail 50'
-
-   # For embed (hz.62):
-   ssh hz.62 'docker ps | grep ollama'
-   ssh hz.62 'docker logs ollama --tail 50'
+   ssh lxc-llm-guard 'docker ps | grep -E "litellm|llm-guard|open-webui"'
+   ssh lxc-llm-guard 'curl -sf http://127.0.0.1:8001/health/liveness'
+   ssh lxc-llm-guard 'docker logs litellm-gateway --tail 50'
+   ssh lxc-llm-guard 'curl -sf http://127.0.0.1:8000/health'
    ```
 
-3. **Check GPU utilisation:**
+3. **Check HAProxy VIP routing (hz.247):**
    ```bash
-   ssh hz.113 'nvidia-smi'
-   ssh hz.62 'nvidia-smi'
+   ssh hz.247 'grep -A2 "4900[123]" /etc/haproxy/haproxy.cfg'
+   curl -sf http://10.0.1.10:49001/health/liveness
+   curl -sf http://10.0.1.10:49003/v1/embeddings -H "Authorization: Bearer $LITELLM_KEY" \
+     -H "Content-Type: application/json" -d '{"model":"qwen3-embedding-8b-q5km","input":["ping"]}'
    ```
 
 4. **Restart the affected container:**
    ```bash
-   ssh hz.113 'docker restart vllm-reasoning'
-   # Wait 60s for model load, then verify:
-   ssh hz.113 'curl -s http://localhost:49001/health'
+   ssh lxc-llm-guard 'cd /opt/llm-gateway && docker compose restart litellm'
+   # Wait 30s, then verify:
+   ssh lxc-llm-guard 'curl -sf http://127.0.0.1:8001/health/liveness'
    ```
 
-5. **Verify circuit breaker recovery:**
+5. **OpenRouter / key issues:** Check LiteLLM logs for 401/402/429. Refresh keys via
+   OpenBao (`deploy/openbao/setup-openrouter.sh`) and restart LiteLLM.
+
+6. **Verify circuit breaker recovery:**
    - The LLMClient automatically clears the degraded flag after one successful
      request. Send a test query via the API.
 
-6. **If OOM (out-of-memory):**
+7. **Rollback to self-hosted GPU (emergency only):**
    ```bash
-   ssh hz.113 'dmesg | tail -20'
-   # May need to reduce max_model_len or batch_size in vLLM config.
+   ./scripts/cutover_llm_openrouter.sh rollback
+   # Restart vLLM/Ollama on hz.113/hz.62 manually
    ```
 
 ## Prevention
 
-- Monitor GPU memory with `nvidia_exporter` + Prometheus alerts
-- Set `gpu-memory-utilization=0.85` in vLLM config to leave headroom
-- Ensure swap is disabled on GPU nodes (prevents thrashing)
+- Monitor LiteLLM health via Prometheus + `llm_endpoint_health` collector
+- Set OpenRouter spend limits and alerts on LiteLLM proxy logs
+- Keep OpenBao keys rotated; agent renders `/var/run/openbao/llm-gateway.env`
 - Regular load testing to validate capacity under peak traffic

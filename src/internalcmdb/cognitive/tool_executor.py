@@ -306,7 +306,8 @@ class ToolExecutor:
 
         serialised = json.dumps(params, default=str)
         try:
-            async with LLMClient() as llm:
+            llm = await LLMClient.from_settings()
+            async with llm:
                 result = await scan_prompt(llm, serialised)
             if not result.is_valid:
                 reason = (
@@ -329,7 +330,8 @@ class ToolExecutor:
 
         serialised = json.dumps(output, default=str)
         try:
-            async with LLMClient() as llm:
+            llm = await LLMClient.from_settings()
+            async with llm:
                 result = await scan_output(llm, serialised, serialised)
             if not result.is_valid:
                 reason = (

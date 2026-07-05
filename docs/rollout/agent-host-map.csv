@@ -1,7 +1,7 @@
 agent_uuid,hostname,ssh_alias,host_code,toml_path,in_deploy_script,ssh_ok,token_hash,status
 be1c2b82-81ff-460d-8041-db1cef0e9054,Alexs-iMac,Alexs-iMac,Alexs-iMac,deploy/configs/agents/Alexs-iMac.toml,no,,yes,done
 58c9e391-13f3-44d7-bc08-b56451476747,dev-local,dev-local,dev-local,deploy/configs/agents/dev-local.toml,no,,yes,done
-328d594e-0590-49d6-9d38-774c34fe4d1b,hz.113,hz.113,hz.113,deploy/configs/agents/hz-113.toml,yes,,yes,done
+328d594e-0590-49d6-9d38-774c34fe4d1b,hz.113,hz.113,hz.113,deploy/configs/agents/hz-113.toml,yes,,yes,decommissioned-gpu
 03eb8203-f1b0-4674-8955-cc744a3dea4b,hz.118,hz.118,hz.118,deploy/configs/agents/hz-118.toml,yes,,yes,done
 60467471-366a-44f9-b63a-5fa1b685517c,hz.123,hz.123,hz.123,deploy/configs/agents/hz-123.toml,yes,,yes,done
 9b0b5cab-9967-4b92-b6bb-f16f5c9c0011,hz.157,hz.157,hz.157,deploy/configs/agents/hz-157.toml,yes,,yes,done
@@ -9,7 +9,7 @@ be1c2b82-81ff-460d-8041-db1cef0e9054,Alexs-iMac,Alexs-iMac,Alexs-iMac,deploy/con
 5275ff11-f034-473a-a286-094fa3f0ec2a,hz.215,hz.215,hz.215,deploy/configs/agents/hz-215.toml,yes,,yes,done
 927da882-933e-49ab-aacf-e155e6c77399,hz.223,hz.223,hz.223,deploy/configs/agents/hz-223.toml,yes,,yes,done
 bf037235-c10f-4751-90da-544401e2d664,hz.247,hz.247,hz.247,deploy/configs/agents/hz-247.toml,yes,,yes,done
-d4a0a5b3-0593-4b8f-b78c-1c28b1f1d053,hz.62,hz.62,hz.62,deploy/configs/agents/hz-62.toml,yes,,yes,done
+d4a0a5b3-0593-4b8f-b78c-1c28b1f1d053,hz.62,hz.62,hz.62,deploy/configs/agents/hz-62.toml,yes,,yes,decommissioned-gpu
 e664e0a7-553f-4b58-95ad-dfed7195ed9b,lxc-ci-worker,lxc-ci-worker,lxc-ci-worker,deploy/configs/agents/lxc-ci-worker.toml,yes,,yes,done
 e7ca8967-fcee-440d-8454-2c09a08af87e,lxc-hz118-mediserver2,hz.118.lxc.103,lxc-hz118-mediserver2,deploy/configs/agents/lxc-hz118-mediserver2.toml,yes,,yes,done
 fa60360d-9be8-464f-bd6a-a1a43b5266f8,lxc-hz118-tecdocmysql,hz.118.lxc.102,lxc-hz118-tecdocmysql,deploy/configs/agents/lxc-hz118-tecdocmysql.toml,yes,,yes,done

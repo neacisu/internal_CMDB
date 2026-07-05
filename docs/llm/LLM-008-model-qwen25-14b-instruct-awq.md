@@ -6,12 +6,14 @@ domain: llm-runtime
 version: "1.0"
 status: active
 created: 2026-04-14
-updated: 2026-04-14
+updated: 2026-07-05
 owner: platform_architecture_lead
 tags: [llm, vllm, fast, qwen2.5-14b, awq, tool-calling, hz.113]
 ---
 
 # LLM-008 — Qwen2.5-14B-Instruct-AWQ (Model Fast)
+
+> **OpenRouter migration (2026-07-05):** Alias `Qwen/Qwen2.5-14B-Instruct-AWQ` routes to **deepseek/deepseek-v4-flash** via LiteLLM on 10.0.1.115:8001. Tool calling validated post-cutover.
 
 | Câmp          | Valoare                                    |
 |---------------|--------------------------------------------|

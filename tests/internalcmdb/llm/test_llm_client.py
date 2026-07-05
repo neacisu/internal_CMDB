@@ -92,7 +92,7 @@ class TestLLMClient:
         assert result["choices"][0]["message"]["content"] == "fast reply"
 
     @pytest.mark.asyncio
-    async def test_embed_returns_vectors(self, client: LLMClient) -> None:
+    async def test_embed_returns_vectors_ollama(self, client: LLMClient) -> None:
         dim = 4096
         vec_a = [0.1] * dim
         vec_b = [0.2] * dim
@@ -106,6 +106,29 @@ class TestLLMClient:
         result = await client.embed(["text1", "text2"])
         assert len(result) == 2
         assert len(result[0]) == dim
+
+    @pytest.mark.asyncio
+    async def test_embed_openai_format(self, client: LLMClient) -> None:
+        client._embed_api_format = "openai"
+        dim = 4096
+        vec = [0.1] * dim
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"data": [{"embedding": vec, "index": 0}]}
+        mock_resp.raise_for_status = MagicMock()
+
+        client._client.request = AsyncMock(return_value=mock_resp)
+
+        result = await client.embed(["text1"])
+        assert len(result) == 1
+        assert len(result[0]) == dim
+        call_url = client._client.request.call_args[0][1]
+        assert "/v1/embeddings" in call_url
+
+    @pytest.mark.asyncio
+    async def test_tokenize_deprecated(self, client: LLMClient) -> None:
+        with pytest.raises(NotImplementedError):
+            await client.tokenize("hello")
 
     @pytest.mark.asyncio
     async def test_retry_on_server_error(self, client: LLMClient) -> None:

@@ -1,4 +1,4 @@
-"""Collector: llm_endpoint_health — LLM endpoint response time, status, errors. Tier: 30s."""
+"""Collector: llm_endpoint_health — LiteLLM gateway + LLM Guard on lxc-llm-guard."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from typing import Any
 import httpx
 
 DEFAULT_ENDPOINTS: list[dict[str, Any]] = [
-    {"name": "vllm-primary", "url": "http://127.0.0.1:8000/health"},
+    {"name": "litellm-gateway", "url": "http://127.0.0.1:8001/health/liveness"},
+    {"name": "llm-guard", "url": "http://127.0.0.1:8000/healthz"},
 ]
 
 

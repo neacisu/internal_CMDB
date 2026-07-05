@@ -155,7 +155,8 @@ def _persist_vectors(
 
 async def _reindex(engine: sa.engine.Engine) -> None:
     """Main re-indexing loop: fetch stale rows -> embed -> update -> repeat."""
-    async with LLMClient() as llm:
+    llm = await LLMClient.from_settings()
+    async with llm:
         total_processed = 0
         total_skipped = 0
         batch_num = 0

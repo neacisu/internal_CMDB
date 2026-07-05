@@ -241,7 +241,7 @@ async def cognitive_query(
         from internalcmdb.cognitive.query_engine import QueryEngine  # noqa: PLC0415
         from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
 
-        llm = LLMClient()
+        llm = await LLMClient.from_settings()
         engine = QueryEngine(llm, session, top_k=body.top_k)
         result = await engine.query(body.question)
 
@@ -793,7 +793,7 @@ async def generate_report(
         from internalcmdb.cognitive.report_generator import ReportGenerator  # noqa: PLC0415
         from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
 
-        llm = LLMClient()
+        llm = await LLMClient.from_settings()
         gen = ReportGenerator(llm, session)
 
         if body.report_kind == "fleet":
@@ -1393,7 +1393,8 @@ async def trigger_kb_ingest(
     from internalcmdb.cognitive.kb_ingestor import KnowledgeBaseIngestor  # noqa: PLC0415
     from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
 
-    async with LLMClient() as llm:
+    llm = await LLMClient.from_settings()
+    async with llm:
         ingestor = KnowledgeBaseIngestor()
         counts = await ingestor.ingest_all(session, llm)
 

@@ -1,0 +1,17 @@
+model_list:
+  - model_name: Qwen/QwQ-32B-AWQ
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v4-pro
+      api_key: os.environ/OPENROUTER_INFRA_APP_KEY
+      timeout: 120
+      stream: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+
+router_settings:
+  routing_strategy: simple-shuffle

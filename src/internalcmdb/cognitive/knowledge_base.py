@@ -8,7 +8,8 @@ Usage::
 
     from internalcmdb.cognitive.knowledge_base import KnowledgeBase
 
-    async with LLMClient() as llm:
+    llm = await LLMClient.from_settings()
+    async with llm:
         kb = KnowledgeBase(async_session, llm)
         chunk_ids = await kb.embed_document(content, {"source": "ops-runbook"})
         results  = await kb.search("TLS certificate rotation", top_k=5)

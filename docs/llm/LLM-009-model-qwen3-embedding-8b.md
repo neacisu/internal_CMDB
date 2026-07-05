@@ -6,12 +6,14 @@ domain: llm-runtime
 version: "1.0"
 status: active
 created: 2026-04-14
-updated: 2026-04-14
+updated: 2026-07-05
 owner: platform_architecture_lead
 tags: [llm, ollama, embeddings, qwen3, gguf, q5km, rag, semantic-search, hz.62]
 ---
 
 # LLM-009 — qwen3-embedding-8b-q5km (Model Embeddings)
+
+> **OpenRouter migration (2026-07-05):** Alias `qwen3-embedding-8b-q5km` routes to **qwen/qwen3-embedding-8b** via LiteLLM (OpenAI `/v1/embeddings`). Dimension **4096** preserved; pgvector cosine vs Ollama vectors ~0.996 on sample text. hz.62 Ollama stopped.
 
 | Câmp          | Valoare                                     |
 |---------------|---------------------------------------------|

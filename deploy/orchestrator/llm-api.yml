@@ -4,10 +4,10 @@
 # Exposes all self-hosted LLM models and guardrails as API endpoints
 # under the unified infraq.app domain.
 #
-# Model endpoints (OpenAI-compatible):
-#   https://infraq.app/llm/v1/reasoning/*  →  vLLM QwQ-32B-AWQ (complex reasoning)
-#   https://infraq.app/llm/v1/fast/*       →  vLLM Qwen2.5-14B-AWQ (fast tasks)
-#   https://infraq.app/llm/v1/embeddings/* →  Ollama Qwen3-Embedding-8B (embeddings)
+# Model endpoints (OpenAI-compatible via LiteLLM → OpenRouter):
+#   https://infraq.app/llm/v1/reasoning/*  →  deepseek/deepseek-v4-pro
+#   https://infraq.app/llm/v1/fast/*       →  deepseek/deepseek-v4-flash
+#   https://infraq.app/llm/v1/embeddings/* →  qwen/qwen3-embedding-8b
 #
 # Guardrails endpoint (LLM Guard API):
 #   https://infraq.app/llm/v1/guard/*      →  LLM Guard (input/output scanning)
@@ -215,10 +215,9 @@ http:
       tls:
         certResolver: cloudflare
 
-    # ── vLLM Root-level endpoints (tokenize/detokenize/ping) ────────────
-    # Higher priority (260) to match before the general PathPrefix routes (250)
+    # ── LiteLLM health endpoints (no tokenize — deprecated post OpenRouter migration) ──
     llm-api-reasoning-root:
-      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && (PathPrefix(`/llm/v1/reasoning/tokenize`) || PathPrefix(`/llm/v1/reasoning/detokenize`) || PathPrefix(`/llm/v1/reasoning/ping`) || PathPrefix(`/llm/v1/reasoning/health`) || PathPrefix(`/llm/v1/reasoning/version`) || PathPrefix(`/llm/v1/reasoning/load`) || PathPrefix(`/llm/v1/reasoning/openapi.json`))"
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && (PathPrefix(`/llm/v1/reasoning/health`) || PathPrefix(`/llm/v1/reasoning/ping`))"
       priority: 260
       service: llm-api-reasoning-svc
       entryPoints:
@@ -229,7 +228,7 @@ http:
         certResolver: cloudflare
 
     llm-api-fast-root:
-      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && (PathPrefix(`/llm/v1/fast/tokenize`) || PathPrefix(`/llm/v1/fast/detokenize`) || PathPrefix(`/llm/v1/fast/ping`) || PathPrefix(`/llm/v1/fast/health`) || PathPrefix(`/llm/v1/fast/version`) || PathPrefix(`/llm/v1/fast/load`) || PathPrefix(`/llm/v1/fast/openapi.json`))"
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && (PathPrefix(`/llm/v1/fast/health`) || PathPrefix(`/llm/v1/fast/ping`))"
       priority: 260
       service: llm-api-fast-svc
       entryPoints:
@@ -239,9 +238,9 @@ http:
       tls:
         certResolver: cloudflare
 
-    # ── Ollama native API endpoints ──────────────────────────────────────
+    # ── Embeddings health (Ollama /api/* deprecated — use /v1/embeddings) ──
     llm-api-embeddings-root:
-      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && (PathPrefix(`/llm/v1/embeddings/api/`) || PathPrefix(`/llm/v1/embeddings/ping`))"
+      rule: "(Host(`infraq.app`) || Host(`www.infraq.app`)) && PathPrefix(`/llm/v1/embeddings/health`)"
       priority: 260
       service: llm-api-embeddings-svc
       entryPoints:
@@ -264,37 +263,37 @@ http:
         certResolver: cloudflare
 
   services:
-    # vLLM primary — SSE streaming, flush instant
+    # LiteLLM reasoning — SSE streaming, flush instant
     llm-api-reasoning-svc:
       loadBalancer:
         servers:
           - url: "http://10.0.1.10:49001"
         healthCheck:
-          path: "/health"
+          path: "/health/liveness"
           interval: "30s"
           timeout: "10s"
         responseForwarding:
           flushInterval: "-1"
 
-    # vLLM secondary — SSE streaming, flush instant
+    # LiteLLM fast — SSE streaming, flush instant
     llm-api-fast-svc:
       loadBalancer:
         servers:
           - url: "http://10.0.1.10:49002"
         healthCheck:
-          path: "/health"
+          path: "/health/liveness"
           interval: "30s"
           timeout: "10s"
         responseForwarding:
           flushInterval: "-1"
 
-    # Ollama embedding — synchronous REST, standard flush
+    # LiteLLM embeddings — synchronous REST, standard flush
     llm-api-embeddings-svc:
       loadBalancer:
         servers:
           - url: "http://10.0.1.10:49003"
         healthCheck:
-          path: "/"
+          path: "/health/liveness"
           interval: "30s"
           timeout: "10s"
         responseForwarding:

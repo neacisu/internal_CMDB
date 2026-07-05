@@ -6,12 +6,14 @@ domain: llm-runtime
 version: "1.0"
 status: active
 created: 2026-04-14
-updated: 2026-04-14
+updated: 2026-07-05
 owner: platform_architecture_lead
 tags: [llm, audit, vllm, ollama, llm-guard, tool-calling, infrastructure, wave-1]
 ---
 
 # LLM-006 — Audit Infrastructură Self-Hosted LLM
+
+> **OpenRouter migration (2026-07-05):** Sections below describe the **pre-migration** self-hosted stack (historical audit 2026-04-14). Current production routing: HAProxy VIP → **10.0.1.115:8001** (LiteLLM) → OpenRouter; guard unchanged on :8000. hz.113/hz.62 stopped. See `docs/rollout/llm-openrouter-status.md`.
 
 | Câmp            | Valoare                              |
 |-----------------|--------------------------------------|

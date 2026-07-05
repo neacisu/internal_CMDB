@@ -362,7 +362,7 @@ async def embedding_sync(ctx: _Ctx) -> dict[str, Any]:
 
     from internalcmdb.llm.client import LLMClient  # noqa: PLC0415
 
-    llm = LLMClient()
+    llm = await LLMClient.from_settings()
     documents_processed: set[str] = set()
     chunks_embedded = 0
 
@@ -417,9 +417,11 @@ async def ingest_knowledge_base(ctx: _Ctx) -> dict[str, Any]:
 
     engine = create_async_engine(async_url, pool_pre_ping=True)
     try:
-        async with AsyncSession(engine) as session, LLMClient() as llm:
-            ingestor = KnowledgeBaseIngestor()
-            summary = await ingestor.ingest_all(session, llm)
+        async with AsyncSession(engine) as session:
+            llm = await LLMClient.from_settings()
+            async with llm:
+                ingestor = KnowledgeBaseIngestor()
+                summary = await ingestor.ingest_all(session, llm)
     finally:
         await engine.dispose()
 
@@ -2016,7 +2018,7 @@ def _make_report_generator(
     async_url = _normalize_pg_url(db_url, driver="asyncpg")
     engine = create_async_engine(async_url, pool_pre_ping=True)
     session = AsyncSession(engine, expire_on_commit=False)
-    llm = LLMClient()
+    llm = await LLMClient.from_settings()
     return ReportGenerator(llm, session), session, engine
 
 

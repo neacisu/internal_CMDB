@@ -6,13 +6,15 @@ domain: llm-runtime
 version: "1.1"
 status: approved
 created: 2026-03-08
-updated: 2026-04-14
+updated: 2026-07-05
 owner: platform_architecture_lead
 tags: [fallback, safety, guardrails, latency, haproxy, tool-calling, wave-1, m12-3]
 depends_on: [LLM-001, LLM-002]
 ---
 
 ## internalCMDB — Fallback, Latency, Cost, and Safety Controls
+
+> **OpenRouter migration (2026-07-05):** Latency budgets in §2 remain targets; upstream is now OpenRouter via LiteLLM. GPU OOM (LLM-ERR-005) no longer applies to chat/embed paths. **No silent fallback to external API** policy is satisfied — OpenRouter *is* the Wave-1 external provider behind the same internal gateway contract. Cross-model fallback (fast → reasoning) still applies via alias routing in LiteLLM config.
 
 ## 1. Purpose
 
