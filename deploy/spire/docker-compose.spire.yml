@@ -15,6 +15,7 @@ services:
     container_name: spire-server
     restart: unless-stopped
     hostname: spire-server
+    user: "0:0"
     volumes:
       - spire-server-data:/opt/spire/data/server
       - ./server.conf:/opt/spire/conf/server/server.conf:ro

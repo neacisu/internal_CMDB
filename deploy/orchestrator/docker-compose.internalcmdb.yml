@@ -25,7 +25,7 @@ services:
     env_file: /opt/stacks/internalcmdb/.env
     environment:
       - LOG_LEVEL=DEBUG
-      - ALLOW_LEGACY_AGENT_HMAC=true
+      - ALLOW_LEGACY_AGENT_HMAC=false
       - REDIS_LOCAL_HOST=10.0.0.2
       - POSTGRES_SSLMODE=prefer
       - CORS_ORIGINS=https://infraq.app,http://localhost:3333
