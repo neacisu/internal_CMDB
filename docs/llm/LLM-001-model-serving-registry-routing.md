@@ -3,12 +3,12 @@ id: LLM-001
 title: internalCMDB — Model Serving Stack, Registry Contract, and Routing Rules (Wave-1)
 doc_class: policy_pack
 domain: llm-runtime
-version: "1.2"
+version: "1.3"
 status: approved
 created: 2026-03-08
-updated: 2026-03-16
+updated: 2026-04-14
 owner: platform_architecture_lead
-tags: [model-registry, routing, vllm, ollama, embedding, wave-1, m12-1]
+tags: [model-registry, routing, vllm, ollama, embedding, tool-calling, wave-1, m12-1]
 ---
 
 ## internalCMDB — Model Serving Stack and Registry Contract
@@ -22,15 +22,17 @@ Satisfies pt-037 [m12-1].
 
 ## 2. Supported Model Classes
 
-| Model Class | Task Types | Serving Stack | VRAM Budget | Host |
-| --- | --- | --- | --- | --- |
-| reasoning_32b | complex_analysis, multi_step_reasoning | vLLM + Qwen/QwQ-32B-AWQ | ≈31 GB (65%) | 10.0.1.13 (RTX 6000 Ada 48 GB) |
-| fast_14b | summarization, classification, extraction | vLLM + Qwen/Qwen2.5-14B-Instruct-AWQ | ≈13 GB (28%) | 10.0.1.13 (RTX 6000 Ada 48 GB) |
-| embedding_8b | embedding | Ollama + Qwen3-Embedding-8B-Q5_K_M | ≈5.1 GB | hz.62 (GTX 1080 8 GB) |
+| Model Class | Task Types | Serving Stack | VRAM Budget | Host | Tool Calling |
+| --- | --- | --- | --- | --- | --- |
+| reasoning_32b | complex_analysis, multi_step_reasoning | vLLM 0.16.0 + Qwen/QwQ-32B-AWQ | ≈31 GB (65%) | 10.0.1.13 (RTX 6000 Ada 49 GB ECC) | ✅ hermes parser |
+| fast_14b | summarization, classification, extraction | vLLM 0.16.0 + Qwen/Qwen2.5-14B-Instruct-AWQ | ≈13.7 GB (28%) | 10.0.1.13 (RTX 6000 Ada 49 GB ECC) | ✅ hermes parser |
+| embedding_8b | embedding | Ollama 0.17.7 + Qwen3-Embedding-8B-Q5_K_M | ≈5.1 GB | hz.62 (GTX 1080 8 GB) | N/A |
 
-**Generation VRAM budget**: 48 GB (RTX 6000 Ada). Ceiling: reasoning_32b ≤ 65%, fast_14b ≤ 28%, KV cache ≥ 7%.
+**Generation VRAM budget**: 49,140 MiB (RTX 6000 Ada Generation). Ceiling: reasoning_32b ≤ 65%, fast_14b ≤ 28%, KV cache ≥ 7%.
 
-**Embedding VRAM budget**: 8 GB (GTX 1080). Qwen3-Embedding-8B Q5_K_M uses 5.1 GB (64%).
+**Tool calling**: ambele modele vLLM au `--enable-auto-tool-choice --tool-call-parser hermes` activ din 2026-04-14. Parserul `hermes` traduce formatul nativ Qwen (`<tool_call>...</tool_call>`) în `tool_calls[]` standard OpenAI.
+
+**Embedding VRAM budget**: 8,192 MiB (GTX 1080). Qwen3-Embedding-8B Q5_K_M ocupă ~5.1 GB (64%).
 
 ---
 
@@ -56,14 +58,17 @@ Models with `status=candidate` must not receive production traffic.
 
 ## 4. Routing Rules
 
-| Task Type | Model Class | Port | Fallback |
-| --- | --- | --- | --- |
-| complex_analysis | reasoning_32b | 10.0.1.13:8001 | Return error; no fallback in Wave-1 |
-| multi_step_reasoning | reasoning_32b | 10.0.1.13:8001 | Return error; no fallback in Wave-1 |
-| summarization | fast_14b | 10.0.1.13:8002 | reasoning_32b if fast_14b unavailable |
-| classification | fast_14b | 10.0.1.13:8002 | reasoning_32b if fast_14b unavailable |
-| extraction | fast_14b | 10.0.1.13:8002 | reasoning_32b if fast_14b unavailable |
-| embedding | embedding_8b | 10.0.1.62:8003 | HAProxy VIP 10.0.1.10:49003 |
+| Task Type | Model Class | Port intern | HAProxy VIP | Fallback |
+| --- | --- | --- | --- | --- |
+| complex_analysis | reasoning_32b | 10.0.1.13:8001 | 10.0.1.10:49001 | Return error; no fallback in Wave-1 |
+| multi_step_reasoning | reasoning_32b | 10.0.1.13:8001 | 10.0.1.10:49001 | Return error; no fallback in Wave-1 |
+| tool_use | reasoning_32b / fast_14b | 10.0.1.13:8001/8002 | 10.0.1.10:49001/49002 | Cross-model fallback permis |
+| summarization | fast_14b | 10.0.1.13:8002 | 10.0.1.10:49002 | reasoning_32b dacă fast_14b indisponibil |
+| classification | fast_14b | 10.0.1.13:8002 | 10.0.1.10:49002 | reasoning_32b dacă fast_14b indisponibil |
+| extraction | fast_14b | 10.0.1.13:8002 | 10.0.1.10:49002 | reasoning_32b dacă fast_14b indisponibil |
+| embedding | embedding_8b | 10.0.1.62:8003 | 10.0.1.10:49003 | Fără fallback |
+
+Traefik gateway public: `https://infraq.app/llm/v1/{reasoning|fast|embeddings|guard}`
 
 Routing decisions must be logged in agent_run records with the model_class selected.
 
@@ -94,6 +99,7 @@ A model may be deprecated only after:
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| 1.3 | 2026-04-14 | Audit live complet (LLM-006). Actualizat VRAM total la 49,140 MiB real. Adăugat coloană tool calling în tabelul model classes — ambele vLLM au `--enable-auto-tool-choice --tool-call-parser hermes` activ. Adăugat task type `tool_use` în routing rules. Adăugat coloana HAProxy VIP în routing. Adăugat prefixele publice Traefik. vLLM confirmat 0.16.0, Ollama 0.17.7. |
 | 1.2 | 2026-03-16 | Corrected runtime port mappings to match production reality: reasoning_32b host bind is 10.0.1.13:8001, fast_14b host bind is 10.0.1.13:8002, and embedding_8b host bind is 10.0.1.62:8003 behind HAProxy VIP 10.0.1.10:49003. |
 | 1.1 | 2026-03-14 | Fixed model references to match production: reasoning_32b → Qwen/QwQ-32B-AWQ (65% VRAM, max_len 24576); renamed fast_9b → fast_14b (Qwen/Qwen2.5-14B-Instruct-AWQ, 28% VRAM, max_len 12288); added embedding_8b model class (Ollama + Qwen3-Embedding-8B-Q5_K_M on hz.62); added host column to model classes table; updated VRAM ceiling percentages. |
 | 1.0 | 2026-03-08 | Initial release — Wave-1 model registry contract, routing rules, retirement policy. |

@@ -11,10 +11,15 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
 
+# PostgreSQL server-side timestamp function used in all server_default values.
+# Extracting as a constant avoids the S1192 "duplicate literal" Sonar warning
+# and makes it trivial to swap for a different DB dialect if needed.
+_PG_NOW = "now()"
+
 
 class TaxonomyDomain(Base):
     __tablename__ = "taxonomy_domain"
-    __table_args__: ClassVar[dict[str, str]] = {"schema": "taxonomy"}
+    __table_args__: ClassVar[dict[str, str]] = {"schema": "taxonomy"}  # pyright: ignore[reportIncompatibleVariableOverride]
 
     taxonomy_domain_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     domain_code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
@@ -23,10 +28,10 @@ class TaxonomyDomain(Base):
     schema_version: Mapped[str] = mapped_column(Text, nullable=False, default="1.0")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_PG_NOW
     )
     updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_PG_NOW
     )
 
     terms: Mapped[list[TaxonomyTerm]] = relationship(
@@ -36,7 +41,7 @@ class TaxonomyDomain(Base):
 
 class TaxonomyTerm(Base):
     __tablename__ = "taxonomy_term"
-    __table_args__: ClassVar[tuple[Any, ...]] = (
+    __table_args__: ClassVar[tuple[Any, ...]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         UniqueConstraint("taxonomy_domain_id", "term_code", name="uq_term_code_per_domain"),
         {"schema": "taxonomy"},
     )
@@ -55,10 +60,10 @@ class TaxonomyTerm(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     metadata_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_PG_NOW
     )
     updated_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default="now()"
+        TIMESTAMP(timezone=True), nullable=False, server_default=_PG_NOW
     )
 
     domain: Mapped[TaxonomyDomain] = relationship(back_populates="terms")

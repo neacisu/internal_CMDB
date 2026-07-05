@@ -82,6 +82,7 @@ _SAFE_INTERVAL = re.compile(r"^\d+ days$")
 
 _PARTITION_MONTHS_AHEAD = 2  # number of future months to pre-create partitions
 _MONTHS_PER_YEAR = 12  # calendar months in a year
+_DEFAULT_HIGH_FREQ_RETENTION = "3 days"  # fallback when settings store unavailable
 
 
 def _validate_interval(interval: str) -> None:
@@ -426,7 +427,7 @@ def _apply_one_rule(
                 action = "partitions_dropped"
             elif mode == "snapshots":
                 hf_interval = rule.get("high_freq_interval", interval)
-                vitals_ds = rule.get("vitals_downsample_interval", "3 days")
+                vitals_ds = rule.get("vitals_downsample_interval", _DEFAULT_HIGH_FREQ_RETENTION)
                 counts = _purge_snapshots(conn, interval, hf_interval, vitals_ds)
                 count = counts["snapshots_deleted"]
                 action = "rows_deleted"
@@ -522,8 +523,8 @@ def run_retention(database_url: str, rules: list[dict[str, str]] | None = None) 
         for r in _RETENTION_RULES:
             entry: dict[str, str] = {**r, "interval": f"{r['default_days']} days"}
             if r.get("mode") == "snapshots":
-                entry["high_freq_interval"] = "3 days"
-                entry["vitals_downsample_interval"] = "3 days"
+                entry["high_freq_interval"] = _DEFAULT_HIGH_FREQ_RETENTION
+                entry["vitals_downsample_interval"] = _DEFAULT_HIGH_FREQ_RETENTION
             rules.append(entry)
 
     for rule in rules:

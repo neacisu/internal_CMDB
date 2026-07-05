@@ -1,0 +1,27 @@
+# Agent config: LXC 102 / tecdocmysql (on hz.118 "proxmox2" STANDALONE)
+# Proxmox host: hz.118 (95.216.72.118 / 10.0.1.4)
+# Public IP: 95.216.125.171/32  gateway 95.216.125.161
+# SSH port: 22 (standard)
+# SSH alias: hz.118.lxc.102
+# Resources: Proxmox LXC container
+# Role: Database host — TecDoc MySQL
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "lxc-hz118-tecdocmysql"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "service_health",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "network_state",
+    "security_posture",
+]

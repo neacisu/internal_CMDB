@@ -28,6 +28,10 @@ declare -A HOST_SSH=(
     [hz.62]="hz.62"
     [hz.113]="hz.113"
     [hz.118]="hz.118"
+    [lxc-hz118-traktors]="hz.118.lxc.100"
+    [lxc-hz118-tecdocnode]="hz.118.lxc.101"
+    [lxc-hz118-tecdocmysql]="hz.118.lxc.102"
+    [lxc-hz118-mediserver2]="hz.118.lxc.103"
     [hz.123]="hz.123"
     [hz.157]="hz.157"
     [hz.164]="hz.164"
@@ -46,6 +50,10 @@ declare -A HOST_CONFIG=(
     [hz.62]="hz-62"
     [hz.113]="hz-113"
     [hz.118]="hz-118"
+    [lxc-hz118-traktors]="lxc-hz118-traktors"
+    [lxc-hz118-tecdocnode]="lxc-hz118-tecdocnode"
+    [lxc-hz118-tecdocmysql]="lxc-hz118-tecdocmysql"
+    [lxc-hz118-mediserver2]="lxc-hz118-mediserver2"
     [hz.123]="hz-123"
     [hz.157]="hz-157"
     [hz.164]="proxmox"
@@ -57,6 +65,22 @@ declare -A HOST_CONFIG=(
 )
 
 HOSTS=("${!HOST_SSH[@]}")
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+# verify_api_reachable: check that the CMDB API health endpoint responds before
+# deploying an agent that will immediately try to enroll with it.  A failure
+# emits a warning but does NOT abort deployment — the agent buffers events and
+# retries on its own schedule.
+verify_api_reachable() {
+    local url="$1"
+    if curl -sf --max-time 5 "${url%/collectors}/health" -o /dev/null; then
+        echo "  ✓ API reachable: ${url%/collectors}/health"
+    else
+        echo "  WARN: API not responding at ${url%/collectors}/health — proceeding anyway" >&2
+        echo "        The agent will retry enrollment on startup." >&2
+    fi
+}
 
 deploy_to_host() {
     local host_code="$1"
@@ -82,11 +106,26 @@ deploy_to_host() {
         fi
     fi
 
-    # Create directories
-    ssh "$ssh_host" "mkdir -p $REMOTE_AGENT_DIR/internalcmdb/collectors/agent/collectors $REMOTE_CONFIG_DIR /var/log/internalcmdb"
+    # Verify API endpoint is reachable before deploying (advisory — does not abort).
+    # api_url is used here and also compared against the TOML's own api_url field
+    # to surface configuration drift early.
+    verify_api_reachable "$api_url"
+    local toml_api_url
+    toml_api_url=$(grep '^api_url' "$config_file" 2>/dev/null \
+        | sed 's/.*= *["'\'']\(.*\)["'\'']/\1/' | head -1 || true)
+    if [[ -n "$toml_api_url" && "$toml_api_url" != "$api_url" ]]; then
+        echo "  WARN: api_url mismatch — TOML has '${toml_api_url}', script default is '${api_url}'" >&2
+    fi
+
+    # Create directories — args passed directly to avoid SC2029
+    ssh "$ssh_host" mkdir -p \
+        "${REMOTE_AGENT_DIR}/internalcmdb/collectors/agent/collectors" \
+        "${REMOTE_CONFIG_DIR}" \
+        /var/log/internalcmdb
 
     # Copy package init files
-    ssh "$ssh_host" "touch $REMOTE_AGENT_DIR/internalcmdb/__init__.py"
+    # shellcheck disable=SC2029  # REMOTE_AGENT_DIR expands client-side intentionally
+    ssh "$ssh_host" touch "${REMOTE_AGENT_DIR}/internalcmdb/__init__.py"
 
     # Copy collectors package with correct structure
     scp "$AGENT_SRC/collectors/__init__.py" "$ssh_host:$REMOTE_AGENT_DIR/internalcmdb/collectors/__init__.py"
@@ -110,24 +149,37 @@ deploy_to_host() {
     # Install systemd unit
     scp "$SYSTEMD_UNIT" "$ssh_host:/etc/systemd/system/internalcmdb-agent.service"
 
-    # Install httpx (the only external dependency)
-    # Handle PEP 668 (Debian 13+, Ubuntu 24.04+) and Python <3.11 (needs tomli)
-    ssh "$ssh_host" "
-        python3 -c 'import httpx' 2>/dev/null && exit 0
-        apt-get install -y -qq python3-httpx 2>/dev/null && exit 0
-        pip3 install --break-system-packages httpx 2>/dev/null && exit 0
-        pip3 install httpx 2>/dev/null && exit 0
-        python3 -m pip install httpx 2>/dev/null || true
-    "
-    # tomli fallback for Python < 3.11
-    ssh "$ssh_host" "python3 -c 'import tomllib' 2>/dev/null || pip3 install --break-system-packages tomli 2>/dev/null || pip3 install tomli 2>/dev/null || true"
+    # Determine which python binary the service unit uses
+    local py_bin
+    py_bin=$(grep '^ExecStart=' "$SYSTEMD_UNIT" | sed 's|ExecStart=\(/usr/[^ ]*\) .*|\1|')
+    [[ -z "$py_bin" ]] && py_bin="python3"
 
-    # Enable and start
-    ssh "$ssh_host" "systemctl daemon-reload && systemctl enable internalcmdb-agent && systemctl restart internalcmdb-agent"
+    # Install httpx for the exact Python that will run the agent.
+    # python3.12+ removed distutils so we must bootstrap pip via ensurepip first.
+    # py_bin is passed as a positional argument to the remote bash -s invocation
+    # so $1 inside the single-quoted heredoc receives the binary path without
+    # requiring a double-quoted shell string (eliminates SC2029).
+    ssh "$ssh_host" bash -s -- "$py_bin" << 'REMOTE_INSTALL'
+        py_bin="$1"
+        if "$py_bin" -c 'import httpx' 2>/dev/null; then
+            exit 0
+        fi
+        "$py_bin" -m ensurepip --upgrade 2>/dev/null || true
+        "$py_bin" -m pip install --root-user-action=ignore httpx 2>/dev/null || true
+REMOTE_INSTALL
 
-    # Verify
+    # Enable and start — compound shell operators require bash -c; no variables
+    # inside the single-quoted string so there is no SC2029 concern.
+    ssh "$ssh_host" bash -c 'systemctl daemon-reload && systemctl enable internalcmdb-agent && systemctl restart internalcmdb-agent'
+
+    # Verify — echo runs locally so $host_code never appears inside an SSH shell string
     sleep 2
-    ssh "$ssh_host" "systemctl is-active internalcmdb-agent && echo '✓ Agent running on $host_code' || echo '✗ Agent failed on $host_code'"
+    if ssh "$ssh_host" systemctl is-active --quiet internalcmdb-agent; then
+        echo "  ✓ Agent running on ${host_code}"
+    else
+        echo "  ✗ Agent failed on ${host_code}"
+        ssh "$ssh_host" journalctl -u internalcmdb-agent -n 20 --no-pager 2>/dev/null || true
+    fi
 
     echo ""
 }

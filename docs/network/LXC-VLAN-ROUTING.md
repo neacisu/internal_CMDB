@@ -150,3 +150,55 @@ checker after 5 minutes of missed heartbeats.
 - Configure an alert in Prometheus/Alertmanager if
   `cmdb_collector_ingest_total{host="hz.164"}` stops incrementing for
   more than 2× the longest tier interval (10 min).
+
+---
+
+## Hz.118 — Standalone Proxmox with Public-IP LXCs
+
+Hz.118 (`95.216.72.118`) is a standalone Proxmox VE 9.1.5 hypervisor outside
+the main Proxmox cluster.  Unlike hz.164, its LXC containers have **direct
+public IPv4 addresses** so they need no proxy/VLAN workaround — each LXC
+runs its own internalcmdb agent.
+
+### Container inventory (April 2026)
+
+| CT ID | host_code               | Public IP        | Port | OS              | Role            |
+|-------|-------------------------|------------------|------|-----------------|-----------------|
+| 100   | lxc-hz118-traktors      | 95.216.72.100    | 1321 | Ubuntu 20.04    | server.traktors.ro web app |
+| 101   | lxc-hz118-tecdocnode    | 95.216.125.170   | 22   | Ubuntu 22.04    | TecDoc Node.js API |
+| 102   | lxc-hz118-tecdocmysql  | 95.216.125.171   | 22   | Ubuntu 22.04    | TecDoc MySQL DB |
+| 103   | lxc-hz118-mediserver2  | 95.216.125.172   | 22   | Ubuntu 22.04    | Medical media server |
+
+### Agent deployment
+
+Python 3.14.4 was bootstrapped on each LXC (deadsnakes PPA on 22.04;
+compiled from source on 20.04 focal because deadsnakes has no 3.14 package
+for that EOL release).
+
+SSH config aliases in `/root/.ssh/config`:
+```
+Host hz.118.lxc.100
+    HostName 95.216.72.100
+    Port 1321
+    User root
+
+Host hz.118.lxc.101
+    HostName 95.216.125.170
+    Port 22
+    User root
+
+Host hz.118.lxc.102
+    HostName 95.216.125.171
+    Port 22
+    User root
+
+Host hz.118.lxc.103
+    HostName 95.216.125.172
+    Port 22
+    User root
+```
+
+Agent TOML configs: `deploy/configs/agents/lxc-hz118-*.toml`
+Deploy script entry: added to `HOST_SSH` map in `scripts/deploy_agent.sh`
+
+All 4 agents enrolled and reporting as of 2026-04-12.

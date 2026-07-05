@@ -58,7 +58,22 @@ router = APIRouter(prefix="/collectors", tags=["collectors"])
 logger = logging.getLogger(__name__)
 
 _AGENT_NOT_FOUND_DETAIL = "Agent not found"
+_AGENT_ID_MISMATCH_DETAIL = "Token agent ID does not match request body agent_id"
 _DISK_HEAL_THRESHOLD_PCT = 85
+
+_AGENT_AUTH_RESPONSES: dict[int, dict[str, str]] = {
+    403: {"description": _AGENT_ID_MISMATCH_DETAIL},
+    404: {"description": _AGENT_NOT_FOUND_DETAIL},
+}
+_AGENT_NOT_FOUND_RESPONSES: dict[int, dict[str, str]] = {
+    404: {"description": _AGENT_NOT_FOUND_DETAIL},
+}
+_HOST_NOT_FOUND_RESPONSES: dict[int, dict[str, str]] = {
+    404: {"description": "Host not found"},
+}
+_SNAPSHOT_NOT_FOUND_RESPONSES: dict[int, dict[str, str]] = {
+    404: {"description": "Snapshot not found"},
+}
 
 
 @dataclass
@@ -257,7 +272,7 @@ def _insert_snapshot_safe(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/enroll", response_model=EnrollResponse, status_code=201)
+@router.post("/enroll", status_code=201)
 def enroll_agent(
     body: EnrollRequest,
     db: Annotated[Session, Depends(get_db)],
@@ -354,6 +369,7 @@ def list_agents(
 @router.get(
     "/agents/{agent_id}",
     response_model=AgentOut,
+    responses=_AGENT_NOT_FOUND_RESPONSES,
     dependencies=[Depends(require_role("admin", "operator", "viewer"))],
 )
 def get_agent(
@@ -370,6 +386,7 @@ def get_agent(
 @router.put(
     "/agents/{agent_id}/config",
     response_model=AgentOut,
+    responses=_AGENT_NOT_FOUND_RESPONSES,
     dependencies=[Depends(require_role("admin", "operator"))],
 )
 def update_agent_config(
@@ -395,6 +412,7 @@ def update_agent_config(
 @router.delete(
     "/agents/{agent_id}",
     status_code=204,
+    responses=_AGENT_NOT_FOUND_RESPONSES,
     dependencies=[Depends(require_role("admin"))],
 )
 def retire_agent(
@@ -663,7 +681,7 @@ def _trigger_sse_vitals_publish(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/ingest", response_model=IngestResponse)
+@router.post("/ingest", responses=_AGENT_AUTH_RESPONSES)
 @rate_limit("60/minute")
 def ingest_snapshots(
     request: Request,
@@ -676,7 +694,7 @@ def ingest_snapshots(
     if body.agent_id != authenticated_agent_id:
         raise HTTPException(
             status_code=403,
-            detail="Token agent ID does not match request body agent_id",
+            detail=_AGENT_ID_MISMATCH_DETAIL,
         )
 
     agent = _lock_agent(db, body.agent_id)
@@ -775,7 +793,7 @@ def ingest_snapshots(
     return IngestResponse(accepted=accepted, deduplicated=deduplicated, errors=errors)
 
 
-@router.post("/heartbeat", response_model=HeartbeatResponse)
+@router.post("/heartbeat", responses=_AGENT_AUTH_RESPONSES)
 def heartbeat(
     body: HeartbeatRequest,
     db: Annotated[Session, Depends(get_db)],
@@ -785,7 +803,7 @@ def heartbeat(
     if body.agent_id != authenticated_agent_id:
         raise HTTPException(
             status_code=403,
-            detail="Token agent ID does not match request body agent_id",
+            detail=_AGENT_ID_MISMATCH_DETAIL,
         )
 
     agent = _lock_agent(db, body.agent_id)
@@ -854,7 +872,7 @@ def heartbeat(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/health", response_model=FleetHealthSummary)
+@router.get("/health")
 def fleet_health(db: Annotated[Session, Depends(get_db)]) -> FleetHealthSummary:
     """Aggregate live health across all agents (registry + orphan)."""
     fleet_state = build_fleet_state(db)
@@ -884,7 +902,7 @@ def fleet_health(db: Annotated[Session, Depends(get_db)]) -> FleetHealthSummary:
     )
 
 
-@router.get("/health/{host_code}", response_model=HostHealth)
+@router.get("/health/{host_code}", responses=_HOST_NOT_FOUND_RESPONSES)
 def host_health(
     host_code: str,
     db: Annotated[Session, Depends(get_db)],
@@ -944,7 +962,7 @@ def list_snapshots(
     agent_id: uuid.UUID | None = None,
     kind: str | None = None,
     since: str | None = None,
-    limit: int = Query(50, ge=1, le=500),
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> list[CollectorSnapshot]:
     stmt = select(CollectorSnapshot)
     if agent_id:
@@ -957,7 +975,7 @@ def list_snapshots(
     return db.scalars(stmt).all()  # type: ignore[return-value]
 
 
-@router.get("/snapshots/{snapshot_id}", response_model=SnapshotOut)
+@router.get("/snapshots/{snapshot_id}", response_model=SnapshotOut, responses=_SNAPSHOT_NOT_FOUND_RESPONSES)
 def get_snapshot(
     snapshot_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
@@ -989,7 +1007,6 @@ def get_snapshot_diff(
 
 @router.post(
     "/reports/generate",
-    response_model=ReportOut,
     status_code=201,
     dependencies=[Depends(require_role("admin", "operator"))],
 )
@@ -1034,11 +1051,11 @@ def generate_report(
     )
 
 
-@router.get("/reports", response_model=list[ReportOut])
+@router.get("/reports")
 def list_reports(
     db: Annotated[Session, Depends(get_db)],
     report_kind: str | None = None,
-    limit: int = Query(20, ge=1, le=100),
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[ReportOut]:
     stmt = select(EvidenceArtifact).where(
         EvidenceArtifact.metadata_jsonb["report_kind"].astext.isnot(None)
@@ -1060,7 +1077,7 @@ def list_reports(
     ]
 
 
-@router.get("/reports/latest/{report_kind}", response_model=ReportOut | None)
+@router.get("/reports/latest/{report_kind}")
 def get_latest_report(
     report_kind: str,
     db: Annotated[Session, Depends(get_db)],
@@ -1090,7 +1107,7 @@ def get_latest_report(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/workers/live", response_model=list[LiveWorkerStatus])
+@router.get("/workers/live")
 def live_workers(
     db: Annotated[Session, Depends(get_db)],
     host_code: str | None = None,

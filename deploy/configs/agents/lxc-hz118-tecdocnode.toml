@@ -1,0 +1,28 @@
+# Agent config: LXC 101 / tecdocnode (on hz.118 "proxmox2" STANDALONE)
+# Proxmox host: hz.118 (95.216.72.118 / 10.0.1.4)
+# Public IP: 95.216.125.170/32  gateway 95.216.125.161
+# SSH port: 22 (standard)
+# SSH alias: hz.118.lxc.101
+# Resources: Proxmox LXC container
+# Role: TecDoc Node.js application service
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "lxc-hz118-tecdocnode"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "service_health",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "network_state",
+    "certificate_state",
+    "security_posture",
+]

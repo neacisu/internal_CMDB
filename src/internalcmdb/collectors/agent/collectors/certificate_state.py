@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import socket
 import ssl
-from datetime import UTC, datetime
+from datetime import datetime, timezone as _tz
 from typing import Any
+
+UTC = _tz.utc  # datetime.UTC added in 3.11; polyfill for 3.8/3.10
 
 DEFAULT_ENDPOINTS: list[dict[str, Any]] = [
     {"host": "127.0.0.1", "port": 443},
@@ -31,7 +33,7 @@ def _verified_chain_depth(ssock: ssl.SSLSocket, has_der: bool) -> int:
         return 0
     try:
         verified = ssock.get_verified_chain()
-    except AttributeError, ValueError, ssl.SSLError:
+    except (AttributeError, ValueError, ssl.SSLError):
         return 1
     return len(verified) if verified else 1
 
@@ -88,18 +90,16 @@ def _check_cert(host: str, port: int = 443, timeout: float = 5.0) -> dict[str, A
     ctx.verify_mode = ssl.CERT_REQUIRED
 
     try:
-        with (
-            socket.create_connection((host, port), timeout=timeout) as sock,
-            ctx.wrap_socket(sock, server_hostname=host) as ssock,
-        ):
-            cert = ssock.getpeercert(binary_form=False)
-            der = ssock.getpeercert(binary_form=True)
-            chain_depth = _verified_chain_depth(ssock, bool(der))
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                cert = ssock.getpeercert(binary_form=False)
+                der = ssock.getpeercert(binary_form=True)
+                chain_depth = _verified_chain_depth(ssock, bool(der))
 
-            if not cert:
-                return _error_result(host, port, "no certificate returned")
+                if not cert:
+                    return _error_result(host, port, "no certificate returned")
 
-            return _build_cert_result(host, port, cert, chain_depth)
+                return _build_cert_result(host, port, cert, chain_depth)
     except ConnectionRefusedError:
         return _error_result(host, port, "connection_refused")
     except TimeoutError:

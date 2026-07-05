@@ -1,0 +1,28 @@
+# Agent config: LXC 100 / server.traktors.ro (on hz.118 "proxmox2" STANDALONE)
+# Proxmox host: hz.118 (95.216.72.118 / 10.0.1.4)
+# Public IP: 95.216.72.100/32  gateway 95.216.72.65
+# SSH port: 1321 (non-standard, anti-scan)
+# SSH alias: hz.118.lxc.100
+# Resources: Proxmox LXC container
+# Role: Application runtime host — traktors.ro web/backend
+
+[agent]
+api_url = "https://infraq.app/api/v1/collectors"
+host_code = "lxc-hz118-traktors"
+log_level = "INFO"
+verify_ssl = true
+
+[collectors]
+enabled = [
+    "heartbeat",
+    "system_vitals",
+    "service_health",
+    "disk_state",
+    "process_inventory",
+    "systemd_state",
+    "journal_errors",
+    "trust_surface_lite",
+    "network_state",
+    "certificate_state",
+    "security_posture",
+]

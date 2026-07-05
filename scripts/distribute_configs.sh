@@ -23,6 +23,10 @@ declare -A HOST_MAP=(
     [hz-113]="hz.113"
     [hz-62]="hz.62"
     [hz-118]="hz.118"
+    [lxc-hz118-traktors]="hz.118.lxc.100"
+    [lxc-hz118-tecdocnode]="hz.118.lxc.101"
+    [lxc-hz118-tecdocmysql]="hz.118.lxc.102"
+    [lxc-hz118-mediserver2]="hz.118.lxc.103"
     [hz-123]="hz.123"
     [hz-157]="hz.157"
     [hz-215]="hz.215"
@@ -57,8 +61,15 @@ distribute_to_host() {
     local local_hash
     local_hash=$(sha256sum "$config_file" | awk '{print $1}')
 
+    # Run sha256sum on the remote host; awk to extract the hash runs locally.
+    # REMOTE_CONFIG is passed as a discrete SSH argument — no double-quoted
+    # shell string — which eliminates the SC2029 client-side expansion warning.
     local remote_hash
-    remote_hash=$(ssh "$ssh_host" "sha256sum $REMOTE_CONFIG 2>/dev/null | awk '{print \$1}'" 2>/dev/null || echo "none")
+    if remote_hash_line=$(ssh "$ssh_host" sha256sum -- "$REMOTE_CONFIG" 2>/dev/null); then
+        remote_hash=$(awk '{print $1}' <<< "$remote_hash_line")
+    else
+        remote_hash="none"
+    fi
 
     if [[ "$local_hash" == "$remote_hash" ]]; then
         log "  ✓ Config unchanged on $ssh_host — skipping"
@@ -69,7 +80,8 @@ distribute_to_host() {
 
     # Backup existing remote config before overwrite
     if [[ "$remote_hash" != "none" ]]; then
-        ssh "$ssh_host" "cp $REMOTE_CONFIG ${REMOTE_CONFIG}.bak 2>/dev/null || true"
+        # Pass cp args directly — no shell-string quoting needed (SC2029 avoided).
+        ssh "$ssh_host" cp -- "$REMOTE_CONFIG" "${REMOTE_CONFIG}.bak" || true
         log "  → Backed up existing config on $ssh_host"
     fi
 

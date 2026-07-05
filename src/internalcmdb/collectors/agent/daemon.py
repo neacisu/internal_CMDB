@@ -11,12 +11,12 @@ import shlex
 import subprocess
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone as _tz
 from typing import Any
 
 import httpx
 
-from internalcmdb.collectors.schedule_tiers import TIERS
+from internalcmdb.collectors.schedule_tiers import TIERS  # type: ignore[import-untyped]
 
 from .collectors import (
     certificate_state,
@@ -40,6 +40,7 @@ from .collectors import (
     vllm_metrics,
 )
 
+UTC = _tz.utc  # datetime.UTC was added in 3.11; polyfill for 3.8/3.10
 logger = logging.getLogger("internalcmdb.agent")
 
 # Collector name → module mapping
@@ -272,7 +273,7 @@ class AgentDaemon:
             tier_code=tier_code,
             payload=payload,
             payload_hash=payload_hash,
-            collected_at=datetime.now(UTC).isoformat(),
+            collected_at=datetime.now(UTC).isoformat(),  # noqa: DTZ005
         )
 
         # Cache latest heartbeat vitals for the dedicated ping loop
@@ -299,7 +300,7 @@ class AgentDaemon:
         self._buffer = self._buffer[self.flush_batch_size :]
 
         url = f"{self.api_url}/ingest"
-        payload = {
+        payload: dict[str, Any] = {
             "agent_id": self.agent_id,
             "snapshots": [
                 {
@@ -348,7 +349,7 @@ class AgentDaemon:
                 continue
             vitals = self._latest_heartbeat
             url = f"{self.api_url}/heartbeat"
-            body = {
+            body: dict[str, Any] = {
                 "agent_id": self.agent_id,
                 "agent_version": self.agent_version,
                 "uptime_seconds": vitals.get("uptime_seconds", 0.0),
@@ -417,7 +418,7 @@ class AgentDaemon:
         """Parse, validate, and execute a received command."""
         try:
             cmd = json.loads(raw_message)
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             logger.warning("Invalid command JSON received")
             return
 
@@ -470,6 +471,7 @@ class AgentDaemon:
         # Execute command
         logger.info("Executing command %s: %s", command_id, command_type)
         t0 = time.monotonic()
+        result: dict[str, Any]
         try:
             payload["_subprocess_timeout"] = timeout
             async with asyncio.timeout(timeout + 5):

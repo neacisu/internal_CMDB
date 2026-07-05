@@ -24,6 +24,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 
+from internalcmdb.llm.client import (
+    _DEFAULT_EMBED_URL,
+    _DEFAULT_FAST_URL,
+    _DEFAULT_GUARD_URL,
+    _DEFAULT_REASONING_URL,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,7 +44,7 @@ _SETTINGS: list[tuple[str, str, object, str, str, bool, bool]] = [
     (
         "llm.reasoning.url",
         "llm",
-        "http://10.0.1.10:49001",
+        _DEFAULT_REASONING_URL,
         "url",
         "vLLM QwQ-32B-AWQ endpoint (HAProxy VIP)",
         False,
@@ -46,7 +53,7 @@ _SETTINGS: list[tuple[str, str, object, str, str, bool, bool]] = [
     (
         "llm.fast.url",
         "llm",
-        "http://10.0.1.10:49002",
+        _DEFAULT_FAST_URL,
         "url",
         "vLLM Qwen2.5-14B-AWQ endpoint (HAProxy VIP)",
         False,
@@ -55,7 +62,7 @@ _SETTINGS: list[tuple[str, str, object, str, str, bool, bool]] = [
     (
         "llm.embed.url",
         "llm",
-        "http://10.0.1.10:49003",
+        _DEFAULT_EMBED_URL,
         "url",
         "Ollama Qwen3-Embedding-8B endpoint",
         False,
@@ -64,7 +71,7 @@ _SETTINGS: list[tuple[str, str, object, str, str, bool, bool]] = [
     (
         "llm.guard.url",
         "llm",
-        "http://10.0.1.115:8000",
+        _DEFAULT_GUARD_URL,
         "url",
         "LLM Guard service endpoint (LXC 115)",
         False,

@@ -2,8 +2,8 @@
 
 | Câmp          | Valoare                              |
 |---------------|--------------------------------------|
-| Versiune      | 1.0.0                               |
-| Data          | 2026-03-22                           |
+| Versiune      | 1.1.0                               |
+| Data          | 2026-04-14                           |
 | Gateway       | https://infraq.app                   |
 | Prefix API    | /llm/v1                             |
 | Protocol      | HTTPS (TLS via Cloudflare)           |
@@ -19,8 +19,8 @@ Toate endpoint-urile au fost verificate live la data emiterii.
 
 ```json
 {
-  "schema_version": "1.0.0",
-  "generated_at": "2026-03-22T15:10:00Z",
+  "schema_version": "1.1.0",
+  "generated_at": "2026-04-14T00:00:00Z",
   "gateway": {
     "base_url": "https://infraq.app",
     "prefix": "/llm/v1",
@@ -37,15 +37,19 @@ Toate endpoint-urile au fost verificate live la data emiterii.
       "id": "reasoning",
       "model_id": "Qwen/QwQ-32B-AWQ",
       "base_url": "https://infraq.app/llm/v1/reasoning",
-      "role": "Complex reasoning, chain-of-thought, analysis",
+      "role": "Complex reasoning, chain-of-thought, analysis, tool calling",
       "engine": "vLLM",
       "engine_version": "0.16.0",
       "architecture": "Qwen2.5 (QwQ variant)",
       "parameters": "32B",
       "quantization": "AWQ (4-bit)",
       "max_model_len": 24576,
-      "gpu": "NVIDIA L40S 48GB",
+      "gpu": "NVIDIA RTX 6000 Ada Generation (49,140 MiB VRAM)",
+      "host": "hz.113 (10.0.1.13)",
       "vram_allocated_pct": 0.65,
+      "enforce_eager": true,
+      "tool_calling": true,
+      "tool_call_parser": "hermes",
       "streaming": true,
       "auth": null,
 
@@ -202,15 +206,19 @@ Toate endpoint-urile au fost verificate live la data emiterii.
       "id": "fast",
       "model_id": "Qwen/Qwen2.5-14B-Instruct-AWQ",
       "base_url": "https://infraq.app/llm/v1/fast",
-      "role": "Fast inference, classification, extraction, simple Q&A",
+      "role": "Fast inference, classification, extraction, simple Q&A, tool calling",
       "engine": "vLLM",
       "engine_version": "0.16.0",
       "architecture": "Qwen2.5",
       "parameters": "14B",
       "quantization": "AWQ (4-bit)",
       "max_model_len": 12288,
-      "gpu": "NVIDIA L40S 48GB (shared with reasoning)",
+      "gpu": "NVIDIA RTX 6000 Ada Generation (partajat cu reasoning)",
+      "host": "hz.113 (10.0.1.13)",
       "vram_allocated_pct": 0.28,
+      "enforce_eager": false,
+      "tool_calling": true,
+      "tool_call_parser": "hermes",
       "streaming": true,
       "auth": null,
 
@@ -342,8 +350,10 @@ Toate endpoint-urile au fost verificate live la data emiterii.
       "quantization": "Q5_K_M (GGUF)",
       "embedding_dimension": 4096,
       "context_length": 4096,
-      "gpu": "NVIDIA RTX 4060 Ti 16GB",
-      "vram_loaded": "6.4 GB",
+      "gpu": "NVIDIA GTX 1080 (8,192 MiB VRAM)",
+      "host": "hz.62 (10.0.1.62)",
+      "vram_loaded": "~5.1 GB",
+      "tool_calling": false,
       "streaming": false,
       "auth": null,
 
@@ -505,20 +515,39 @@ Toate endpoint-urile au fost verificate live la data emiterii.
   },
 
   "infrastructure": {
-    "cluster": "Hetzner bare-metal + cloud",
-    "ingress": "Traefik v3 (reverse proxy, TLS termination, path routing)",
+    "cluster": "Hetzner bare-metal",
+    "ingress": "Cloudflare → Traefik v3 (77.42.76.185) → HAProxy VIP (10.0.1.10)",
+    "haproxy": "hz.247, host process, maxconn 20000, /etc/haproxy/haproxy.cfg",
     "dns": "infraq.app (Cloudflare)",
-    "network": "Private vSwitch 10.0.1.0/24",
+    "network": "Private vSwitch VLAN 4000 — 10.0.1.0/24",
     "health_checks": "Traefik active health checks every 30s per service",
     "hosts": [
       {
-        "role": "gpu-node",
-        "services": ["vLLM reasoning", "vLLM fast", "Ollama embeddings"],
-        "gpu": "NVIDIA L40S 48GB + NVIDIA RTX 4060 Ti 16GB"
+        "hostname": "hz.113",
+        "ip_public": "49.13.97.113",
+        "ip_private": "10.0.1.13",
+        "role": "gpu-node-primary",
+        "services": ["vllm-qwq-32b (port 8001)", "vllm-qwen-14b (port 8002)"],
+        "gpu": "NVIDIA RTX 6000 Ada Generation, 49,140 MiB VRAM"
       },
       {
-        "role": "orchestrator",
-        "services": ["Traefik ingress", "LLM Guard", "PostgreSQL", "Redis"]
+        "hostname": "hz.62",
+        "ip_private": "10.0.1.62",
+        "role": "gpu-node-secondary",
+        "services": ["Ollama 0.17.7 (port 8003)"],
+        "gpu": "NVIDIA GTX 1080, 8,192 MiB VRAM"
+      },
+      {
+        "hostname": "lxc-llm-guard",
+        "ip_private": "10.0.1.115",
+        "role": "guardrails",
+        "services": ["LLM Guard (port 8000)"]
+      },
+      {
+        "hostname": "hz.247",
+        "ip_private": "10.0.1.10 (VIP)",
+        "role": "load-balancer",
+        "services": ["HAProxy host process"]
       }
     ]
   }
