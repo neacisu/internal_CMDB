@@ -71,27 +71,55 @@ def record_failed_attempt(ip: str, email: str) -> int:
         return 0
 
 
+def _redis_unavailable_for_lockout_check(exc: BaseException | None = None) -> bool:
+    """Return True when Redis cannot answer lockout queries (treat as not locked).
+
+    BusyLoadingError is transient (RDB/AOF reload) — must not block login.
+    Hard outages fail-closed only in production.
+    """
+    if exc is not None:
+        exc_name = type(exc).__name__
+        if exc_name in ("BusyLoadingError", "ConnectionError", "TimeoutError"):
+            return True
+    return False
+
+
 def is_locked_out(ip: str, email: str) -> bool:
     """Return True if the (ip, email) pair has exceeded the failure threshold.
 
-    Returns True (fail-closed) if Redis is unavailable in production.
-    In non-production, Redis errors fail open so auth remains usable offline.
+    Fail-closed when Redis is hard-down in production.  Transient loading/errors
+    fail open so legitimate users are not blocked during Redis recovery.
     """
+    from internalcmdb.config.secrets import is_production_env  # noqa: PLC0415
+
     client = _redis_client()
     if client is None:
-        logger.warning("Redis unavailable — treating ip=%s as locked out (fail-closed)", ip)
-        return True
+        if is_production_env():
+            logger.warning("Redis unavailable — treating ip=%s as locked out (fail-closed)", ip)
+            return True
+        logger.warning("Redis unavailable — lockout skipped ip=%s (dev fail-open)", ip)
+        return False
 
     try:
         raw = cast("str | None", client.get(_key(ip, email)))
         if raw is None:
             return False
         return int(raw) >= MAX_ATTEMPTS
-    except Exception:
-        logger.warning(
-            "Redis error — treating ip=%s as locked out (fail-closed)", ip, exc_info=True
-        )
-        return True
+    except Exception as exc:
+        if _redis_unavailable_for_lockout_check(exc):
+            logger.warning(
+                "Redis transient error (%s) — lockout skipped ip=%s",
+                type(exc).__name__,
+                ip,
+            )
+            return False
+        if is_production_env():
+            logger.warning(
+                "Redis error — treating ip=%s as locked out (fail-closed)", ip, exc_info=True
+            )
+            return True
+        logger.warning("Redis error — lockout skipped ip=%s (dev fail-open)", ip, exc_info=True)
+        return False
 
 
 def clear_lockout(ip: str, email: str) -> None:

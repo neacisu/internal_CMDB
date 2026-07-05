@@ -54,18 +54,34 @@ def revoke_token(jti: str, expires_at: datetime) -> None:
 def is_revoked(jti: str) -> bool:
     """Return True if *jti* has been revoked.
 
-    Returns True (fail-closed) if Redis is unavailable in production.
-    In non-production, Redis errors fail open so sessions remain usable offline.
+    Fail-closed when Redis is hard-down in production.  Transient loading errors
+    fail open so sessions remain usable during Redis recovery.
     """
+    from internalcmdb.config.secrets import is_production_env  # noqa: PLC0415
+
     client = _redis_client()
     if client is None:
-        logger.warning("Redis unavailable — treating jti=%s as revoked (fail-closed)", jti)
-        return True
+        if is_production_env():
+            logger.warning("Redis unavailable — treating jti=%s as revoked (fail-closed)", jti)
+            return True
+        logger.warning("Redis unavailable — revocation check skipped jti=%s (dev fail-open)", jti)
+        return False
 
     try:
         return bool(client.exists(f"{_PREFIX}{jti}"))
-    except Exception:
+    except Exception as exc:
+        exc_name = type(exc).__name__
+        if exc_name in ("BusyLoadingError", "ConnectionError", "TimeoutError"):
+            logger.warning(
+                "Redis transient error (%s) — revocation skipped jti=%s", exc_name, jti
+            )
+            return False
+        if is_production_env():
+            logger.warning(
+                "Redis error — treating jti=%s as revoked (fail-closed)", jti, exc_info=True
+            )
+            return True
         logger.warning(
-            "Redis error — treating jti=%s as revoked (fail-closed)", jti, exc_info=True
+            "Redis error — revocation check skipped jti=%s (dev fail-open)", jti, exc_info=True
         )
-        return True
+        return False

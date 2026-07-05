@@ -104,10 +104,24 @@ def test_is_locked_out_false_when_key_absent() -> None:
 
 
 def test_is_locked_out_fail_closed_when_redis_unavailable() -> None:
-    with patch("internalcmdb.auth.lockout._redis_client", return_value=None):
+    with (
+        patch("internalcmdb.auth.lockout._redis_client", return_value=None),
+        patch("internalcmdb.config.secrets.is_production_env", return_value=True),
+    ):
         from internalcmdb.auth.lockout import is_locked_out  # noqa: PLC0415
 
         assert is_locked_out(_TEST_CLIENT_IP, "alice@example.com") is True
+
+
+def test_is_locked_out_fail_open_on_busy_loading() -> None:
+    from redis.exceptions import BusyLoadingError
+
+    redis = MagicMock()
+    redis.get.side_effect = BusyLoadingError("loading")
+    with patch("internalcmdb.auth.lockout._redis_client", return_value=redis):
+        from internalcmdb.auth.lockout import is_locked_out  # noqa: PLC0415
+
+        assert is_locked_out(_TEST_CLIENT_IP, "alice@example.com") is False
 
 
 # ---------------------------------------------------------------------------
