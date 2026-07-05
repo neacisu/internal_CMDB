@@ -42,6 +42,8 @@ Single `litellm-gateway` container on **10.0.1.115:8001** (all VIPs share one pr
 
 ## Cerniq.app
 
+See **`docs/rollout/cerniq-llm-openrouter.md`** for Cerniq-specific verification.
+
 Base URLs unchanged: `https://infraq.app/llm/v1/{reasoning,fast,embeddings}`.  
 API key: `CERNIQ_APP_KEY` in OpenBao.
 

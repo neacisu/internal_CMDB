@@ -1,5 +1,7 @@
 # LLM-005 — Registru Portabil Modele Self-Hosted
 
+> **OpenRouter migration (2026-07-05):** Upstream models are served via LiteLLM → OpenRouter on lxc-llm-guard. Public manifest URLs and model aliases are unchanged; only backend routing differs. See `docs/rollout/llm-openrouter-status.md` and `docs/rollout/cerniq-llm-openrouter.md`.
+
 | Câmp          | Valoare                              |
 |---------------|--------------------------------------|
 | Versiune      | 1.1.0                               |
