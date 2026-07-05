@@ -19,12 +19,14 @@ CONFIG_DIR="$REPO_ROOT/deploy/configs/agents"
 REMOTE_AGENT_DIR="/opt/internalcmdb/agent"
 REMOTE_CONFIG_DIR="/etc/internalcmdb"
 DEFAULT_API_URL="https://infraq.app/api/v1/collectors"
+BOOTSTRAP_SECRET="${BOOTSTRAP_SECRET:-/run/secrets/bootstrap_enroll_token}"
+REMOTE_BOOTSTRAP="/etc/internalcmdb/bootstrap.token"
 
 # Host code → SSH alias mapping
 declare -A HOST_SSH=(
     [orchestrator]="orchestrator"
     [postgres-main]="postgres-main"
-    [imac]="imac"
+    [imac]="Alexs-iMac.local"
     [hz.62]="hz.62"
     [hz.113]="hz.113"
     [hz.118]="hz.118"
@@ -40,6 +42,12 @@ declare -A HOST_SSH=(
     [hz.247]="hz.247"
     [lxc-llm-guard]="lxc-llm-guard"
     [lxc-wapp-pro-app]="wapp-pro-app"
+    [lxc-postgres-main]="lxc-postgres-main"
+    [lxc-ci-worker]="lxc-ci-worker"
+    [lxc-neanelu-prod]="lxc-neanelu-prod"
+    [lxc-neanelu-staging]="lxc-neanelu-staging"
+    [lxc-prod-cerniq]="lxc-prod-cerniq"
+    [lxc-staging-cerniq]="lxc-staging-cerniq"
 )
 
 # Host code → config file name mapping (matches deploy/configs/agents/*.toml)
@@ -62,6 +70,12 @@ declare -A HOST_CONFIG=(
     [hz.247]="hz-247"
     [lxc-llm-guard]="lxc-llm-guard"
     [lxc-wapp-pro-app]="lxc-wapp-pro-app"
+    [lxc-postgres-main]="lxc-postgres-main"
+    [lxc-ci-worker]="lxc-ci-worker"
+    [lxc-neanelu-prod]="lxc-neanelu-prod"
+    [lxc-neanelu-staging]="lxc-neanelu-staging"
+    [lxc-prod-cerniq]="lxc-prod-cerniq"
+    [lxc-staging-cerniq]="lxc-staging-cerniq"
 )
 
 HOSTS=("${!HOST_SSH[@]}")
@@ -146,12 +160,31 @@ deploy_to_host() {
     # Copy the per-host TOML config
     scp "$config_file" "$ssh_host:$REMOTE_CONFIG_DIR/agent.toml"
 
-    # Install systemd unit
-    scp "$SYSTEMD_UNIT" "$ssh_host:/etc/systemd/system/internalcmdb-agent.service"
+    # Copy bootstrap enrollment token (required for enroll / re-enroll)
+    if [[ -f "$BOOTSTRAP_SECRET" ]]; then
+        scp "$BOOTSTRAP_SECRET" "$ssh_host:$REMOTE_BOOTSTRAP"
+        ssh "$ssh_host" "chmod 600 '$REMOTE_BOOTSTRAP'"
+        echo "  ✓ Bootstrap token deployed to $REMOTE_BOOTSTRAP"
+    else
+        echo "  WARN: $BOOTSTRAP_SECRET missing — agent enroll will fail until token is present" >&2
+    fi
 
-    # Determine which python binary the service unit uses
+    # Ensure log/credentials directory exists (under ReadWritePaths in systemd unit)
+    ssh "$ssh_host" "mkdir -p /var/log/internalcmdb && chmod 755 /var/log/internalcmdb"
+
+    # Install systemd unit (resolve python3 on remote)
+    scp "$SYSTEMD_UNIT" "$ssh_host:/etc/systemd/system/internalcmdb-agent.service"
+    ssh "$ssh_host" bash << 'REMOTE_UNIT'
+        py_bin="$(command -v python3 || true)"
+        if [[ -n "$py_bin" && -x "$py_bin" ]]; then
+            sed -i "s|^ExecStart=.*|ExecStart=${py_bin} -m internalcmdb.collectors.agent|" \
+                /etc/systemd/system/internalcmdb-agent.service
+        fi
+REMOTE_UNIT
+
+    # Determine which python binary the service unit uses (for httpx install)
     local py_bin
-    py_bin=$(grep '^ExecStart=' "$SYSTEMD_UNIT" | sed 's|ExecStart=\(/usr/[^ ]*\) .*|\1|')
+    py_bin=$(ssh "$ssh_host" "grep '^ExecStart=' /etc/systemd/system/internalcmdb-agent.service | sed 's|ExecStart=\([^ ]*\).*|\1|'")
     [[ -z "$py_bin" ]] && py_bin="python3"
 
     # Install httpx for the exact Python that will run the agent.

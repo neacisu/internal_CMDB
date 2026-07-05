@@ -1,0 +1,68 @@
+=== internalCMDB zero-trust baseline 20260705 ===
+Host: orchestrator.neanelu.ro
+Date: 2026-07-05T13:32:16+00:00
+
+=== Docker containers ===
+NAMES                         STATUS
+internalcmdb-worker           Up 37 minutes (healthy)
+internalcmdb-api              Up 37 minutes (healthy)
+internalcmdb-frontend         Up 43 minutes (healthy)
+sonarqube-mcp-2980404-20548   Up 4 hours
+alertmanager                  Up 4 hours
+internalcmdb-postgres         Up 5 hours (healthy)
+cloudbeaver-cloudbeaver-1     Up 10 hours
+postgres-exporter             Up 46 hours
+redis-exporter                Up 46 hours
+traefik                       Up 46 hours
+tempo                         Up 47 hours
+blackbox-exporter             Up 47 hours
+redis-shared                  Up 29 seconds
+vector                        Up 47 hours
+cadvisor                      Up 47 hours (healthy)
+stalwart                      Up 47 hours
+cloudbeaver-oauth2-proxy-1    Up 47 hours
+zitadel-zitadel-1             Up 47 hours
+openbao                       Up 47 hours
+watchtower                    Up 5 hours (healthy)
+
+=== ENV (api) ===
+internalcmdb-api not running
+
+=== Alembic ===
+0023
+
+=== Agent token stats ===
+DB query unavailable
+
+=== Bootstrap tokens ===
+bootstrap query unavailable
+
+=== Legacy HMAC count (5 min) ===
+1352
+
+=== TOML configs ===
+25
+
+=== SSH aliases ===
+hz.113
+hz.118
+hz.118.lxc.100
+hz.118.lxc.101
+hz.118.lxc.102
+hz.118.lxc.103
+hz.123
+hz.157
+hz.164
+hz.215
+hz.223
+hz.247
+hz.62
+lxc-ci-worker
+lxc-llm-guard
+lxc-neanelu-prod
+lxc-neanelu-staging
+lxc-postgres-main
+lxc-prod-cerniq
+lxc-staging-cerniq
+lxc-wapp-pro-app
+orchestrator

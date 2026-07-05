@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlparse, urlunparse
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,6 +30,8 @@ class Settings(BaseSettings):
 
     # Redis / ARQ — real credentials MUST come from .env or VAULT, never hardcoded
     redis_url: str = "redis://localhost:6379/0"
+    # When set, rewrites redis_url host/scheme for on-host redis-shared (orchestrator dev).
+    redis_local_host: str = ""
 
     # Security
     secret_key: str = "change_me_to_a_random_32_char_or_longer_value"
@@ -57,6 +60,31 @@ class Settings(BaseSettings):
     jwt_cookie_secure: bool = True
     jwt_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     jwt_cookie_httponly: bool = True
+
+    @model_validator(mode="after")
+    def apply_redis_local_host(self) -> Settings:
+        """Use plain TCP to on-host redis-shared when REDIS_LOCAL_HOST is configured."""
+        if not self.redis_local_host:
+            return self
+        parsed = urlparse(self.redis_url)
+        userinfo = ""
+        if parsed.username:
+            userinfo = parsed.username
+            if parsed.password:
+                userinfo = f"{userinfo}:{parsed.password}"
+            userinfo = f"{userinfo}@"
+        path = parsed.path or "/0"
+        self.redis_url = urlunparse(
+            (
+                "redis",
+                f"{userinfo}{self.redis_local_host}:6379",
+                path,
+                "",
+                "",
+                "",
+            )
+        )
+        return self
 
     @model_validator(mode="after")
     def reject_placeholder_secrets_in_production(self) -> Settings:

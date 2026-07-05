@@ -25,6 +25,9 @@ services:
     env_file: /opt/stacks/internalcmdb/.env
     environment:
       - LOG_LEVEL=DEBUG
+      - ALLOW_LEGACY_AGENT_HMAC=true
+      - REDIS_LOCAL_HOST=10.0.0.2
+      - POSTGRES_SSLMODE=prefer
       - CORS_ORIGINS=https://infraq.app,http://localhost:3333
       - PYTHONPATH=/app/src
       - PYTHONDONTWRITEBYTECODE=1
@@ -67,6 +70,8 @@ services:
       - PYTHONPATH=/app/src
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
+      - REDIS_LOCAL_HOST=10.0.0.2
+      - POSTGRES_SSLMODE=prefer
     # watchfiles reruns the worker process on any .py change in /app/src
     command: >
       python3 -m watchfiles

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PREFIX = "auth:lockout:"
+_PREFIX = "infraq:auth:lockout:"
 MAX_ATTEMPTS: int = 5
 WINDOW_SECONDS: int = 900  # 15 minutes
 
@@ -74,7 +74,8 @@ def record_failed_attempt(ip: str, email: str) -> int:
 def is_locked_out(ip: str, email: str) -> bool:
     """Return True if the (ip, email) pair has exceeded the failure threshold.
 
-    Returns True (fail-closed) if Redis is unavailable.
+    Returns True (fail-closed) if Redis is unavailable in production.
+    In non-production, Redis errors fail open so auth remains usable offline.
     """
     client = _redis_client()
     if client is None:

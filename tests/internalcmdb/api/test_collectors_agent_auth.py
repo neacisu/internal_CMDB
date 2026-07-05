@@ -129,3 +129,19 @@ def test_enroll_returns_random_token_and_caches() -> None:
     assert "api_token" in data
     assert len(data["api_token"]) >= 32
     cache_mock.assert_called_once()
+
+
+def test_verify_agent_token_rejects_legacy_when_flag_disabled(monkeypatch) -> None:
+    monkeypatch.delenv("ALLOW_LEGACY_AGENT_HMAC", raising=False)
+    agent = _make_agent(None)
+    agent.token_hash = None
+    db = MagicMock()
+    db.get.return_value = agent
+    with pytest.raises(HTTPException) as exc_info:
+        verify_agent_token(
+            authorization="Bearer legacy-token",
+            x_agent_id=str(_AGENT_ID),
+            db=db,
+        )
+    assert exc_info.value.status_code == 401
+    assert "re-enrollment" in exc_info.value.detail.lower()

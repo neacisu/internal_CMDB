@@ -20,8 +20,8 @@ services:
       - ./server.conf:/opt/spire/conf/server/server.conf:ro
     command: ["-config", "/opt/spire/conf/server/server.conf"]
     ports:
-      - "8080:8080"   # SPIRE Server API (registration)
-      - "8081:8081"   # SPIRE Bundle endpoint
+      - "18080:8080"   # SPIRE Server API (registration)
+      - "18081:8081"   # SPIRE Bundle endpoint
     networks:
       - spire
     healthcheck:

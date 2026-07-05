@@ -431,9 +431,11 @@ async def receive_command_result(
     command_id: str,
     result_payload: dict[str, Any],
     db: Annotated[AsyncSession, Depends(get_async_session)],
-    authenticated_agent_id: Annotated[uuid.UUID, Depends(verify_agent_token)],
+    authenticated_agent_id: Annotated[uuid.UUID | None, Depends(verify_agent_token)],
 ) -> dict[str, str]:
     """Receive command execution result from an agent callback."""
+    if authenticated_agent_id is None:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
     if str(authenticated_agent_id) != agent_id:
         raise HTTPException(status_code=403, detail="Token agent ID does not match URL agent_id")
     row = await db.execute(

@@ -631,3 +631,70 @@ class TestCmdDockerInspect:
             )
             result = asyncio.run(daemon._cmd_docker_inspect({"container": "myapp-container"}))
         assert result["exit_code"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap token + credentials persistence
+# ---------------------------------------------------------------------------
+
+
+class TestBootstrapAndCredentials:
+    def test_resolve_bootstrap_token_from_enrollment_token(self):
+        daemon = _make_daemon(enrollment_token="bootstrap-secret")
+        assert daemon._resolve_bootstrap_token() == "bootstrap-secret"
+
+    def test_resolve_bootstrap_token_from_file(self, tmp_path):
+        token_file = tmp_path / "bootstrap.token"
+        token_file.write_text("file-token\n", encoding="utf-8")
+        daemon = _make_daemon(bootstrap_token_path=str(token_file))
+        assert daemon._resolve_bootstrap_token() == "file-token"
+
+    def test_resolve_bootstrap_token_missing_raises(self):
+        daemon = _make_daemon(bootstrap_token_path="/nonexistent/bootstrap.token")
+        import pytest  # noqa: PLC0415
+
+        with pytest.raises(RuntimeError, match="Missing bootstrap"):
+            daemon._resolve_bootstrap_token()
+
+    def test_save_and_load_credentials(self, tmp_path):
+        creds = tmp_path / "credentials.json"
+        daemon = _make_daemon(
+            credentials_path=str(creds),
+            agent_id="agent-1",
+            api_token="tok-1",
+        )
+        daemon._save_credentials()
+        assert creds.exists()
+        assert oct(creds.stat().st_mode)[-3:] == "600"
+
+        fresh = _make_daemon(credentials_path=str(creds))
+        assert fresh._load_credentials() is True
+        assert fresh.agent_id == "agent-1"
+        assert fresh.api_token == "tok-1"
+
+    def test_enroll_sends_bootstrap_header(self):
+        import asyncio  # noqa: PLC0415
+
+        daemon = _make_daemon(enrollment_token="boot-123")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.json.return_value = {
+            "agent_id": "00000000-0000-0000-0000-000000000001",
+            "api_token": "new-token",
+            "schedule_tiers": {},
+            "enabled_collectors": ["heartbeat"],
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with patch.object(daemon, "_save_credentials"):
+                asyncio.run(daemon._enroll())
+
+        call_kwargs = mock_client.post.call_args.kwargs
+        assert call_kwargs["headers"]["X-Bootstrap-Token"] == "boot-123"
+        assert daemon.api_token == "new-token"

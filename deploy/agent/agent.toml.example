@@ -11,8 +11,15 @@ verify_ssl = true
 # Leave empty to use the system default CA store.
 # ca_bundle = "/etc/ssl/certs/internal-ca.pem"
 
-# Enrollment token (optional — used for initial registration)
-# enrollment_token = ""
+# Bootstrap enrollment token file (preferred — do NOT commit plaintext tokens).
+# Deploy via: scp /run/secrets/bootstrap_enroll_token host:/etc/internalcmdb/bootstrap.token
+bootstrap_token_path = "/etc/internalcmdb/bootstrap.token"
+
+# Persisted per-agent credentials written after successful enroll (mode 0600).
+credentials_path = "/var/log/internalcmdb/agent-credentials.json"
+
+# Optional: Redis URL for remote command channel (pub/sub).
+# redis_url = "redis://10.0.0.2:6379/0"
 
 # Override enabled collectors (empty = server-decided)
 # enabled_collectors = ["heartbeat", "system_vitals", "docker_state"]

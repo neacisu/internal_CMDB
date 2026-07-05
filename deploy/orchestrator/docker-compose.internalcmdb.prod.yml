@@ -84,6 +84,7 @@ services:
       - com.centurylinklabs.watchtower.enable=true
     environment:
       - ENV=production
+      - ALLOW_LEGACY_AGENT_HMAC=false
       - LOG_LEVEL=INFO
       - LOG_FORMAT=json
       - CORS_ORIGINS=https://infraq.app
@@ -141,6 +142,7 @@ services:
       - com.centurylinklabs.watchtower.enable=true
     environment:
       - ENV=production
+      - ALLOW_LEGACY_AGENT_HMAC=false
       - LOG_LEVEL=INFO
       - LOG_FORMAT=json
       - PYTHONPATH=/app/src
@@ -191,6 +193,7 @@ services:
       - com.centurylinklabs.watchtower.enable=true
     environment:
       - ENV=production
+      - ALLOW_LEGACY_AGENT_HMAC=false
       - LOG_LEVEL=INFO
       - LOG_FORMAT=json
       - PYTHONPATH=/app/src

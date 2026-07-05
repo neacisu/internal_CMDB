@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import shlex
 import subprocess
 import time
@@ -118,6 +119,8 @@ class AgentDaemon:
     api_token: str | None = None
     agent_version: str = "1.0.0"
     enrollment_token: str = ""
+    bootstrap_token_path: str = "/etc/internalcmdb/bootstrap.token"
+    credentials_path: str = "/var/log/internalcmdb/agent-credentials.json"
     log_level: str = "INFO"
     verify_ssl: bool = True
     ca_bundle: str | None = None
@@ -188,7 +191,11 @@ class AgentDaemon:
         logging.basicConfig(level=getattr(logging, self.log_level))
         logger.info("Agent starting for host %s", self.host_code)
 
-        await self._enroll()
+        if not self._load_credentials():
+            await self._enroll()
+        else:
+            logger.info("Loaded credentials for agent %s", self.agent_id)
+
         self._running = True
 
         tasks = [
@@ -200,10 +207,70 @@ class AgentDaemon:
             tasks.append(self._command_listener_loop())
         await asyncio.gather(*tasks)
 
+    def _resolve_bootstrap_token(self) -> str:
+        """Return bootstrap enrollment token from env, config, or file."""
+        env_token = os.environ.get("INTERNALCMDB_BOOTSTRAP_TOKEN", "").strip()
+        if env_token:
+            return env_token
+        if self.enrollment_token.strip():
+            return self.enrollment_token.strip()
+        path = self.bootstrap_token_path
+        if path and os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                token = f.read().strip()
+            if token:
+                return token
+        raise RuntimeError(
+            "Missing bootstrap enrollment token — set INTERNALCMDB_BOOTSTRAP_TOKEN, "
+            "enrollment_token in agent.toml, or create "
+            f"{self.bootstrap_token_path} (mode 0600)"
+        )
+
+    def _load_credentials(self) -> bool:
+        """Load persisted agent_id and api_token; return True if both present."""
+        path = self.credentials_path
+        if not path or not os.path.isfile(path):
+            return False
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Could not read credentials from %s", path)
+            return False
+        agent_id = data.get("agent_id")
+        api_token = data.get("api_token")
+        if not agent_id or not api_token:
+            return False
+        self.agent_id = str(agent_id)
+        self.api_token = str(api_token)
+        return True
+
+    def _save_credentials(self) -> None:
+        """Persist agent_id and api_token atomically."""
+        if not self.agent_id or not self.api_token:
+            return
+        path = self.credentials_path
+        directory = os.path.dirname(path) or "."
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        payload = {
+            "agent_id": self.agent_id,
+            "api_token": self.api_token,
+            "enrolled_at": datetime.now(UTC).isoformat(),
+            "host_code": self.host_code,
+        }
+        tmp_path = f"{path}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+            f.write("\n")
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, path)
+
     async def _enroll(self) -> None:
         """Register with the control plane."""
+        bootstrap_token = self._resolve_bootstrap_token()
         url = f"{self.api_url}/enroll"
         capabilities = list(COLLECTOR_MODULES.keys())
+        headers = {"X-Bootstrap-Token": bootstrap_token}
 
         async with httpx.AsyncClient(timeout=30, verify=self._ssl_verify) as client:
             resp = await client.post(
@@ -213,7 +280,12 @@ class AgentDaemon:
                     "agent_version": self.agent_version,
                     "capabilities": capabilities,
                 },
+                headers=headers,
             )
+            if resp.status_code == 401:
+                raise RuntimeError(
+                    f"Enrollment rejected (401): {resp.text} — check bootstrap token"
+                )
             resp.raise_for_status()
             data = resp.json()
 
@@ -221,8 +293,17 @@ class AgentDaemon:
         self.api_token = data["api_token"]
         self._schedule = data.get("schedule_tiers", {})
         self._enabled_collectors = data.get("enabled_collectors", capabilities)
+        self._save_credentials()
 
         logger.info("Enrolled as agent %s", self.agent_id)
+
+    async def _re_enroll_if_unauthorized(self, status_code: int) -> bool:
+        """Re-enroll when API returns 401; return True if re-enrolled."""
+        if status_code != 401:
+            return False
+        logger.warning("API returned 401 — re-enrolling agent %s", self.agent_id)
+        await self._enroll()
+        return True
 
     async def _collection_loop(self) -> None:
         """Run collectors at their configured intervals."""
@@ -324,6 +405,8 @@ class AgentDaemon:
                         data.get("accepted", 0),
                         data.get("deduplicated", 0),
                     )
+                elif resp.status_code == 401 and await self._re_enroll_if_unauthorized(401):
+                    self._buffer = batch + self._buffer
                 else:
                     logger.warning(
                         "Ingest returned %d, re-buffering %d items",
@@ -359,7 +442,9 @@ class AgentDaemon:
             try:
                 async with httpx.AsyncClient(timeout=10, verify=self._ssl_verify) as client:
                     resp = await client.post(url, json=body, headers=headers)
-                    if resp.status_code != 200:  # noqa: PLR2004
+                    if resp.status_code == 401:
+                        await self._re_enroll_if_unauthorized(401)
+                    elif resp.status_code != 200:  # noqa: PLR2004
                         logger.debug("Heartbeat ping returned %d", resp.status_code)
             except httpx.HTTPError:
                 logger.debug("Heartbeat ping failed — API unreachable")

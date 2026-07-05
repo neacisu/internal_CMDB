@@ -34,6 +34,14 @@ declare -A HOST_MAP=(
     [hz-247]="hz.247"
     [proxmox]="hz.164"
     [lxc]="hz.164"
+    [lxc-llm-guard]="lxc-llm-guard"
+    [lxc-wapp-pro-app]="wapp-pro-app"
+    [lxc-postgres-main]="lxc-postgres-main"
+    [lxc-ci-worker]="lxc-ci-worker"
+    [lxc-neanelu-prod]="lxc-neanelu-prod"
+    [lxc-neanelu-staging]="lxc-neanelu-staging"
+    [lxc-prod-cerniq]="lxc-prod-cerniq"
+    [lxc-staging-cerniq]="lxc-staging-cerniq"
 )
 
 log() { echo "[$(date -Iseconds)] $*"; }

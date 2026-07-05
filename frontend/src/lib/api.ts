@@ -11,9 +11,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (res.status === 401) {
-    // Session expired or revoked — redirect to login (SSR guard: only in browser)
+    // Session expired or revoked — redirect to login (skip if already there)
     if (globalThis.window !== undefined) {
-      globalThis.window.location.href = "/login";
+      const path = globalThis.window.location.pathname;
+      if (!path.startsWith("/login")) {
+        globalThis.window.location.href = "/login";
+      }
     }
     throw new Error("API 401: Authentication required");
   }

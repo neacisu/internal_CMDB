@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
+import os
 import re
 import time
 import uuid
@@ -66,6 +68,7 @@ logger = logging.getLogger(__name__)
 
 _AGENT_NOT_FOUND_DETAIL = "Agent not found"
 _AGENT_ID_MISMATCH_DETAIL = "Token agent ID does not match request body agent_id"
+_MISSING_AUTH_DETAIL = "Missing Authorization header"
 _DISK_HEAL_THRESHOLD_PCT = 85
 _MAX_SNAPSHOT_PAYLOAD_BYTES = 512 * 1024  # 512 KiB
 _ALLOWED_SNAPSHOT_KINDS: frozenset[str] = frozenset(
@@ -209,16 +212,29 @@ def _validate_bootstrap_token(db: Session, bootstrap_token: str | None) -> None:
         raise HTTPException(status_code=401, detail="Invalid bootstrap token")
 
 
+def _legacy_hmac_allowed() -> bool:
+    """Temporary grace for pre-enrollment fleet; disabled by default."""
+    return os.environ.get("ALLOW_LEGACY_AGENT_HMAC", "false").lower() in ("1", "true", "yes")
+
+
 def verify_agent_token(
     authorization: Annotated[str | None, Header()] = None,
     x_agent_id: Annotated[str | None, Header()] = None,
     db: Annotated[Session, Depends(get_db)] = None,  # noqa: B008
-) -> uuid.UUID:
-    """Validate per-agent bearer token against the stored token hash."""
+) -> uuid.UUID | None:
+    """Validate per-agent bearer token against the stored token hash.
+
+    Returns ``None`` when no auth headers are present (legacy agent);
+    the handler decides via :func:`_authorize_agent_request` whether the
+    legacy grace path applies.
+    """
+    if not x_agent_id and not authorization:
+        return None
+
     if not x_agent_id:
         raise HTTPException(status_code=401, detail="Missing X-Agent-ID header")
     if not authorization:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
+        raise HTTPException(status_code=401, detail=_MISSING_AUTH_DETAIL)
 
     try:
         agent_id = uuid.UUID(x_agent_id)
@@ -232,10 +248,60 @@ def verify_agent_token(
     agent = db.get(CollectorAgent, agent_id)
     if agent is None or not agent.is_active:
         raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
-    if not agent.token_hash or not verify_agent_token_hash(token, agent.token_hash):
+
+    if agent.token_hash:
+        if not verify_agent_token_hash(token, agent.token_hash):
+            raise HTTPException(status_code=401, detail="Invalid agent token")
+        return agent_id
+
+    if not _legacy_hmac_allowed():
+        raise HTTPException(status_code=401, detail="Agent requires re-enrollment")
+
+    # Legacy fleet: agents enrolled before per-agent tokens authenticate with
+    # HMAC-SHA256(secret_key, agent_id).  Accepted only while ALLOW_LEGACY_AGENT_HMAC=true.
+    expected_legacy = hmac.new(
+        get_settings().secret_key.encode(), str(agent_id).encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(token, expected_legacy):
         raise HTTPException(status_code=401, detail="Invalid agent token")
 
+    logger.info("Legacy HMAC agent %s authenticated (pending token re-enrollment)", agent_id)
     return agent_id
+
+
+def _authorize_agent_request(
+    db: Session,
+    body_agent_id: uuid.UUID,
+    authenticated_agent_id: uuid.UUID | None,
+) -> None:
+    """Enforce agent identity for telemetry endpoints.
+
+    Token-authenticated agents must match the body agent_id.  Legacy agents
+    (no auth headers) are accepted only outside production and only while
+    they have no token provisioned (token_hash IS NULL) — a temporary grace
+    path until the fleet is re-enrolled with bootstrap tokens.
+    """
+    if authenticated_agent_id is not None:
+        if body_agent_id != authenticated_agent_id:
+            raise HTTPException(status_code=403, detail=_AGENT_ID_MISMATCH_DETAIL)
+        return
+
+    from internalcmdb.config.secrets import is_production_env  # noqa: PLC0415
+
+    if is_production_env():
+        raise HTTPException(status_code=401, detail=_MISSING_AUTH_DETAIL)
+
+    agent = db.get(CollectorAgent, body_agent_id)
+    if agent is None or not agent.is_active:
+        raise HTTPException(status_code=404, detail=_AGENT_NOT_FOUND_DETAIL)
+    if agent.token_hash:
+        # Agent has a token provisioned — unauthenticated requests are refused.
+        raise HTTPException(status_code=401, detail=_MISSING_AUTH_DETAIL)
+
+    logger.warning(
+        "Legacy agent %s accepted without token (grace mode, pending re-enrollment)",
+        body_agent_id,
+    )
 
 
 def _lock_agent(db: Session, agent_id: uuid.UUID) -> CollectorAgent | None:
@@ -804,15 +870,11 @@ def ingest_snapshots(
     request: Request,
     body: IngestRequest,
     db: Annotated[Session, Depends(get_db)],
-    authenticated_agent_id: Annotated[uuid.UUID, Depends(verify_agent_token)],
+    authenticated_agent_id: Annotated[uuid.UUID | None, Depends(verify_agent_token)],
     background_tasks: BackgroundTasks = BackgroundTasks(),  # noqa: B008
 ) -> IngestResponse:
     """Receive a batch of snapshots from an agent."""
-    if body.agent_id != authenticated_agent_id:
-        raise HTTPException(
-            status_code=403,
-            detail=_AGENT_ID_MISMATCH_DETAIL,
-        )
+    _authorize_agent_request(db, body.agent_id, authenticated_agent_id)
 
     agent = _lock_agent(db, body.agent_id)
     if agent is None:
@@ -858,14 +920,10 @@ def ingest_snapshots(
 def heartbeat(
     body: HeartbeatRequest,
     db: Annotated[Session, Depends(get_db)],
-    authenticated_agent_id: Annotated[uuid.UUID, Depends(verify_agent_token)],
+    authenticated_agent_id: Annotated[uuid.UUID | None, Depends(verify_agent_token)],
 ) -> HeartbeatResponse:
     """Lightweight keep-alive from an agent."""
-    if body.agent_id != authenticated_agent_id:
-        raise HTTPException(
-            status_code=403,
-            detail=_AGENT_ID_MISMATCH_DETAIL,
-        )
+    _authorize_agent_request(db, body.agent_id, authenticated_agent_id)
 
     agent = _lock_agent(db, body.agent_id)
     if agent is None:

@@ -494,7 +494,9 @@ async def _sse_vitals_initial_snapshot() -> list[dict]:
                 )
                 mem_total_gb = round(mem_total / (1024 * 1024), 1) if mem_total else None
 
-                containers_total, containers_running = _parse_vital_docker(docker_payload)
+                containers_total, containers_running, containers_healthy, containers_unhealthy = (
+                    _parse_vital_docker(docker_payload)
+                )
 
                 rows.append(
                     {
@@ -511,6 +513,8 @@ async def _sse_vitals_initial_snapshot() -> list[dict]:
                         "disk_root_pct": _parse_vital_disk(disk_payload),
                         "containers_running": containers_running,
                         "containers_total": containers_total,
+                        "containers_healthy": containers_healthy,
+                        "containers_unhealthy": containers_unhealthy,
                         "gpu_pct": _parse_vital_gpu(gpu_payload),
                         "vitals_at": str(sv_first[1]) if sv_first else None,
                     }

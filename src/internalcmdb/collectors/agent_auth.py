@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_TOKEN_PREFIX = "agent:token:"
+_TOKEN_PREFIX = "infraq:agent:token:"
 _BOOTSTRAP_PREFIX = "discovery:bootstrap:"
 
 

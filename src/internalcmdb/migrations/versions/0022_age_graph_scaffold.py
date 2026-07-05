@@ -43,6 +43,8 @@ def upgrade() -> None:
                     RAISE NOTICE 'AGE extension skipped: insufficient privileges';
                 WHEN undefined_file THEN
                     RAISE NOTICE 'AGE extension skipped: not installed on this PostgreSQL';
+                WHEN feature_not_supported THEN
+                    RAISE NOTICE 'AGE extension skipped: not available on this PostgreSQL';
             END $$;
             """
         )

@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import Sidebar from "./sidebar";
 import Topbar from "./topbar";
 import { type ReactNode } from "react";
+import { FleetVitalsProvider } from "@/lib/fleet-vitals-context";
 
 const AUTH_PATHS = ["/login"];
 
@@ -34,29 +35,31 @@ export default function ConditionalLayout({ children }: Readonly<{ children: Rea
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        height: "100dvh",
-        overflow: "hidden",
-        background: "var(--sl0)",
-      }}
-    >
-      <Sidebar />
+    <FleetVitalsProvider>
       <div
         style={{
-          flex: 1,
           display: "flex",
-          flexDirection: "column",
+          height: "100dvh",
           overflow: "hidden",
-          minWidth: 0,
+          background: "var(--sl0)",
         }}
       >
-        <Topbar />
-        <main style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-          {children}
-        </main>
+        <Sidebar />
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            minWidth: 0,
+          }}
+        >
+          <Topbar />
+          <main style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </FleetVitalsProvider>
   );
 }

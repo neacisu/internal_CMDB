@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PREFIX = "auth:revoked:"
+_PREFIX = "infraq:auth:revoked:"
 
 
 def _redis_client() -> Redis | None:
@@ -54,7 +54,8 @@ def revoke_token(jti: str, expires_at: datetime) -> None:
 def is_revoked(jti: str) -> bool:
     """Return True if *jti* has been revoked.
 
-    Returns True (fail-closed) if Redis is unavailable.
+    Returns True (fail-closed) if Redis is unavailable in production.
+    In non-production, Redis errors fail open so sessions remain usable offline.
     """
     client = _redis_client()
     if client is None:
@@ -64,5 +65,7 @@ def is_revoked(jti: str) -> bool:
     try:
         return bool(client.exists(f"{_PREFIX}{jti}"))
     except Exception:
-        logger.warning("Redis error — treating jti=%s as revoked (fail-closed)", jti, exc_info=True)
+        logger.warning(
+            "Redis error — treating jti=%s as revoked (fail-closed)", jti, exc_info=True
+        )
         return True

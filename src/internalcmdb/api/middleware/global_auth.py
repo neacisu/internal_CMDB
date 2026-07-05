@@ -18,6 +18,7 @@ from starlette.responses import JSONResponse, Response
 
 from internalcmdb.auth.revocation import is_revoked
 from internalcmdb.auth.security import decode_access_token
+from internalcmdb.auth.spiffe import SpiffeJwtValidator
 
 from .rbac import AUTH_DEV_MODE
 
@@ -59,6 +60,24 @@ _PASSWORD_CHANGE_ALLOWED: frozenset[str] = frozenset(
 
 def _is_agent_hmac_path(path: str) -> bool:
     return any(pattern.match(path) for pattern in _AGENT_HMAC_PATHS)
+
+
+async def _spiffe_gate(request: Request) -> Response | None:
+    """Fail-closed SPIFFE check for collector agent paths when enabled."""
+    if not SpiffeJwtValidator.is_enabled():
+        return None
+    if not _is_agent_hmac_path(request.url.path):
+        return None
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"detail": "SPIFFE auth required"})
+    validator = SpiffeJwtValidator()
+    try:
+        await validator.validate(auth)
+    except Exception as exc:
+        logger.warning("SPIFFE validation failed: %s", exc)
+        return JSONResponse(status_code=401, content={"detail": "Invalid SPIFFE credentials"})
+    return None
 
 
 def _extract_token(request: Request) -> str | None:
@@ -115,6 +134,9 @@ class GlobalAuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         if path in _UNAUTH_PATHS or _is_agent_hmac_path(path):
+            spiffe_response = await _spiffe_gate(request)
+            if spiffe_response is not None:
+                return spiffe_response
             return await call_next(request)
 
         if AUTH_DEV_MODE:

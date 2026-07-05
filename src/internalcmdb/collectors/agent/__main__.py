@@ -68,6 +68,22 @@ def main() -> None:
         )
         or None
     )
+    enrollment_token = os.environ.get(
+        "INTERNALCMDB_BOOTSTRAP_TOKEN",
+        str(agent_conf.get("enrollment_token", "")),
+    )
+    bootstrap_token_path = os.environ.get(
+        "AGENT_BOOTSTRAP_TOKEN_PATH",
+        str(agent_conf.get("bootstrap_token_path", "/etc/internalcmdb/bootstrap.token")),
+    )
+    credentials_path = os.environ.get(
+        "AGENT_CREDENTIALS_PATH",
+        str(agent_conf.get("credentials_path", "/var/log/internalcmdb/agent-credentials.json")),
+    )
+    redis_url = os.environ.get(
+        "AGENT_REDIS_URL",
+        str(agent_conf.get("redis_url", "")),
+    )
 
     if not api_url.startswith("https://"):
         import sys  # noqa: PLC0415
@@ -83,6 +99,10 @@ def main() -> None:
         log_level=str(log_level),
         verify_ssl=verify_ssl,
         ca_bundle=ca_bundle,
+        enrollment_token=str(enrollment_token),
+        bootstrap_token_path=str(bootstrap_token_path),
+        credentials_path=str(credentials_path),
+        redis_url=str(redis_url),
     )
 
     _pending_tasks: set[asyncio.Task[Any]] = set()
