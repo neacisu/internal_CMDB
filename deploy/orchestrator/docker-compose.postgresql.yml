@@ -16,9 +16,15 @@
 
 services:
   internalcmdb-postgres:
-    image: postgres:17-alpine
+    # Local image: postgres:17-alpine + pgvector compiled in (Dockerfile.postgres,
+    # kept next to this compose on the orchestrator). Watchtower must not touch it —
+    # the 2026-07 auto-update to a plain postgres:17-alpine wiped the manually
+    # installed pgvector library.
+    image: internalcmdb-postgres:17-alpine-pgvector
     container_name: internalcmdb-postgres
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
     environment:
       POSTGRES_DB:       ${POSTGRES_DB:-internalCMDB}
       POSTGRES_USER:     ${POSTGRES_USER:-internalcmdb}

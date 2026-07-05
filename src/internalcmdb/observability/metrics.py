@@ -67,6 +67,18 @@ COLLECTOR_INGEST_TOTAL = Counter(
     labelnames=["host", "kind"],
 )
 
+# Grafana dashboard (cmdb-api.json) expects these metric names for dedup ratio panel.
+COLLECTOR_SNAPSHOTS_INGESTED_TOTAL = Counter(
+    "internalcmdb_collector_snapshots_ingested_total",
+    "Total collector snapshots stored in the database",
+)
+
+COLLECTOR_SNAPSHOTS_DEDUP_TOTAL = Counter(
+    "internalcmdb_collector_snapshots_dedup_total",
+    "Collector snapshots skipped (hash dedup or heartbeat throttle)",
+    labelnames=["reason"],
+)
+
 # ---------------------------------------------------------------------------
 # Health score
 # ---------------------------------------------------------------------------

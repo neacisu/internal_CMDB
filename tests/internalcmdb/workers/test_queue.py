@@ -65,6 +65,14 @@ class TestWorkerSettings:
         assert ws.cron_jobs is not None
         assert len(ws.cron_jobs) >= 1
 
+    def test_worker_settings_retention_cron_scheduled(self):
+        ws = self._get_worker_settings()
+        retention_crons = [c for c in ws.cron_jobs if c.name.endswith("data_retention_job")]
+        assert len(retention_crons) == 1
+        assert retention_crons[0].hour == {3}
+        assert retention_crons[0].minute == {30}
+        assert retention_crons[0].timeout_s == 3600
+
 
 # ---------------------------------------------------------------------------
 # _health_check

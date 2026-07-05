@@ -1,0 +1,25 @@
+# internalCMDB — PostgreSQL 17 (Alpine) with pgvector compiled in.
+#
+# The plain postgres:17-alpine image has no pgvector; the extension used to be
+# installed manually inside the running container and was silently lost when
+# Watchtower pulled a new image (2026-07). Baking it into a locally built image
+# makes the container reproducible and immune to base-image auto-updates.
+#
+# Build:  docker build -f Dockerfile.postgres -t internalcmdb-postgres:17-alpine-pgvector .
+ARG PG_IMAGE=postgres:17-alpine
+ARG PGVECTOR_VERSION=v0.8.1
+
+FROM ${PG_IMAGE} AS pgvector-builder
+ARG PGVECTOR_VERSION
+# with_llvm=no skips JIT bitcode (image ships no clang-21; JIT inlining for
+# vector ops is a negligible loss for this workload).
+RUN apk add --no-cache build-base git \
+    && git clone --branch ${PGVECTOR_VERSION} --depth 1 \
+         https://github.com/pgvector/pgvector.git /tmp/pgvector \
+    && cd /tmp/pgvector \
+    && make OPTFLAGS="" with_llvm=no \
+    && make install with_llvm=no
+
+FROM ${PG_IMAGE}
+COPY --from=pgvector-builder /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/vector.so
+COPY --from=pgvector-builder /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/

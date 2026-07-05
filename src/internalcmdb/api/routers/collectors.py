@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -74,6 +75,82 @@ class SnapshotData:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+_HEARTBEAT_INTERVAL_CACHE: dict[str, Any] = {"value": 60, "expires_at": 0.0}
+
+
+def _get_heartbeat_snapshot_interval_seconds(db: Session) -> int:
+    """Read collectors.heartbeat_snapshot_interval_seconds with a 60s module cache."""
+    now = time.monotonic()
+    if now < _HEARTBEAT_INTERVAL_CACHE["expires_at"]:
+        return int(_HEARTBEAT_INTERVAL_CACHE["value"])
+
+    raw = db.scalar(
+        text(
+            "SELECT value_jsonb FROM config.app_setting "
+            "WHERE setting_key = 'collectors.heartbeat_snapshot_interval_seconds'"
+        )
+    )
+    try:
+        val = int(raw) if raw is not None else 60
+    except (TypeError, ValueError):
+        val = 60
+    if val < 0:
+        val = 0
+
+    _HEARTBEAT_INTERVAL_CACHE["value"] = val
+    _HEARTBEAT_INTERVAL_CACHE["expires_at"] = now + 60.0
+    return val
+
+
+def _should_store_heartbeat_snapshot(
+    db: Session,
+    agent_id: uuid.UUID,
+    interval_seconds: int,
+) -> bool:
+    """Return True when a new heartbeat snapshot row should be inserted."""
+    if interval_seconds == 0:
+        return True
+
+    recent = db.scalar(
+        text(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM discovery.collector_snapshot"
+            "  WHERE agent_id = :agent_id"
+            "    AND snapshot_kind = 'heartbeat'"
+            "    AND collected_at > now() - make_interval(secs => :secs)"
+            ")"
+        ),
+        {"agent_id": agent_id, "secs": interval_seconds},
+    )
+    return not bool(recent)
+
+
+def _inc_dedup_metric(reason: str) -> None:
+    """Increment the Prometheus dedup counter (best-effort)."""
+    try:
+        from internalcmdb.observability.metrics import (  # noqa: PLC0415
+            COLLECTOR_SNAPSHOTS_DEDUP_TOTAL,
+        )
+
+        COLLECTOR_SNAPSHOTS_DEDUP_TOTAL.labels(reason=reason).inc()
+    except Exception:
+        logger.debug("Dedup metrics counter unavailable", exc_info=True)
+
+
+def _inc_ingested_metric(count: int = 1) -> None:
+    """Increment the Prometheus stored-snapshots counter (best-effort)."""
+    if count <= 0:
+        return
+    try:
+        from internalcmdb.observability.metrics import (  # noqa: PLC0415
+            COLLECTOR_SNAPSHOTS_INGESTED_TOTAL,
+        )
+
+        COLLECTOR_SNAPSHOTS_INGESTED_TOTAL.inc(count)
+    except Exception:
+        logger.debug("Ingest metrics counter unavailable", exc_info=True)
 
 
 def _generate_agent_token(agent_id: uuid.UUID, secret: str) -> str:
@@ -609,8 +686,20 @@ def ingest_snapshots(
     accepted = 0
     deduplicated = 0
     errors: list[str] = []
+    heartbeat_interval = _get_heartbeat_snapshot_interval_seconds(db)
 
     for item in body.snapshots:
+        # Heartbeat snapshots are throttled server-side: payloads always differ
+        # (uptime/load), so hash dedup never applies. _insert_snapshot_safe
+        # flushes inserts, so a heartbeat stored earlier in this batch is
+        # visible to the EXISTS check and throttles the rest of the batch.
+        if item.snapshot_kind == "heartbeat" and not _should_store_heartbeat_snapshot(
+            db, body.agent_id, heartbeat_interval
+        ):
+            deduplicated += 1
+            _inc_dedup_metric("throttle")
+            continue
+
         existing = db.execute(
             select(CollectorSnapshot.snapshot_id)
             .where(
@@ -624,6 +713,7 @@ def ingest_snapshots(
 
         if existing:
             deduplicated += 1
+            _inc_dedup_metric("hash")
             continue
 
         snapshot = _insert_snapshot_safe(
@@ -669,6 +759,7 @@ def ingest_snapshots(
     agent.status = "online"
     db.commit()
 
+    _inc_ingested_metric(accepted)
     try:
         from internalcmdb.observability.metrics import COLLECTOR_INGEST_TOTAL  # noqa: PLC0415
 
@@ -713,29 +804,36 @@ def heartbeat(
     payload_bytes = str(sorted(payload.items())).encode()
     payload_hash = hashlib.sha256(payload_bytes).hexdigest()
 
-    existing = db.execute(
-        select(CollectorSnapshot.snapshot_id)
-        .where(
-            CollectorSnapshot.agent_id == body.agent_id,
-            CollectorSnapshot.snapshot_kind == "heartbeat",
-            CollectorSnapshot.payload_hash == payload_hash,
-        )
-        .order_by(CollectorSnapshot.collected_at.desc())
-        .limit(1)
-    ).first()
+    interval_seconds = _get_heartbeat_snapshot_interval_seconds(db)
+    store_snapshot = _should_store_heartbeat_snapshot(db, body.agent_id, interval_seconds)
 
-    if not existing:
-        _insert_snapshot_safe(
-            db,
-            body.agent_id,
-            SnapshotData(
-                snapshot_kind="heartbeat",
-                payload_jsonb=payload,
-                payload_hash=payload_hash,
-                collected_at=str(datetime.now(UTC)),
-                tier_code="5s",
-            ),
-        )
+    if store_snapshot:
+        existing = db.execute(
+            select(CollectorSnapshot.snapshot_id)
+            .where(
+                CollectorSnapshot.agent_id == body.agent_id,
+                CollectorSnapshot.snapshot_kind == "heartbeat",
+                CollectorSnapshot.payload_hash == payload_hash,
+            )
+            .order_by(CollectorSnapshot.collected_at.desc())
+            .limit(1)
+        ).first()
+
+        if not existing:
+            _insert_snapshot_safe(
+                db,
+                body.agent_id,
+                SnapshotData(
+                    snapshot_kind="heartbeat",
+                    payload_jsonb=payload,
+                    payload_hash=payload_hash,
+                    collected_at=str(datetime.now(UTC)),
+                    tier_code="5s",
+                ),
+            )
+            _inc_ingested_metric()
+    else:
+        _inc_dedup_metric("throttle")
 
     db.commit()
 

@@ -26,6 +26,8 @@ _MAX_JOBS = 10
 _JOB_TIMEOUT_S = 600
 _MAX_TRIES = 3
 _HEALTH_CHECK_INTERVAL_S = 60
+# Retention deletes + VACUUM can exceed the default job timeout on busy days.
+_RETENTION_TIMEOUT_S = 3600
 
 
 def _redis_settings() -> RedisSettings:
@@ -62,6 +64,12 @@ class WorkerSettings:
         *COGNITIVE_TASKS.values(),
     ]
     cron_jobs: ClassVar[list[Any]] = [
+        cron(
+            cast(Any, data_retention_job),
+            hour={3},
+            minute={30},
+            timeout=_RETENTION_TIMEOUT_S,
+        ),
         cron(cast(Any, self_heal_check), minute={0, 15, 30, 45}),
         cron(cast(Any, container_log_audit), hour={0, 6, 12, 18}, minute={5}),
         cron(

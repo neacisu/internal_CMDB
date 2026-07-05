@@ -1,13 +1,19 @@
 """F5.5 — Data Retention Jobs.
 
-Drops old partitions and stale rows from telemetry and governance
-tables, then runs VACUUM ANALYZE on the remaining data.
+Drops old partitions and stale rows from telemetry, governance and
+discovery tables, then runs VACUUM ANALYZE on the remaining data.
 
-Retention windows
------------------
-- ``telemetry.metric_point``  → 90 days
-- ``governance.audit_event``  → 1 year
-- ``telemetry.llm_call_log``  → 6 months
+Retention windows are read at job start from ``config.app_setting``
+(``retention.*`` keys, editable in the Settings UI). Each rule carries a
+hardcoded fallback used when the setting is missing or invalid.
+
+Rule modes
+----------
+- ``partitions``  → drop expired child partitions (partitioned tables)
+- ``delete``      → plain ``DELETE`` of expired rows
+- ``snapshots``   → FK-safe purge of ``discovery.collector_snapshot`` and
+  ``discovery.snapshot_diff`` (diffs reference snapshots via two FKs with
+  no ``ON DELETE CASCADE``, so referencing diffs must be deleted first)
 """
 
 from __future__ import annotations
@@ -28,37 +34,60 @@ logger = logging.getLogger(__name__)
 # ARQ passes a context dict to worker coroutines (``job_id``, ``job_try``, ``redis``, …).
 _Ctx = dict[str, Any]
 
+# Snapshot kinds stored at high frequency; shorter full-resolution retention window.
+_HIGH_FREQ_SNAPSHOT_KINDS: tuple[str, ...] = ("heartbeat", "container_resources")
+
+# Each rule: table, ts_column, mode, setting_key (config.app_setting key holding
+# the retention window in days; empty = no setting) and default_days fallback.
 _RETENTION_RULES: list[dict[str, str]] = [
     {
         "table": "telemetry.metric_point",
         "ts_column": "collected_at",
-        "interval": "90 days",
-        "partitioned": "true",
+        "mode": "partitions",
+        "setting_key": "retention.metric_points_days",
+        "default_days": "90",
     },
     {
         "table": "telemetry.slo_measurement",
         "ts_column": "measured_at",
-        "interval": "1 year",
-        "partitioned": "true",
+        "mode": "partitions",
+        "setting_key": "",
+        "default_days": "365",
     },
     {
         "table": "governance.audit_event",
         "ts_column": "created_at",
-        "interval": "1 year",
-        "partitioned": "false",
+        "mode": "delete",
+        "setting_key": "retention.audit_events_days",
+        "default_days": "14",
     },
     {
         "table": "telemetry.llm_call_log",
         "ts_column": "called_at",
-        "interval": "6 months",
-        "partitioned": "false",
+        "mode": "delete",
+        "setting_key": "retention.llm_calls_days",
+        "default_days": "90",
+    },
+    {
+        "table": "discovery.collector_snapshot",
+        "ts_column": "collected_at",
+        "mode": "snapshots",
+        "setting_key": "retention.snapshots_days",
+        "default_days": "14",
     },
 ]
 
 _SAFE_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_.]{0,62}$")
+_SAFE_INTERVAL = re.compile(r"^\d+ days$")
 
 _PARTITION_MONTHS_AHEAD = 2  # number of future months to pre-create partitions
 _MONTHS_PER_YEAR = 12  # calendar months in a year
+
+
+def _validate_interval(interval: str) -> None:
+    """Guard against SQL injection via retention interval literals."""
+    if not _SAFE_INTERVAL.match(interval):
+        raise ValueError(f"Unsafe interval: {interval!r}")
 
 
 def _validate_identifier(name: str, label: str) -> None:
@@ -97,7 +126,7 @@ def _drop_old_partitions(
     """
     _validate_identifier(parent_table, "parent_table")
     _validate_identifier(ts_column, "ts_column")
-    _validate_identifier(interval.replace(" ", "_"), "interval")
+    _validate_interval(interval)
 
     conn.execute(text("SET LOCAL lock_timeout = '10s'"))
 
@@ -123,7 +152,7 @@ def _drop_old_partitions(
             + child
             + " WHERE "
             + ts_column
-            + " >= NOW() - INTERVAL :retention_interval LIMIT 1)"
+            + " >= NOW() - CAST(:retention_interval AS interval) LIMIT 1)"
         )
         result = conn.execute(text(check_sql), {"retention_interval": interval})
         has_recent = result.scalar()
@@ -140,10 +169,143 @@ def _delete_old_rows(conn: Any, table: str, ts_column: str, interval: str) -> in
     _validate_identifier(table, "table")
     _validate_identifier(ts_column, "ts_column")
     delete_sql = (
-        "DELETE FROM " + table + " WHERE " + ts_column + " < NOW() - INTERVAL :retention_interval"
+        "DELETE FROM " + table + " WHERE " + ts_column + " < NOW() - CAST(:retention_interval AS interval)"
     )
     result = conn.execute(text(delete_sql), {"retention_interval": interval})
     return result.rowcount or 0
+
+
+def _purge_snapshots(
+    conn: Any,
+    interval: str,
+    high_freq_interval: str,
+    vitals_downsample_interval: str,
+) -> dict[str, int]:
+    """FK-safe purge of collector snapshots and their diffs.
+
+    Order within one transaction:
+    1. Purge high-frequency kinds (heartbeat, container_resources) past *high_freq_interval*.
+    2. Downsample ``system_vitals`` older than *vitals_downsample_interval*.
+    3. Purge all remaining snapshots past *interval* (default 14 days).
+    """
+    counts: dict[str, int] = {
+        "snapshot_diffs_deleted": 0,
+        "snapshots_deleted": 0,
+        "high_freq_snapshots_deleted": 0,
+        "vitals_downsampled": 0,
+    }
+    kinds_sql = ", ".join(f"'{k}'" for k in _HIGH_FREQ_SNAPSHOT_KINDS)
+
+    conn.execute(text("BEGIN"))
+    try:
+        # ── High-frequency kind purge ──────────────────────────────────
+        for fk_col in ("snapshot_id", "previous_snapshot_id"):
+            deleted = conn.execute(
+                text(
+                    f"DELETE FROM discovery.snapshot_diff d "
+                    f"USING discovery.collector_snapshot s "
+                    f"WHERE d.{fk_col} = s.snapshot_id "
+                    f"AND s.snapshot_kind IN ({kinds_sql}) "
+                    f"AND s.collected_at < NOW() - CAST(:hf AS interval)"
+                ),
+                {"hf": high_freq_interval},
+            ).rowcount
+            counts["snapshot_diffs_deleted"] += deleted or 0
+
+        counts["high_freq_snapshots_deleted"] = (
+            conn.execute(
+                text(
+                    f"DELETE FROM discovery.collector_snapshot s "
+                    f"WHERE s.snapshot_kind IN ({kinds_sql}) "
+                    f"AND s.collected_at < NOW() - CAST(:hf AS interval) "
+                    f"AND NOT EXISTS (SELECT 1 FROM discovery.snapshot_diff d "
+                    f"                WHERE d.snapshot_id = s.snapshot_id "
+                    f"                   OR d.previous_snapshot_id = s.snapshot_id)"
+                ),
+                {"hf": high_freq_interval},
+            ).rowcount
+            or 0
+        )
+
+        # ── system_vitals downsample (one row per agent per hour) ──────
+        counts["vitals_downsampled"] = _downsample_vitals(conn, vitals_downsample_interval)
+
+        # ── General retention purge (all kinds, *interval*) ────────────
+        for fk_col in ("snapshot_id", "previous_snapshot_id"):
+            deleted = conn.execute(
+                text(
+                    "DELETE FROM discovery.snapshot_diff d "
+                    "USING discovery.collector_snapshot s "
+                    f"WHERE d.{fk_col} = s.snapshot_id "
+                    "AND s.collected_at < NOW() - CAST(:retention_interval AS interval)"
+                ),
+                {"retention_interval": interval},
+            ).rowcount
+            counts["snapshot_diffs_deleted"] += deleted or 0
+
+        counts["snapshots_deleted"] = (
+            conn.execute(
+                text(
+                    "DELETE FROM discovery.collector_snapshot s "
+                    "WHERE s.collected_at < NOW() - CAST(:retention_interval AS interval) "
+                    "AND NOT EXISTS (SELECT 1 FROM discovery.snapshot_diff d "
+                    "                WHERE d.snapshot_id = s.snapshot_id "
+                    "                   OR d.previous_snapshot_id = s.snapshot_id)"
+                ),
+                {"retention_interval": interval},
+            ).rowcount
+            or 0
+        )
+        conn.execute(text("COMMIT"))
+    except Exception:
+        conn.execute(text("ROLLBACK"))
+        raise
+    return counts
+
+
+def _downsample_vitals(conn: Any, downsample_after: str) -> int:
+    """Keep one system_vitals snapshot per agent per hour; delete the rest."""
+    # Remove diffs referencing vitals rows that will be downsampled away.
+    for fk_col in ("snapshot_id", "previous_snapshot_id"):
+        conn.execute(
+            text(
+                f"DELETE FROM discovery.snapshot_diff d "
+                f"USING discovery.collector_snapshot s "
+                f"WHERE d.{fk_col} = s.snapshot_id "
+                f"AND s.snapshot_kind = 'system_vitals' "
+                f"AND s.collected_at < NOW() - CAST(:ds AS interval) "
+                f"AND s.snapshot_id NOT IN ("
+                f"  SELECT DISTINCT ON (agent_id, date_trunc('hour', collected_at)) snapshot_id"
+                f"    FROM discovery.collector_snapshot"
+                f"   WHERE snapshot_kind = 'system_vitals'"
+                f"     AND collected_at < NOW() - CAST(:ds AS interval)"
+                f"   ORDER BY agent_id, date_trunc('hour', collected_at), collected_at ASC"
+                f")"
+            ),
+            {"ds": downsample_after},
+        )
+
+    return (
+        conn.execute(
+            text(
+                "DELETE FROM discovery.collector_snapshot s "
+                "WHERE s.snapshot_kind = 'system_vitals' "
+                "AND s.collected_at < NOW() - CAST(:ds AS interval) "
+                "AND s.snapshot_id NOT IN ("
+                "  SELECT DISTINCT ON (agent_id, date_trunc('hour', collected_at)) snapshot_id"
+                "    FROM discovery.collector_snapshot"
+                "   WHERE snapshot_kind = 'system_vitals'"
+                "     AND collected_at < NOW() - CAST(:ds AS interval)"
+                "   ORDER BY agent_id, date_trunc('hour', collected_at), collected_at ASC"
+                ") "
+                "AND NOT EXISTS (SELECT 1 FROM discovery.snapshot_diff d "
+                "                WHERE d.snapshot_id = s.snapshot_id "
+                "                   OR d.previous_snapshot_id = s.snapshot_id)"
+            ),
+            {"ds": downsample_after},
+        ).rowcount
+        or 0
+    )
 
 
 def _vacuum_table(conn: Any, table: str) -> None:
@@ -194,11 +356,30 @@ _MATERIALIZED_VIEWS: list[str] = [
 ]
 
 
+def _matview_exists(conn: Any, matview: str) -> bool:
+    """Return True when a materialized view exists in pg_matviews."""
+    schema, name = matview.split(".", 1)
+    result = conn.execute(
+        text(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM pg_matviews"
+            "  WHERE schemaname = :schema AND matviewname = :name"
+            ")"
+        ),
+        {"schema": schema, "name": name},
+    )
+    return bool(result.scalar())
+
+
 def _refresh_materialized_views(conn: Any) -> list[dict[str, str]]:
     """Refresh all materialized views concurrently (requires unique index)."""
     results: list[dict[str, str]] = []
     for mv in _MATERIALIZED_VIEWS:
         _validate_identifier(mv, "materialized_view")
+        if not _matview_exists(conn, mv):
+            logger.warning("Materialized view %s does not exist — skipping refresh", mv)
+            results.append({"view": mv, "status": "missing"})
+            continue
         try:
             conn.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {mv}"))
             results.append({"view": mv, "status": "refreshed"})
@@ -221,13 +402,13 @@ def _apply_one_rule(
 ) -> None:
     """Apply one retention rule against the database.
 
-    Handles table-existence guard, partitioned vs row-deletion dispatch, vacuum,
-    and appends the result (or error) to *report* in-place.
+    Handles table-existence guard, mode dispatch (partitions / delete /
+    snapshots), vacuum, and appends the result (or error) to *report* in-place.
     """
     table = rule["table"]
     ts_col = rule["ts_column"]
     interval = rule["interval"]
-    is_partitioned = rule["partitioned"] == "true"
+    mode = rule.get("mode", "delete")
 
     try:
         with engine.connect() as conn:
@@ -236,21 +417,34 @@ def _apply_one_rule(
                 report["errors"].append({"table": table, "error": "table does not exist"})
                 return
 
-            if is_partitioned:
+            extra: dict[str, int] = {}
+            if mode == "partitions":
                 created = _ensure_future_partitions(conn, table, ts_col)
                 if created:
                     report["partitions_created"].extend(created)
                 count = _drop_old_partitions(conn, table, ts_col, interval)
                 action = "partitions_dropped"
+            elif mode == "snapshots":
+                hf_interval = rule.get("high_freq_interval", interval)
+                vitals_ds = rule.get("vitals_downsample_interval", "3 days")
+                counts = _purge_snapshots(conn, interval, hf_interval, vitals_ds)
+                count = counts["snapshots_deleted"]
+                action = "rows_deleted"
+                extra = {
+                    "snapshot_diffs_deleted": counts["snapshot_diffs_deleted"],
+                    "high_freq_snapshots_deleted": counts["high_freq_snapshots_deleted"],
+                    "vitals_downsampled": counts["vitals_downsampled"],
+                }
+                _vacuum_table(conn, "discovery.snapshot_diff")
             else:
                 count = _delete_old_rows(conn, table, ts_col, interval)
                 action = "rows_deleted"
 
             _vacuum_table(conn, table)
 
-            entry: dict[str, Any] = {"table": table, "interval": interval, action: count}
+            entry: dict[str, Any] = {"table": table, "interval": interval, action: count, **extra}
             report["rules_applied"].append(entry)
-            logger.info("Retention: %s — %s=%d", table, action, count)
+            logger.info("Retention: %s — %s=%d %s", table, action, count, extra or "")
 
     except Exception as exc:
         logger.exception("Retention failed for %s", table)
@@ -267,11 +461,53 @@ def _run_view_refresh(engine: Engine, report: dict[str, Any]) -> None:
         report["errors"].append({"table": "materialized_views", "error": str(exc)})
 
 
-def run_retention(database_url: str) -> dict[str, Any]:
+def _coerce_days(value: Any, fallback: int) -> int:
+    """Coerce a settings value to a positive day count, else *fallback*."""
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return days if days >= 1 else fallback
+
+
+async def _resolve_rules() -> list[dict[str, str]]:
+    """Build the effective rule list, reading windows from the settings store.
+
+    Falls back to each rule's ``default_days`` when the setting is missing,
+    unreadable or invalid, so retention always runs.
+    """
+    from internalcmdb.config.settings_store import get_settings_store  # noqa: PLC0415
+
+    store = get_settings_store()
+    hf_days = _coerce_days(await store.get("retention.high_freq_snapshots_days"), 3)
+    vitals_ds_days = _coerce_days(await store.get("retention.vitals_downsample_days"), 3)
+    resolved: list[dict[str, str]] = []
+    for rule in _RETENTION_RULES:
+        default_days = int(rule["default_days"])
+        days = default_days
+        if rule["setting_key"]:
+            try:
+                days = _coerce_days(await store.get(rule["setting_key"]), default_days)
+            except Exception:
+                logger.warning(
+                    "Retention: could not read setting %r — using default %d days",
+                    rule["setting_key"],
+                    default_days,
+                )
+        entry: dict[str, str] = {**rule, "interval": f"{days} days"}
+        if rule.get("mode") == "snapshots":
+            entry["high_freq_interval"] = f"{hf_days} days"
+            entry["vitals_downsample_interval"] = f"{vitals_ds_days} days"
+        resolved.append(entry)
+    return resolved
+
+
+def run_retention(database_url: str, rules: list[dict[str, str]] | None = None) -> dict[str, Any]:
     """Execute all retention rules and return a summary report.
 
     Uses a synchronous SQLAlchemy engine with ``AUTOCOMMIT`` so ``VACUUM`` can run.
     Call from async code via :func:`asyncio.to_thread` to avoid blocking the event loop.
+    When *rules* is ``None`` the hardcoded defaults are used (settings ignored).
     """
     engine = create_engine(database_url, isolation_level="AUTOCOMMIT")
     report: dict[str, Any] = {
@@ -281,7 +517,16 @@ def run_retention(database_url: str) -> dict[str, Any]:
         "views_refreshed": [],
     }
 
-    for rule in _RETENTION_RULES:
+    if rules is None:
+        rules = []
+        for r in _RETENTION_RULES:
+            entry: dict[str, str] = {**r, "interval": f"{r['default_days']} days"}
+            if r.get("mode") == "snapshots":
+                entry["high_freq_interval"] = "3 days"
+                entry["vitals_downsample_interval"] = "3 days"
+            rules.append(entry)
+
+    for rule in rules:
         _apply_one_rule(engine, rule, report)
 
     _run_view_refresh(engine, report)
@@ -308,8 +553,9 @@ async def data_retention_job(ctx: _Ctx) -> dict[str, Any]:
 
     settings = get_settings()
     database_url = str(ctx.get("database_url") or settings.database_url)
+    rules = await _resolve_rules()
 
-    result = await asyncio.to_thread(run_retention, database_url)
+    result = await asyncio.to_thread(run_retention, database_url, rules)
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
     logger.info(

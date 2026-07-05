@@ -324,12 +324,14 @@ class AccuracyTracker:
                 },
                 default=str,
             )
+            # CAST(:param AS jsonb), not :param::jsonb — the ::jsonb shorthand
+            # makes psycopg3 strip the parameter from the compiled query.
             await self._session.execute(
                 text("""
                     INSERT INTO telemetry.metric_point
                         (host_id, metric_name, metric_value, labels_jsonb)
                     VALUES
-                        (NULL, :name, :value, :labels::jsonb)
+                        (NULL, :name, :value, CAST(:labels AS jsonb))
                 """),
                 {
                     "name": "accuracy_tracker.f1_score",

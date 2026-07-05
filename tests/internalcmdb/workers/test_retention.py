@@ -7,8 +7,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from internalcmdb.workers.retention import (
+    _RETENTION_RULES,
+    _coerce_days,
     _delete_old_rows,
+    _downsample_vitals,
     _drop_old_partitions,
+    _matview_exists,
+    _purge_snapshots,
+    _refresh_materialized_views,
     _table_exists,
     _vacuum_table,
     _validate_identifier,
@@ -227,3 +233,118 @@ class TestVacuumTable:
 
         with pytest.raises(ValueError, match="Unsafe table"):
             _vacuum_table(conn, "bad-table!")
+
+
+# ---------------------------------------------------------------------------
+# _purge_snapshots
+# ---------------------------------------------------------------------------
+
+
+class TestPurgeSnapshots:
+    def test_purge_snapshots_deletes_diffs_before_snapshots(self):
+        conn = MagicMock()
+        conn.execute.return_value.rowcount = 5
+
+        counts = _purge_snapshots(conn, "14 days", "3 days", "3 days")
+
+        assert counts["snapshots_deleted"] == 5
+        assert counts["high_freq_snapshots_deleted"] == 5
+        statements = [str(c[0][0]) for c in conn.execute.call_args_list]
+        assert statements[0] == "BEGIN"
+        assert "heartbeat" in statements[1] or "container_resources" in statements[1]
+        assert "system_vitals" in " ".join(statements)
+        assert statements[-1] == "COMMIT"
+
+    def test_purge_snapshots_none_rowcounts(self):
+        conn = MagicMock()
+        conn.execute.return_value.rowcount = None
+
+        counts = _purge_snapshots(conn, "14 days", "3 days", "3 days")
+
+        assert counts["snapshot_diffs_deleted"] == 0
+        assert counts["snapshots_deleted"] == 0
+        assert counts["vitals_downsampled"] == 0
+
+    def test_purge_snapshots_rolls_back_on_error(self):
+        conn = MagicMock()
+        call_count = {"n": 0}
+
+        def execute_side_effect(stmt, *args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] > 6 and "collector_snapshot" in str(stmt) and "DELETE" in str(stmt):
+                raise RuntimeError("boom")
+            m = MagicMock()
+            m.rowcount = 1
+            return m
+
+        conn.execute.side_effect = execute_side_effect
+
+        with pytest.raises(RuntimeError, match="boom"):
+            _purge_snapshots(conn, "14 days", "3 days", "3 days")
+
+        statements = [str(c[0][0]) for c in conn.execute.call_args_list]
+        assert statements[-1] == "ROLLBACK"
+
+
+class TestDownsampleVitals:
+    def test_downsample_vitals_returns_rowcount(self):
+        conn = MagicMock()
+        conn.execute.return_value.rowcount = 42
+
+        result = _downsample_vitals(conn, "3 days")
+
+        assert result == 42
+        assert conn.execute.call_count >= 2
+
+
+class TestMatviewRefresh:
+    def test_matview_exists_true(self):
+        conn = MagicMock()
+        conn.execute.return_value.scalar.return_value = True
+        assert _matview_exists(conn, "cognitive.mv_fleet_health_live") is True
+
+    def test_refresh_skips_missing_view(self):
+        conn = MagicMock()
+        conn.execute.return_value.scalar.return_value = False
+
+        results = _refresh_materialized_views(conn)
+
+        assert results[0]["status"] == "missing"
+        refresh_calls = [
+            c for c in conn.execute.call_args_list if "REFRESH" in str(c[0][0])
+        ]
+        assert refresh_calls == []
+
+
+# ---------------------------------------------------------------------------
+# _coerce_days / rule configuration
+# ---------------------------------------------------------------------------
+
+
+class TestCoerceDays:
+    def test_valid_int(self):
+        assert _coerce_days(14, 30) == 14
+
+    def test_valid_str(self):
+        assert _coerce_days("21", 30) == 21
+
+    def test_invalid_value_falls_back(self):
+        assert _coerce_days("abc", 30) == 30
+        assert _coerce_days(None, 30) == 30
+
+    def test_non_positive_falls_back(self):
+        assert _coerce_days(0, 30) == 30
+        assert _coerce_days(-5, 30) == 30
+
+
+class TestRetentionRules:
+    def test_snapshot_rule_present(self):
+        snapshot_rules = [r for r in _RETENTION_RULES if r["mode"] == "snapshots"]
+        assert len(snapshot_rules) == 1
+        assert snapshot_rules[0]["table"] == "discovery.collector_snapshot"
+        assert snapshot_rules[0]["setting_key"] == "retention.snapshots_days"
+
+    def test_all_rules_have_required_keys(self):
+        for rule in _RETENTION_RULES:
+            assert {"table", "ts_column", "mode", "setting_key", "default_days"} <= set(rule)
+            assert int(rule["default_days"]) >= 1
