@@ -293,7 +293,7 @@ async def cognitive_report_daily(ctx: _Ctx) -> dict[str, Any]:
     """
     await _check_database(ctx)
 
-    report_gen, session, engine = _make_report_generator(ctx)
+    report_gen, session, engine = await _make_report_generator(ctx)
     sections = 0
     try:
         fleet_md = await report_gen.generate_fleet_report()
@@ -321,7 +321,7 @@ async def cognitive_report_weekly(ctx: _Ctx) -> dict[str, Any]:
     """
     await _check_database(ctx)
 
-    report_gen, session, engine = _make_report_generator(ctx)
+    report_gen, session, engine = await _make_report_generator(ctx)
     sections = 0
     try:
         fleet_md = await report_gen.generate_fleet_report()
@@ -1998,7 +1998,7 @@ async def _persist_trend_drop_insight(
 # ---------------------------------------------------------------------------
 
 
-def _make_report_generator(
+async def _make_report_generator(
     ctx: _Ctx,
 ) -> tuple[Any, Any, Any]:
     """Create a ReportGenerator with async DB session and LLM client.
